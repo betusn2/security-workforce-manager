@@ -50,20 +50,24 @@ const DashboardEnhanced = () => {
       const eventsData = eventsRes.data.data || [];
       const usersData = usersRes.data.data || [];
 
-      setEvents(eventsData);
-      setAgents(usersData);
+      // S'assurer que les données sont des tableaux
+      const eventsArray = Array.isArray(eventsData) ? eventsData : [];
+      const usersArray = Array.isArray(usersData) ? usersData : [];
+
+      setEvents(eventsArray);
+      setAgents(usersArray);
 
       // Calculer les stats
       const now = new Date();
-      const todayEvts = eventsData.filter(e => isToday(new Date(e.startDate)));
-      const upcoming = eventsData.filter(e => {
+      const todayEvts = eventsArray.filter(e => isToday(new Date(e.startDate)));
+      const upcoming = eventsArray.filter(e => {
         const start = new Date(e.startDate);
         return start > now && !isToday(start);
       }).sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
       
-      const completed = eventsData.filter(e => isPast(new Date(e.endDate || e.startDate)));
-      const activeAgents = usersData.filter(u => u.role === 'agent' && u.status === 'active');
-      const allAgents = usersData.filter(u => u.role === 'agent');
+      const completed = eventsArray.filter(e => isPast(new Date(e.endDate || e.startDate)));
+      const activeAgents = usersArray.filter(u => u.role === 'agent' && u.status === 'active');
+      const allAgents = usersArray.filter(u => u.role === 'agent');
       const avgScore = activeAgents.length > 0
         ? Math.round(activeAgents.reduce((sum, a) => sum + (a.overallScore || 0), 0) / activeAgents.length)
         : 0;
@@ -79,7 +83,7 @@ const DashboardEnhanced = () => {
       setStats({
         totalAgents: allAgents.length,
         activeAgents: activeAgents.length,
-        totalEvents: eventsData.length,
+        totalEvents: eventsArray.length,
         todayEvents: todayEvts.length,
         upcomingEvents: upcoming.length,
         completedEvents: completed.length,
@@ -90,6 +94,11 @@ const DashboardEnhanced = () => {
     } catch (error) {
       console.error('Erreur chargement dashboard:', error);
       toast.error('Erreur lors du chargement des données');
+      // S'assurer que les états sont des tableaux même en cas d'erreur
+      setEvents([]);
+      setAgents([]);
+      setTodayEvents([]);
+      setUpcomingEvents([]);
     } finally {
       setLoading(false);
     }
@@ -498,48 +507,54 @@ const DashboardEnhanced = () => {
           </div>
 
           <div className="space-y-3">
-            {agents
-              .filter(a => a.role === 'agent')
-              .sort((a, b) => (b.overallScore || 0) - (a.overallScore || 0))
-              .slice(0, 5)
-              .map((agent, index) => (
-                <div
-                  key={agent.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                      index === 0 ? 'bg-yellow-400 text-white' :
-                      index === 1 ? 'bg-gray-300 text-gray-700' :
-                      index === 2 ? 'bg-orange-400 text-white' :
-                      'bg-gray-200 text-gray-600'
-                    }`}>
-                      {index + 1}
-                    </div>
-                    {agent.profilePhoto ? (
-                      <img
-                        src={agent.profilePhoto}
-                        alt=""
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 font-semibold">
-                        {agent.firstName?.[0]}{agent.lastName?.[0]}
+            {Array.isArray(agents) && agents.length > 0 ? (
+              agents
+                .filter(a => a.role === 'agent')
+                .sort((a, b) => (b.overallScore || 0) - (a.overallScore || 0))
+                .slice(0, 5)
+                .map((agent, index) => (
+                  <div
+                    key={agent.id}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                        index === 0 ? 'bg-yellow-400 text-white' :
+                        index === 1 ? 'bg-gray-300 text-gray-700' :
+                        index === 2 ? 'bg-orange-400 text-white' :
+                        'bg-gray-200 text-gray-600'
+                      }`}>
+                        {index + 1}
                       </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-900 truncate">
-                        {agent.firstName} {agent.lastName}
-                      </p>
-                      <p className="text-xs text-gray-600">{agent.cin}</p>
+                      {agent.profilePhoto ? (
+                        <img
+                          src={agent.profilePhoto}
+                          alt=""
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 font-semibold">
+                          {agent.firstName?.[0]}{agent.lastName?.[0]}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 truncate">
+                          {agent.firstName} {agent.lastName}
+                        </p>
+                        <p className="text-xs text-gray-600">{agent.cin}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <FiStar className="text-yellow-500" size={16} />
+                      <span className="font-bold text-gray-900">{agent.overallScore || 0}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <FiStar className="text-yellow-500" size={16} />
-                    <span className="font-bold text-gray-900">{agent.overallScore || 0}</span>
-                  </div>
-                </div>
-              ))}
+                ))
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                Aucun agent disponible
+              </div>
+            )}
           </div>
         </div>
       </div>
