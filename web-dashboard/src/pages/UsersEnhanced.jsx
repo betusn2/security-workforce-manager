@@ -52,7 +52,8 @@ const UsersEnhanced = () => {
       console.log('✅ API Response complète:', response);
       console.log('📦 response.data:', response.data);
       
-      const userData = response.data.data || response.data || [];
+      // CORRECTION: L'API retourne {success: true, data: {users: [...], pagination: {...}}}
+      const userData = response.data?.data?.users || response.data?.users || response.data?.data || response.data || [];
       console.log('👥 User Data extrait:', userData);
       console.log('📊 Type de userData:', Array.isArray(userData) ? 'Array' : typeof userData);
       
@@ -79,7 +80,12 @@ const UsersEnhanced = () => {
       console.error('❌ Erreur chargement utilisateurs:', error);
       console.error('❌ Error response:', error.response);
       console.error('❌ Error message:', error.message);
-      toast.error(`Erreur: ${error.response?.data?.message || error.message || 'Erreur lors du chargement des utilisateurs'}`);
+      
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        toast.error('Non autorisé: Vous devez être connecté en tant qu\'admin ou superviseur');
+      } else {
+        toast.error(`Erreur: ${error.response?.data?.message || error.message || 'Erreur lors du chargement des utilisateurs'}`);
+      }
       setUsers([]); // S'assurer que users est toujours un tableau
     } finally {
       setLoading(false);
