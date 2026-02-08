@@ -7,7 +7,7 @@ import {
   FiBarChart2, FiStar, FiMenu, FiX, FiBell,
   FiTarget, FiTrendingDown, FiPercent, FiNavigation
 } from 'react-icons/fi';
-import { reportsAPI, eventsAPI, usersAPI } from '../services/api';
+import { eventsAPI, usersAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format, differenceInHours, isToday, isTomorrow, isPast } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -42,15 +42,13 @@ const DashboardEnhanced = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [eventsRes, usersRes, statsRes] = await Promise.all([
+      const [eventsRes, usersRes] = await Promise.all([
         eventsAPI.getAll(),
-        usersAPI.getAll(),
-        reportsAPI.getStats().catch(() => ({ data: { data: {} } }))
+        usersAPI.getAll()
       ]);
 
       const eventsData = eventsRes.data.data || [];
       const usersData = usersRes.data.data || [];
-      const statsData = statsRes.data.data || {};
 
       setEvents(eventsData);
       setAgents(usersData);
@@ -65,21 +63,27 @@ const DashboardEnhanced = () => {
       
       const completed = eventsData.filter(e => isPast(new Date(e.endDate || e.startDate)));
       const activeAgents = usersData.filter(u => u.role === 'agent' && u.status === 'active');
+      const allAgents = usersData.filter(u => u.role === 'agent');
       const avgScore = activeAgents.length > 0
         ? Math.round(activeAgents.reduce((sum, a) => sum + (a.overallScore || 0), 0) / activeAgents.length)
+        : 0;
+
+      // Calculer le taux de présence approximatif
+      const attendanceRate = allAgents.length > 0
+        ? Math.round((activeAgents.length / allAgents.length) * 100)
         : 0;
 
       setTodayEvents(todayEvts);
       setUpcomingEvents(upcoming);
 
       setStats({
-        totalAgents: usersData.filter(u => u.role === 'agent').length,
+        totalAgents: allAgents.length,
         activeAgents: activeAgents.length,
         totalEvents: eventsData.length,
         todayEvents: todayEvts.length,
         upcomingEvents: upcoming.length,
         completedEvents: completed.length,
-        attendanceRate: statsData.attendanceRate || 0,
+        attendanceRate: attendanceRate,
         avgScore: avgScore
       });
 
