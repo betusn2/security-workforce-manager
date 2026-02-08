@@ -213,7 +213,7 @@ const DashboardEnhanced = () => {
     const start = new Date(event.startDate);
     const hoursUntil = differenceInHours(start, new Date());
     const isImminentToday = isToday(start);
-    const isTomorrow = isTomorrow(start);
+    const isEventTomorrow = isTomorrow(start);
 
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-lg transition-all duration-300">
@@ -231,7 +231,7 @@ const DashboardEnhanced = () => {
               Aujourd'hui
             </span>
           )}
-          {isTomorrow && (
+          {isEventTomorrow && (
             <span className="flex-shrink-0 ml-2 px-2 py-1 bg-orange-100 text-orange-700 rounded-lg text-xs font-bold">
               Demain
             </span>
