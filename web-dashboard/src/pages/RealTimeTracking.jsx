@@ -200,15 +200,20 @@ const RealTimeTracking = () => {
   const loadEvents = async () => {
     try {
       const response = await api.get('/events?status=active');
-      setEvents(response.data.data || []);
+      const eventsData = Array.isArray(response.data.data) 
+        ? response.data.data 
+        : (Array.isArray(response.data) ? response.data : []);
+      
+      setEvents(eventsData);
       
       // Sélectionner le premier événement par défaut
-      if (response.data.data && response.data.data.length > 0) {
-        setSelectedEvent(response.data.data[0]);
+      if (eventsData.length > 0) {
+        setSelectedEvent(eventsData[0]);
       }
     } catch (error) {
       console.error('❌ Erreur chargement événements:', error);
       toast.error('Erreur lors du chargement des événements');
+      setEvents([]); // S'assurer que events est toujours un tableau
     }
   };
 
@@ -225,20 +230,20 @@ const RealTimeTracking = () => {
   };
 
   // Filtrer les agents
-  const filteredAgents = agents.filter(agent => {
+  const filteredAgents = Array.isArray(agents) ? agents.filter(agent => {
     if (!filters.showActive && agent.status === 'active') return false;
     if (!filters.showOutside && agent.status === 'outside_geofence') return false;
     if (!filters.showCompleted && agent.status === 'completed') return false;
     if (!filters.showLowBattery && agent.batteryLevel < 20) return false;
     return true;
-  });
+  }) : [];
 
   // Statistiques
   const stats = {
-    total: agents.length,
-    active: agents.filter(a => a.status === 'active').length,
-    outside: agents.filter(a => a.status === 'outside_geofence').length,
-    lowBattery: agents.filter(a => a.batteryLevel < 20).length
+    total: Array.isArray(agents) ? agents.length : 0,
+    active: Array.isArray(agents) ? agents.filter(a => a.status === 'active').length : 0,
+    outside: Array.isArray(agents) ? agents.filter(a => a.status === 'outside_geofence').length : 0,
+    lowBattery: Array.isArray(agents) ? agents.filter(a => a.batteryLevel < 20).length : 0
   };
 
   return (
@@ -273,7 +278,7 @@ const RealTimeTracking = () => {
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="">-- Sélectionner un événement --</option>
-              {events.map(event => (
+              {Array.isArray(events) && events.map(event => (
                 <option key={event.id} value={event.id}>
                   {event.name} ({event.location})
                 </option>
