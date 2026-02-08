@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   FiHome, FiUsers, FiCalendar, FiClipboard, FiClock,
   FiBell, FiFileText, FiSettings, FiLogOut, FiMenu, FiX,
-  FiAward, FiMapPin, FiAlertTriangle, FiGrid, FiStar, FiShield, FiLock, FiLayers, FiUserPlus, FiList, FiChevronDown, FiChevronRight, FiActivity, FiDatabase
+  FiAward, FiMapPin, FiAlertTriangle, FiGrid, FiStar, FiShield, FiLock, FiLayers, FiUserPlus, FiList, FiChevronDown, FiChevronRight, FiActivity, FiDatabase, FiInfo, FiBook
 } from 'react-icons/fi';
 import useAuthStore from '../hooks/useAuth';
 
@@ -76,6 +76,14 @@ const menuStructure = [
       { path: '/admin/database', icon: FiDatabase, label: 'Sauvegarde DB', roles: ['admin'] },
       { path: '/permissions', icon: FiLock, label: 'Permissions', roles: ['admin'] },
       { path: '/settings', icon: FiSettings, label: 'Paramètres' },
+    ]
+  },
+  {
+    label: 'Informations',
+    icon: FiInfo,
+    items: [
+      { path: '/about', icon: FiInfo, label: 'À Propos' },
+      { path: '/privacy', icon: FiBook, label: 'Confidentialité' },
     ]
   },
 ];
