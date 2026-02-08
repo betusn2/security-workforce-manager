@@ -231,7 +231,7 @@ const EventDetails = () => {
               <p className="font-semibold text-gray-900">{event.location}</p>
               {event.latitude && event.longitude && (
                 <p className="text-xs text-gray-500 mt-1">
-                  {event.latitude.toFixed(6)}, {event.longitude.toFixed(6)}
+                  {parseFloat(event.latitude).toFixed(6)}, {parseFloat(event.longitude).toFixed(6)}
                 </p>
               )}
             </div>
