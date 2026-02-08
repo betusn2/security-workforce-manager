@@ -519,10 +519,25 @@ const CheckInLogin = () => {
                 © {new Date().getFullYear()} SGM – Security Guard | Système de gestion
               </p>
               {deviceInfo && (
-                <p>
+                <p className="mb-3">
                   {deviceInfo.browser} sur {deviceInfo.os}
                 </p>
               )}
+              <div className="flex items-center justify-center gap-4 mt-3">
+                <a 
+                  href="/about" 
+                  className="text-primary-400 hover:text-primary-300 transition-colors"
+                >
+                  À Propos
+                </a>
+                <span className="text-gray-500">•</span>
+                <a 
+                  href="/privacy" 
+                  className="text-primary-400 hover:text-primary-300 transition-colors"
+                >
+                  Confidentialité
+                </a>
+              </div>
             </div>
           </div>
         </div>
