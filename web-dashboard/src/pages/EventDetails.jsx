@@ -1,0 +1,494 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+  FiArrowLeft, FiMapPin, FiClock, FiUsers, FiCalendar, FiEdit2,
+  FiTrash2, FiAlertTriangle, FiCheckCircle, FiUserCheck, FiUserX,
+  FiActivity, FiShield, FiLayers, FiFlag, FiAlertCircle, FiInfo,
+  FiTrendingUp, FiCopy, FiRepeat
+} from 'react-icons/fi';
+import { eventsAPI, zonesAPI, assignmentsAPI, attendanceAPI } from '../services/api';
+import { toast } from 'react-toastify';
+import { format, isPast, isFuture, isToday, isTomorrow, differenceInDays, differenceInHours } from 'date-fns';
+import { fr } from 'date-fns/locale';
+import MiniMap from '../components/MiniMap';
+
+const PRIORITY_OPTIONS = [
+  { value: 'low', label: 'Basse', color: 'text-gray-500', bg: 'bg-gray-100' },
+  { value: 'medium', label: 'Moyenne', color: 'text-blue-500', bg: 'bg-blue-100' },
+  { value: 'high', label: 'Haute', color: 'text-orange-500', bg: 'bg-orange-100' },
+  { value: 'critical', label: 'Critique', color: 'text-red-500', bg: 'bg-red-100' }
+];
+
+const EventDetails = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+
+  const [event, setEvent] = useState(null);
+  const [zones, setZones] = useState([]);
+  const [assignments, setAssignments] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (id) {
+      fetchEventDetails();
+    }
+  }, [id]);
+
+  const fetchEventDetails = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      // Fetch event
+      const eventRes = await eventsAPI.getById(id);
+      if (eventRes.data.success) {
+        setEvent(eventRes.data.data);
+      }
+
+      // Fetch zones
+      try {
+        const zonesRes = await zonesAPI.getByEvent(id);
+        setZones(zonesRes.data.data || []);
+      } catch (err) {
+        console.log('No zones for this event');
+        setZones([]);
+      }
+
+      // Fetch assignments
+      try {
+        const assignRes = await assignmentsAPI.getByEvent(id);
+        setAssignments(assignRes.data.data || []);
+      } catch (err) {
+        console.log('No assignments for this event');
+        setAssignments([]);
+      }
+
+      // Fetch attendance
+      try {
+        const attRes = await attendanceAPI.getByEvent(id);
+        setAttendance(attRes.data.data || []);
+      } catch (err) {
+        console.log('No attendance for this event');
+        setAttendance([]);
+      }
+
+    } catch (err) {
+      console.error('Error fetching event details:', err);
+      setError('Impossible de charger les détails de l\'événement');
+      toast.error('Erreur lors du chargement');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getPriorityInfo = (priority) => {
+    return PRIORITY_OPTIONS.find(p => p.value === priority) || PRIORITY_OPTIONS[1];
+  };
+
+  const getTimeStatus = () => {
+    if (!event) return { label: '', class: '' };
+    const startDate = new Date(event.startDate);
+    const endDate = new Date(event.endDate);
+    const now = new Date();
+
+    if (isPast(endDate)) {
+      return { label: 'Terminé', class: 'bg-gray-100 text-gray-700' };
+    }
+    if (now >= startDate && now <= endDate) {
+      return { label: 'LIVE', class: 'bg-green-100 text-green-700' };
+    }
+    if (isToday(startDate)) {
+      return { label: "Aujourd'hui", class: 'bg-blue-100 text-blue-700' };
+    }
+    if (isTomorrow(startDate)) {
+      return { label: 'Demain', class: 'bg-purple-100 text-purple-700' };
+    }
+    if (isFuture(startDate)) {
+      const days = differenceInDays(startDate, now);
+      return { label: `Dans ${days} jours`, class: 'bg-orange-100 text-orange-700' };
+    }
+    return { label: 'À venir', class: 'bg-gray-100 text-gray-700' };
+  };
+
+  const getAttendanceStats = () => {
+    const total = assignments.length;
+    const present = attendance.filter(a => a.status === 'present').length;
+    const late = attendance.filter(a => a.status === 'late').length;
+    const absent = assignments.length - attendance.length;
+
+    return { total, present, late, absent };
+  };
+
+  const handleEdit = () => {
+    navigate(`/events?edit=${id}`);
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm('Êtes-vous sûr de vouloir supprimer cet événement ?')) return;
+
+    try {
+      await eventsAPI.delete(id);
+      toast.success('Événement supprimé avec succès');
+      navigate('/events');
+    } catch (err) {
+      toast.error('Erreur lors de la suppression');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !event) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <FiAlertCircle className="mx-auto text-red-500 mb-4" size={48} />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Événement introuvable</h2>
+          <p className="text-gray-600 mb-6">{error || 'Cet événement n\'existe pas ou a été supprimé'}</p>
+          <button
+            onClick={() => navigate('/events')}
+            className="btn-primary inline-flex items-center"
+          >
+            <FiArrowLeft className="mr-2" />
+            Retour aux événements
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const timeStatus = getTimeStatus();
+  const priorityInfo = getPriorityInfo(event.priority);
+  const stats = getAttendanceStats();
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* Header avec retour */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => navigate('/events')}
+          className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+        >
+          <FiArrowLeft className="mr-2" size={20} />
+          <span className="font-medium">Retour aux événements</span>
+        </button>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleEdit}
+            className="btn-secondary flex items-center"
+          >
+            <FiEdit2 className="mr-2" size={18} />
+            Modifier
+          </button>
+          <button
+            onClick={handleDelete}
+            className="btn-danger flex items-center"
+          >
+            <FiTrash2 className="mr-2" size={18} />
+            Supprimer
+          </button>
+        </div>
+      </div>
+
+      {/* Titre et status */}
+      <div className="card">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-3">
+              <h1 className="text-3xl font-black text-gray-900">{event.name}</h1>
+              <span className={`px-3 py-1 rounded-full text-xs font-bold ${timeStatus.class}`}>
+                {timeStatus.label}
+              </span>
+              <span className={`px-3 py-1 rounded-full text-xs font-bold ${priorityInfo.bg} ${priorityInfo.color}`}>
+                {priorityInfo.label}
+              </span>
+            </div>
+            {event.description && (
+              <p className="text-gray-600 leading-relaxed">{event.description}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Informations principales */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 pt-6 border-t">
+          {/* Localisation */}
+          <div className="flex items-start gap-3">
+            <div className="bg-blue-100 p-3 rounded-xl">
+              <FiMapPin className="text-blue-600" size={24} />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm text-gray-500 mb-1">Localisation</p>
+              <p className="font-semibold text-gray-900">{event.location}</p>
+              {event.latitude && event.longitude && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {event.latitude.toFixed(6)}, {event.longitude.toFixed(6)}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Date et heure */}
+          <div className="flex items-start gap-3">
+            <div className="bg-purple-100 p-3 rounded-xl">
+              <FiCalendar className="text-purple-600" size={24} />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm text-gray-500 mb-1">Date et heure</p>
+              <p className="font-semibold text-gray-900">
+                {format(new Date(event.startDate), 'EEEE d MMMM yyyy', { locale: fr })}
+              </p>
+              <p className="text-sm text-gray-600">
+                <FiClock className="inline mr-1" size={14} />
+                {format(new Date(event.startDate), 'HH:mm', { locale: fr })} - {format(new Date(event.endDate), 'HH:mm', { locale: fr })}
+              </p>
+            </div>
+          </div>
+
+          {/* Rayon de zone */}
+          {event.radius && (
+            <div className="flex items-start gap-3">
+              <div className="bg-green-100 p-3 rounded-xl">
+                <FiLayers className="text-green-600" size={24} />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm text-gray-500 mb-1">Rayon de la zone</p>
+                <p className="font-semibold text-gray-900">{event.radius} mètres</p>
+              </div>
+            </div>
+          )}
+
+          {/* Nombre d'agents */}
+          <div className="flex items-start gap-3">
+            <div className="bg-orange-100 p-3 rounded-xl">
+              <FiUsers className="text-orange-600" size={24} />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm text-gray-500 mb-1">Agents affectés</p>
+              <p className="font-semibold text-gray-900">{stats.total} agents</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Statistiques de présence */}
+      {stats.total > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="card bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-blue-600 font-medium mb-1">Total Agents</p>
+                <p className="text-3xl font-black text-blue-900">{stats.total}</p>
+              </div>
+              <div className="bg-blue-500 p-3 rounded-xl">
+                <FiUsers className="text-white" size={24} />
+              </div>
+            </div>
+          </div>
+
+          <div className="card bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-green-600 font-medium mb-1">Présents</p>
+                <p className="text-3xl font-black text-green-900">{stats.present}</p>
+              </div>
+              <div className="bg-green-500 p-3 rounded-xl">
+                <FiUserCheck className="text-white" size={24} />
+              </div>
+            </div>
+          </div>
+
+          <div className="card bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-yellow-600 font-medium mb-1">En retard</p>
+                <p className="text-3xl font-black text-yellow-900">{stats.late}</p>
+              </div>
+              <div className="bg-yellow-500 p-3 rounded-xl">
+                <FiClock className="text-white" size={24} />
+              </div>
+            </div>
+          </div>
+
+          <div className="card bg-gradient-to-br from-red-50 to-red-100 border-red-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-red-600 font-medium mb-1">Absents</p>
+                <p className="text-3xl font-black text-red-900">{stats.absent}</p>
+              </div>
+              <div className="bg-red-500 p-3 rounded-xl">
+                <FiUserX className="text-white" size={24} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Carte */}
+      {event.latitude && event.longitude && (
+        <div className="card">
+          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
+            <FiMapPin className="mr-2 text-blue-600" />
+            Carte de localisation
+          </h2>
+          <div className="rounded-xl overflow-hidden" style={{ height: '400px' }}>
+            <MiniMap
+              latitude={event.latitude}
+              longitude={event.longitude}
+              radius={event.radius}
+              zones={zones}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Zones */}
+      {zones.length > 0 && (
+        <div className="card">
+          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
+            <FiLayers className="mr-2 text-green-600" />
+            Zones de patrouille ({zones.length})
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {zones.map((zone) => (
+              <div key={zone.id} className="border border-gray-200 rounded-xl p-4 hover:shadow-lg transition-shadow">
+                <h3 className="font-bold text-gray-900 mb-2">{zone.name}</h3>
+                {zone.description && (
+                  <p className="text-sm text-gray-600 mb-3">{zone.description}</p>
+                )}
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <span className="flex items-center">
+                    <FiMapPin className="mr-1" size={12} />
+                    {zone.radius}m rayon
+                  </span>
+                  {zone.assignedAgents && (
+                    <span className="flex items-center">
+                      <FiUsers className="mr-1" size={12} />
+                      {zone.assignedAgents.length} agents
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Agents affectés */}
+      {assignments.length > 0 && (
+        <div className="card">
+          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
+            <FiUsers className="mr-2 text-purple-600" />
+            Agents affectés ({assignments.length})
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Agent
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Zone
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Statut
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Check-in
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Check-out
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {assignments.map((assignment) => {
+                  const agentAttendance = attendance.find(a => a.userId === assignment.agentId);
+                  return (
+                    <tr key={assignment.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          {assignment.agent?.profilePhoto && (
+                            <img
+                              src={assignment.agent.profilePhoto}
+                              alt={`${assignment.agent?.firstName} ${assignment.agent?.lastName}`}
+                              className="w-10 h-10 rounded-full mr-3 object-cover"
+                            />
+                          )}
+                          <div>
+                            <p className="font-semibold text-gray-900">
+                              {assignment.agent?.firstName} {assignment.agent?.lastName}
+                            </p>
+                            <p className="text-sm text-gray-500">{assignment.agent?.employeeId}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="text-sm text-gray-900">
+                          {assignment.zone?.name || '-'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {agentAttendance ? (
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            agentAttendance.status === 'present' ? 'bg-green-100 text-green-700' :
+                            agentAttendance.status === 'late' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {agentAttendance.status === 'present' ? 'Présent' :
+                             agentAttendance.status === 'late' ? 'En retard' : 'Absent'}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                            Non pointé
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {agentAttendance?.checkInTime ? 
+                          format(new Date(agentAttendance.checkInTime), 'HH:mm', { locale: fr }) : 
+                          '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {agentAttendance?.checkOutTime ? 
+                          format(new Date(agentAttendance.checkOutTime), 'HH:mm', { locale: fr }) : 
+                          '-'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Message si pas d'agents */}
+      {assignments.length === 0 && (
+        <div className="card text-center py-12">
+          <FiUsers className="mx-auto text-gray-400 mb-4" size={48} />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Aucun agent affecté</h3>
+          <p className="text-gray-600 mb-6">Commencez par affecter des agents à cet événement</p>
+          <button
+            onClick={() => navigate('/assignments')}
+            className="btn-primary inline-flex items-center"
+          >
+            Gérer les affectations
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default EventDetails;

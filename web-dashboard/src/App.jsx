@@ -18,6 +18,7 @@ import DashboardEnhanced from './pages/DashboardEnhanced';
 import Users from './pages/Users';
 import UsersEnhanced from './pages/UsersEnhanced';
 import Events from './pages/Events';
+import EventDetails from './pages/EventDetails';
 import Attendance from './pages/Attendance';
 import AttendanceVerification from './pages/AttendanceVerification';
 import Assignments from './pages/Assignments';
@@ -139,6 +140,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Events />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/events/:id"
+          element={
+            <ProtectedRoute>
+              <EventDetails />
             </ProtectedRoute>
           }
         />
