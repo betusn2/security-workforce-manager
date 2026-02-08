@@ -1,5 +1,5 @@
 import React from 'react';
-import { FiShield, FiUsers, FiMapPin, FiCamera, FiClock, FiZap, FiCheckCircle, FiTrendingUp, FiLock, FiSmartphone, FiMonitor, FiDatabase, FiGlobe, FiAward, FiTarget } from 'react-icons/fi';
+import { FiShield, FiUsers, FiMapPin, FiCamera, FiClock, FiZap, FiCheckCircle, FiTrendingUp, FiLock, FiSmartphone, FiMonitor, FiDatabase, FiGlobe, FiAward, FiTarget, FiUser } from 'react-icons/fi';
 
 /**
  * Page À Propos
