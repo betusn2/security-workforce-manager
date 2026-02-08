@@ -43,10 +43,17 @@ const DashboardEnhanced = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
+      console.log('🔄 Dashboard - Chargement des données...');
+      
       const [eventsRes, usersRes] = await Promise.all([
         eventsAPI.getAll(),
         usersAPI.getAll()
       ]);
+
+      console.log('📦 Events Response:', eventsRes);
+      console.log('📦 Users Response:', usersRes);
+      console.log('📦 eventsRes.data:', eventsRes.data);
+      console.log('📦 usersRes.data:', usersRes.data);
 
       // CORRECTION: API retourne {data: {events/users: [...], pagination}}
       const eventsData = eventsRes.data?.data?.events || eventsRes.data?.events || eventsRes.data?.data || [];
@@ -56,8 +63,15 @@ const DashboardEnhanced = () => {
       const eventsArray = Array.isArray(eventsData) ? eventsData : [];
       const usersArray = Array.isArray(usersData) ? usersData : [];
       
-      console.log('📊 Dashboard - Événements chargés:', eventsArray.length);
-      console.log('📊 Dashboard - Utilisateurs chargés:', usersArray.length);
+      console.log('✅ Dashboard - Événements chargés:', eventsArray.length);
+      console.log('✅ Dashboard - Utilisateurs chargés:', usersArray.length);
+      
+      if (eventsArray.length > 0) {
+        console.log('📅 Premier événement:', eventsArray[0]);
+      }
+      if (usersArray.length > 0) {
+        console.log('👤 Premier utilisateur:', usersArray[0]);
+      }
 
       setEvents(eventsArray);
       setAgents(usersArray);
@@ -103,8 +117,16 @@ const DashboardEnhanced = () => {
       });
 
     } catch (error) {
-      console.error('Erreur chargement dashboard:', error);
-      toast.error('Erreur lors du chargement des données');
+      console.error('❌ Erreur chargement dashboard:', error);
+      console.error('❌ Error response:', error.response);
+      console.error('❌ Error message:', error.message);
+      
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        toast.error('Non autorisé: Vous devez être connecté en tant qu\'admin ou superviseur');
+      } else {
+        toast.error(`Erreur: ${error.response?.data?.message || error.message || 'Erreur lors du chargement des données'}`);
+      }
+      
       // S'assurer que les états sont des tableaux même en cas d'erreur
       setEvents([]);
       setAgents([]);
