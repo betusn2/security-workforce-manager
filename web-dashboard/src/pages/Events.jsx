@@ -1134,9 +1134,22 @@ const Events = () => {
       }
 
       const response = await eventsAPI.getAll(params);
-      setEvents(response.data.data.events);
+      console.log('📅 Events - API Response:', response.data);
+      
+      // CORRECTION: API retourne {data: {events: [...], pagination}}
+      const eventsData = response.data?.data?.events || response.data?.events || response.data?.data || [];
+      const eventsArray = Array.isArray(eventsData) ? eventsData : [];
+      
+      console.log('📅 Events - Événements chargés:', eventsArray.length);
+      setEvents(eventsArray);
     } catch (error) {
-      toast.error('Erreur lors du chargement des événements');
+      console.error('❌ Erreur chargement événements:', error);
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        toast.error('Non autorisé: Vous devez être connecté');
+      } else {
+        toast.error(`Erreur: ${error.response?.data?.message || 'Erreur lors du chargement des événements'}`);
+      }
+      setEvents([]);
     } finally {
       setLoading(false);
     }

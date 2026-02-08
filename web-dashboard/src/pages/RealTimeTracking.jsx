@@ -202,15 +202,23 @@ const RealTimeTracking = () => {
 
   const loadEvents = async () => {
     try {
+      console.log('🔄 Chargement des événements pour tracking...');
       // Charger événements actifs (en cours) ET scheduled (futurs)
       const response = await api.get('/events?limit=100');
-      const eventsData = Array.isArray(response.data.data) 
-        ? response.data.data 
-        : (Array.isArray(response.data) ? response.data : []);
+      console.log('✅ API Response:', response);
+      console.log('📦 response.data:', response.data);
+      
+      // CORRECTION: L'API retourne {success: true, data: {events: [...], pagination: {...}}}
+      const eventsData = response.data?.data?.events || response.data?.events || response.data?.data || response.data || [];
+      console.log('📅 Events Data extrait:', eventsData);
+      console.log('📊 Type:', Array.isArray(eventsData) ? 'Array' : typeof eventsData);
+      
+      // S'assurer que c'est un tableau
+      const eventsArray = Array.isArray(eventsData) ? eventsData : [];
       
       // Filtrer pour garder seulement les événements en cours et futurs
       const now = new Date();
-      const relevantEvents = eventsData.filter(event => {
+      const relevantEvents = eventsArray.filter(event => {
         const endDate = new Date(event.endDate);
         // Garder si événement pas encore terminé (endDate dans le futur)
         return endDate > now;
@@ -220,8 +228,8 @@ const RealTimeTracking = () => {
       });
       
       // Debug: Afficher événements EN COURS (status = 'active')
-      const inProgressEvents = eventsData.filter(e => e.status === 'active');
-      console.log('🗺️ Tracking - Tous les événements:', eventsData.length);
+      const inProgressEvents = eventsArray.filter(e => e.status === 'active');
+      console.log('🗺️ Tracking - Tous les événements:', eventsArray.length);
       console.log('🗺️ Tracking - Événements EN COURS (status=active):', inProgressEvents.length, inProgressEvents);
       console.log('🗺️ Tracking - Événements affichés (futurs+en cours):', relevantEvents.length);
       
@@ -233,7 +241,14 @@ const RealTimeTracking = () => {
       }
     } catch (error) {
       console.error('❌ Erreur chargement événements:', error);
-      toast.error('Erreur lors du chargement des événements');
+      console.error('❌ Error response:', error.response);
+      console.error('❌ Error message:', error.message);
+      
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        toast.error('Non autorisé: Vous devez être connecté');
+      } else {
+        toast.error(`Erreur: ${error.response?.data?.message || error.message || 'Erreur lors du chargement des événements'}`);
+      }
       setEvents([]); // S'assurer que events est toujours un tableau
     }
   };

@@ -48,12 +48,16 @@ const DashboardEnhanced = () => {
         usersAPI.getAll()
       ]);
 
-      const eventsData = eventsRes.data.data || [];
-      const usersData = usersRes.data.data || [];
+      // CORRECTION: API retourne {data: {events/users: [...], pagination}}
+      const eventsData = eventsRes.data?.data?.events || eventsRes.data?.events || eventsRes.data?.data || [];
+      const usersData = usersRes.data?.data?.users || usersRes.data?.users || usersRes.data?.data || [];
 
       // S'assurer que les données sont des tableaux
       const eventsArray = Array.isArray(eventsData) ? eventsData : [];
       const usersArray = Array.isArray(usersData) ? usersData : [];
+      
+      console.log('📊 Dashboard - Événements chargés:', eventsArray.length);
+      console.log('📊 Dashboard - Utilisateurs chargés:', usersArray.length);
 
       setEvents(eventsArray);
       setAgents(usersArray);
