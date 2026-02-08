@@ -358,7 +358,7 @@ const EventDetails = () => {
               </p>
               <p className="text-sm text-gray-600">
                 <FiClock className="inline mr-1" size={14} />
-                {format(new Date(event.startDate), 'HH:mm', { locale: fr })} - {format(new Date(event.endDate), 'HH:mm', { locale: fr })}
+                {event.checkInTime?.substring(0, 5) || '00:00'} - {event.checkOutTime?.substring(0, 5) || '00:00'}
               </p>
             </div>
           </div>
