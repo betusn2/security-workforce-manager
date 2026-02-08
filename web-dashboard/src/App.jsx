@@ -15,6 +15,7 @@ import AdminLogs from './pages/AdminLogs';
 import AdminDatabaseBackup from './pages/AdminDatabaseBackup';
 import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
+import UsersEnhanced from './pages/UsersEnhanced';
 import Events from './pages/Events';
 import Attendance from './pages/Attendance';
 import AttendanceVerification from './pages/AttendanceVerification';
@@ -126,7 +127,7 @@ function App() {
           path="/users"
           element={
             <ProtectedRoute roles={['admin', 'supervisor']}>
-              <Users />
+              <UsersEnhanced />
             </ProtectedRoute>
           }
         />
