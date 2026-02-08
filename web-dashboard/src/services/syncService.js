@@ -23,7 +23,7 @@ class SyncService {
   /**
    * Se connecter au serveur Socket.IO
    */
-  connect(userId, rooms = []) {
+  connect(userId, rooms = [], eventId = null) {
     if (this.socket?.connected) {
       console.log('⚠️ Déjà connecté au serveur de synchronisation');
       return;
@@ -31,8 +31,9 @@ class SyncService {
 
     this.userId = userId;
     this.rooms = new Set(rooms);
+    this.eventId = eventId; // 🔥 Stocker eventId
 
-    console.log('🔗 Tentative de connexion Socket.IO:', SOCKET_URL);
+    console.log('🔗 Tentative de connexion Socket.IO:', SOCKET_URL, { userId, eventId });
 
     try {
       this.socket = io(SOCKET_URL, {
@@ -49,18 +50,26 @@ class SyncService {
         console.log('🟢 Connecté au serveur de synchronisation Socket.IO');
         this.isConnected = true;
         this.reconnectAttempts = 0;
-        
-        // Authentification automatique
-        this.socket.emit('auth', {
+
+        // Authentification automatique avec eventId
+        const authPayload = {
           userId: this.userId,
           role: 'user'
-        });
-        
+        };
+
+        // 🔥 AJOUTER eventId si disponible
+        if (this.eventId) {
+          authPayload.eventId = this.eventId;
+          console.log('🔐 Authentification Socket.IO avec eventId:', this.eventId);
+        }
+
+        this.socket.emit('auth', authPayload);
+
         // Rejoindre les rooms
         rooms.forEach(room => {
           this.socket.emit('event:join', room);
         });
-        
+
         this.emit('connected');
       });
 

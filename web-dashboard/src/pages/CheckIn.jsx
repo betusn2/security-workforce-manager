@@ -538,7 +538,12 @@ const CheckIn = () => {
   }, [navigate]);
 
   // 🔄 SYNCHRONISATION WEBSOCKET TEMPS RÉEL
-  const { isConnected } = useSync(user?.id, user ? [`event:all`, user.role === 'supervisor' ? 'supervisor' : 'agent'] : []);
+  // 🔥 Passer selectedEventId pour authentification Socket.IO avec eventId
+  const { isConnected } = useSync(
+    user?.id,
+    user ? [`event:all`, user.role === 'supervisor' ? 'supervisor' : 'agent'] : [],
+    selectedEventId // 🔥 CRITICAL: Envoyer eventId pour que le backend puisse broadcaster dans la bonne room
+  );
 
   // Afficher l'état de connexion
   useEffect(() => {

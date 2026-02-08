@@ -9,16 +9,25 @@ import syncService from '../services/syncService';
 /**
  * Hook principal pour la synchronisation
  */
-export const useSync = (userId, rooms = []) => {
+export const useSync = (userId, rooms = [], eventId = null) => {
   const [isConnected, setIsConnected] = useState(false);
-  const hasConnectedRef = useRef(false);
+  const prevEventIdRef = useRef(null);
 
   useEffect(() => {
-    if (!userId || hasConnectedRef.current) return;
+    if (!userId) return;
 
-    // Se connecter
-    syncService.connect(userId, rooms);
-    hasConnectedRef.current = true;
+    // 🔥 Si eventId change, déconnecter d'abord
+    if (prevEventIdRef.current !== null && prevEventIdRef.current !== eventId) {
+      console.log('🔄 EventId changé, reconnexion Socket.IO...', {
+        ancien: prevEventIdRef.current,
+        nouveau: eventId
+      });
+      syncService.disconnect();
+    }
+
+    // Se connecter avec eventId
+    syncService.connect(userId, rooms, eventId);
+    prevEventIdRef.current = eventId;
 
     // Écouter les événements de connexion
     const unsubConnected = syncService.on('connected', () => {
@@ -34,9 +43,9 @@ export const useSync = (userId, rooms = []) => {
       unsubConnected();
       unsubDisconnected();
       syncService.disconnect();
-      hasConnectedRef.current = false;
+      prevEventIdRef.current = null;
     };
-  }, [userId, rooms.join(',')]);
+  }, [userId, rooms.join(','), eventId]);
 
   return {
     isConnected,
