@@ -415,7 +415,7 @@ const EventDetails = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {assignments.map((assignment) => {
-                  const agentAttendance = attendance.find(a => a.userId === assignment.agentId);
+                  const agentAttendance = attendance.find(a => a.agentId === assignment.agentId);
                   return (
                     <tr key={assignment.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
