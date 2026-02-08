@@ -105,11 +105,14 @@ const RealTimeTracking = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [agentHistory, setAgentHistory] = useState([]);
+  const [allUsers, setAllUsers] = useState([]); // NOUVEAU: Tous les utilisateurs (agents + responsables)
   const [filters, setFilters] = useState({
     showActive: true,
     showOutside: true,
     showCompleted: false,
-    showLowBattery: true
+    showLowBattery: true,
+    showAgents: true, // NOUVEAU
+    showSupervisors: true // NOUVEAU
   });
   const [mapCenter, setMapCenter] = useState([33.5731, -7.5898]); // Casablanca par défaut
   const [mapZoom, setMapZoom] = useState(13);
@@ -241,8 +244,13 @@ const RealTimeTracking = () => {
     }
   };
 
-  // Filtrer les agents
+  // Filtrer les agents (inclure agents ET superviseurs)
   const filteredAgents = Array.isArray(agents) ? agents.filter(agent => {
+    // Filtre par rôle
+    if (!filters.showAgents && agent.user?.role === 'agent') return false;
+    if (!filters.showSupervisors && agent.user?.role === 'supervisor') return false;
+    
+    // Filtre par statut
     if (!filters.showActive && agent.status === 'active') return false;
     if (!filters.showOutside && agent.status === 'outside_geofence') return false;
     if (!filters.showCompleted && agent.status === 'completed') return false;
@@ -250,12 +258,14 @@ const RealTimeTracking = () => {
     return true;
   }) : [];
 
-  // Statistiques
+  // Statistiques (agents + superviseurs)
   const stats = {
     total: Array.isArray(agents) ? agents.length : 0,
     active: Array.isArray(agents) ? agents.filter(a => a.status === 'active').length : 0,
     outside: Array.isArray(agents) ? agents.filter(a => a.status === 'outside_geofence').length : 0,
-    lowBattery: Array.isArray(agents) ? agents.filter(a => a.batteryLevel < 20).length : 0
+    lowBattery: Array.isArray(agents) ? agents.filter(a => a.batteryLevel < 20).length : 0,
+    agentsCount: Array.isArray(agents) ? agents.filter(a => a.user?.role === 'agent').length : 0,
+    supervisorsCount: Array.isArray(agents) ? agents.filter(a => a.user?.role === 'supervisor').length : 0
   };
 
   return (
@@ -316,50 +326,94 @@ const RealTimeTracking = () => {
         </div>
 
         {/* Statistiques */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mt-4">
+          <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-blue-700 font-medium">Total</p>
+                <p className="text-xl font-bold text-blue-900">{stats.total}</p>
+              </div>
+              <FiUsers className="text-2xl text-blue-600" />
+            </div>
+          </div>
+
+          <div className="bg-purple-50 p-3 rounded-lg border border-purple-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-purple-700 font-medium">Agents</p>
+                <p className="text-xl font-bold text-purple-900">{stats.agentsCount}</p>
+              </div>
+              <FiUsers className="text-2xl text-purple-600" />
+            </div>
+          </div>
+
+          <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-indigo-700 font-medium">Responsables</p>
+                <p className="text-xl font-bold text-indigo-900">{stats.supervisorsCount}</p>
+              </div>
+              <FiZap className="text-2xl text-indigo-600" />
+            </div>
+          </div>
+          
           <div className="bg-green-50 p-3 rounded-lg border border-green-200">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-green-700 font-medium">Actifs</p>
-                <p className="text-2xl font-bold text-green-900">{stats.active}</p>
+                <p className="text-xs text-green-700 font-medium">Actifs</p>
+                <p className="text-xl font-bold text-green-900">{stats.active}</p>
               </div>
-              <FiCheckCircle className="text-3xl text-green-600" />
+              <FiCheckCircle className="text-2xl text-green-600" />
             </div>
           </div>
 
           <div className="bg-red-50 p-3 rounded-lg border border-red-200">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-red-700 font-medium">Hors périmètre</p>
-                <p className="text-2xl font-bold text-red-900">{stats.outside}</p>
+                <p className="text-xs text-red-700 font-medium">Hors périmètre</p>
+                <p className="text-xl font-bold text-red-900">{stats.outside}</p>
               </div>
-              <FiAlertTriangle className="text-3xl text-red-600" />
+              <FiAlertTriangle className="text-2xl text-red-600" />
             </div>
           </div>
 
           <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-orange-700 font-medium">Batterie faible</p>
-                <p className="text-2xl font-bold text-orange-900">{stats.lowBattery}</p>
+                <p className="text-xs text-orange-700 font-medium">Batterie faible</p>
+                <p className="text-xl font-bold text-orange-900">{stats.lowBattery}</p>
               </div>
-              <FiBattery className="text-3xl text-orange-600" />
-            </div>
-          </div>
-
-          <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-blue-700 font-medium">Total</p>
-                <p className="text-2xl font-bold text-blue-900">{stats.total}</p>
-              </div>
-              <FiUsers className="text-3xl text-blue-600" />
+              <FiBattery className="text-2xl text-orange-600" />
             </div>
           </div>
         </div>
 
         {/* Filtres */}
         <div className="flex flex-wrap gap-2 mt-4">
+          <button
+            onClick={() => setFilters(f => ({ ...f, showAgents: !f.showAgents }))}
+            className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+              filters.showAgents
+                ? 'bg-purple-600 text-white'
+                : 'bg-gray-200 text-gray-600'
+            }`}
+          >
+            <FiUsers className="inline mr-1" />
+            Agents
+          </button>
+
+          <button
+            onClick={() => setFilters(f => ({ ...f, showSupervisors: !f.showSupervisors }))}
+            className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+              filters.showSupervisors
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-200 text-gray-600'
+            }`}
+          >
+            <FiZap className="inline mr-1" />
+            Responsables
+          </button>
+          
           <button
             onClick={() => setFilters(f => ({ ...f, showActive: !f.showActive }))}
             className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
