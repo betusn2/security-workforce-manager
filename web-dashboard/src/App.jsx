@@ -14,6 +14,7 @@ import AdminNotifications from './pages/AdminNotifications';
 import AdminLogs from './pages/AdminLogs';
 import AdminDatabaseBackup from './pages/AdminDatabaseBackup';
 import Dashboard from './pages/Dashboard';
+import DashboardEnhanced from './pages/DashboardEnhanced';
 import Users from './pages/Users';
 import UsersEnhanced from './pages/UsersEnhanced';
 import Events from './pages/Events';
@@ -111,7 +112,7 @@ function App() {
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <DashboardEnhanced />
             </ProtectedRoute>
           }
         />
