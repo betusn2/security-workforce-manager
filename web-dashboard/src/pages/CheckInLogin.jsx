@@ -42,6 +42,7 @@ const CheckInLogin = () => {
   // États pour le tracking GPS
   const [currentLocation, setCurrentLocation] = useState(null);
   const [batteryLevel, setBatteryLevel] = useState(null);
+  const [isSocketAuthenticated, setIsSocketAuthenticated] = useState(false);
 
   useEffect(() => {
     // Récupérer les infos de l'appareil
@@ -110,10 +111,15 @@ const CheckInLogin = () => {
     
     socketRef.current.on('auth:success', (data) => {
       console.log('✅ Authentification Socket.IO réussie:', data);
+      setIsSocketAuthenticated(true);
+      // Démarrer l'envoi GPS après authentification réussie
+      console.log('🚀 Démarrage envoi GPS après authentification...');
     });
     
     socketRef.current.on('auth:error', (error) => {
       console.error('❌ Erreur auth Socket.IO:', error);
+      setIsSocketAuthenticated(false);
+      toast.error(`Erreur auth Socket.IO: ${error.message}`, { autoClose: 5000 });
     });
     
     socketRef.current.on('tracking:position_ack', (data) => {
@@ -130,6 +136,7 @@ const CheckInLogin = () => {
 
     socketRef.current.on('disconnect', () => {
       console.log('🔌 Socket.IO déconnecté');
+      setIsSocketAuthenticated(false);
     });
   };
 
@@ -222,6 +229,12 @@ const CheckInLogin = () => {
       socketRef.current.connect();
       return;
     }
+
+    // CRITIQUE: Vérifier que l'authentification Socket.IO est terminée
+    if (!isSocketAuthenticated) {
+      console.log('⏳ En attente authentification Socket.IO...');
+      return;
+    }
     
     if (location) {
       const data = {
@@ -240,7 +253,8 @@ const CheckInLogin = () => {
         lat: location.latitude,
         lng: location.longitude,
         battery: batteryLevel,
-        connected: socketRef.current.connected
+        connected: socketRef.current.connected,
+        authenticated: isSocketAuthenticated
       });
     }
   };

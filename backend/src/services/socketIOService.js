@@ -150,11 +150,28 @@ class SocketIOService {
    */
   async handlePositionUpdate(socket, data) {
     try {
+      console.log('📥 REÇU location-update:', {
+        socketId: socket.id,
+        data: {
+          userId: data.userId,
+          lat: data.latitude,
+          lng: data.longitude,
+          battery: data.batteryLevel
+        }
+      });
+
       const connection = this.connections.get(socket.id);
       if (!connection) {
+        console.log('❌ Socket non authentifié:', socket.id);
         socket.emit('tracking:error', { message: 'Non authentifié' });
         return;
       }
+
+      console.log('✅ Connection trouvée:', {
+        userId: connection.userId,
+        eventId: connection.eventId,
+        role: connection.role
+      });
       
       const { latitude, longitude, accuracy, speed, heading, batteryLevel, isMoving } = data;
       const { userId, userIdentifier } = connection;
@@ -273,7 +290,16 @@ class SocketIOService {
       
       // Diffuser la position à tous les superviseurs/admins de l'événement
       if (connection.eventId) {
-        this.io.to(`event:${connection.eventId}`).emit('tracking:position_update', positionData);
+        const roomName = `event:${connection.eventId}`;
+        console.log('📡 BROADCAST position vers room:', roomName, {
+          userId: user.id,
+          lat: latitude,
+          lng: longitude,
+          battery: positionData.batteryLevel
+        });
+        this.io.to(roomName).emit('tracking:position_update', positionData);
+      } else {
+        console.log('⚠️ Pas d\'eventId pour broadcaster la position');
       }
       
       // Confirmer la réception
@@ -386,13 +412,22 @@ class SocketIOService {
    */
   joinEvent(socket, eventId) {
     const connection = this.connections.get(socket.id);
-    if (!connection) return;
+    if (!connection) {
+      console.log('⚠️ Tentative join-event sans connexion:', socket.id);
+      return;
+    }
     
-    socket.join(`event:${eventId}`);
-    connection.rooms.add(`event:${eventId}`);
+    const roomName = `event:${eventId}`;
+    socket.join(roomName);
+    connection.rooms.add(roomName);
     connection.eventId = eventId;
     
-    console.log(`🎯 Client ${socket.id} a rejoint l'événement ${eventId}`);
+    console.log(`🎯 Client ${socket.id} a rejoint room: ${roomName}`, {
+      userId: connection.userId,
+      role: connection.role,
+      eventId: connection.eventId,
+      rooms: Array.from(connection.rooms)
+    });
   }
 
   /**

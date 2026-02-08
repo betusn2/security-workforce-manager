@@ -65,12 +65,13 @@ const EventDetails = () => {
     });
 
     socketRef.current.on('connect', () => {
-      console.log('🔌 Socket.IO connecté pour suivi temps réel');
+      console.log('🔌 Socket.IO connecté pour suivi temps réel, eventId:', id);
       setSocketConnected(true);
       setSocketError(null);
       setLastSync(new Date());
       
       // Rejoindre la room de l'événement
+      console.log('🚪 Joining rooms pour eventId:', id);
       socketRef.current.emit('join-event', id);
       socketRef.current.emit('event:join', id);
       socketRef.current.emit('tracking:subscribe', id);
@@ -86,19 +87,37 @@ const EventDetails = () => {
 
     // Écouter les mises à jour de localisation depuis le backend
     socketRef.current.on('tracking:position_update', (data) => {
-      console.log('📍 Position GPS reçue (tracking:position_update):', data);
-      setAgentLocations(prev => ({
-        ...prev,
-        [data.userId]: {
-          lat: data.latitude,
-          lng: data.longitude,
-          battery: data.batteryLevel || 100,
-          accuracy: data.accuracy,
-          timestamp: new Date(),
-          isOnline: true
-        }
-      }));
-      setOnlineAgents(prev => new Set([...prev, data.userId]));
+      console.log('📍 Position GPS reçue (tracking:position_update):', {
+        userId: data.userId,
+        lat: data.latitude,
+        lng: data.longitude,
+        battery: data.batteryLevel,
+        timestamp: data.timestamp,
+        fullData: data
+      });
+      
+      setAgentLocations(prev => {
+        const updated = {
+          ...prev,
+          [data.userId]: {
+            lat: data.latitude,
+            lng: data.longitude,
+            battery: data.batteryLevel || 100,
+            accuracy: data.accuracy,
+            timestamp: new Date(),
+            isOnline: true
+          }
+        };
+        console.log('🗺️ AgentLocations MAJ:', updated);
+        return updated;
+      });
+      
+      setOnlineAgents(prev => {
+        const updated = new Set([...prev, data.userId]);
+        console.log('👥 OnlineAgents MAJ:', Array.from(updated));
+        return updated;
+      });
+      
       setLastSync(new Date());
     });
     
