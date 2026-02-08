@@ -47,14 +47,22 @@ const UsersEnhanced = () => {
   const fetchUsers = async () => {
     setLoading(true);
     try {
+      console.log('🔄 Chargement des utilisateurs...');
       const response = await usersAPI.getAll();
-      console.log('API Response:', response);
+      console.log('✅ API Response complète:', response);
+      console.log('📦 response.data:', response.data);
+      
       const userData = response.data.data || response.data || [];
-      console.log('User Data:', userData);
+      console.log('👥 User Data extrait:', userData);
+      console.log('📊 Type de userData:', Array.isArray(userData) ? 'Array' : typeof userData);
       
       // S'assurer que userData est un tableau
       const usersArray = Array.isArray(userData) ? userData : [];
-      console.log('Users Array:', usersArray.length, 'utilisateurs');
+      console.log('✅ Users Array final:', usersArray.length, 'utilisateurs');
+      
+      if (usersArray.length > 0) {
+        console.log('👤 Premier utilisateur:', usersArray[0]);
+      }
       
       setUsers(usersArray);
       
@@ -68,8 +76,10 @@ const UsersEnhanced = () => {
         unassignedAgents: usersArray.filter(u => u.role === 'agent' && !u.supervisorId).length
       });
     } catch (error) {
-      console.error('Erreur chargement utilisateurs:', error);
-      toast.error('Erreur lors du chargement des utilisateurs');
+      console.error('❌ Erreur chargement utilisateurs:', error);
+      console.error('❌ Error response:', error.response);
+      console.error('❌ Error message:', error.message);
+      toast.error(`Erreur: ${error.response?.data?.message || error.message || 'Erreur lors du chargement des utilisateurs'}`);
       setUsers([]); // S'assurer que users est toujours un tableau
     } finally {
       setLoading(false);
