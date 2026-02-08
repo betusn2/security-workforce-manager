@@ -35,6 +35,8 @@ import SupervisorAgents from './pages/SupervisorAgents';
 import CreationHistory from './pages/CreationHistory';
 import AgentTrackingMap from './pages/AgentTrackingMap';
 import RealTimeTracking from './pages/RealTimeTracking';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import About from './pages/About';
 
 // Smart redirect component based on user role
 const SmartRedirect = () => {
@@ -300,6 +302,10 @@ function App() {
             <SmartRedirect />
           } 
         />
+
+        {/* Public pages - Politique de confidentialité et À propos */}
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/about" element={<About />} />
 
         {/* 404 */}
         <Route
