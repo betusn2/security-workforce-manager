@@ -52,6 +52,16 @@ const CheckInLogin = () => {
     };
     loadDeviceInfo();
     
+    // Vérifier si utilisateur déjà connecté
+    const checkInUser = localStorage.getItem('checkInUser');
+    const token = localStorage.getItem('checkInToken') || localStorage.getItem('token');
+    
+    if (checkInUser && token) {
+      const user = JSON.parse(checkInUser);
+      // Initialiser Socket.IO pour l'utilisateur déjà connecté
+      initializeSocket(user.id);
+    }
+    
     // Démarrer le tracking GPS et batterie
     startLocationTracking();
     getBatteryLevel();
@@ -68,6 +78,8 @@ const CheckInLogin = () => {
   const initializeSocket = (userId) => {
     const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://security-guard-backend.onrender.com';
     const token = localStorage.getItem('checkInToken') || localStorage.getItem('token');
+    const validEvents = JSON.parse(localStorage.getItem('validEvents') || '[]');
+    const eventId = validEvents[0]?.id || null;
     
     if (socketRef.current) {
       socketRef.current.disconnect();
@@ -80,6 +92,40 @@ const CheckInLogin = () => {
 
     socketRef.current.on('connect', () => {
       console.log('🔌 Socket.IO connecté pour tracking GPS');
+      
+      // S'authentifier avec userId et eventId
+      socketRef.current.emit('auth', {
+        userId: userId,
+        role: 'agent',
+        eventId: eventId,
+        token: token
+      });
+      
+      // Rejoindre la room de l'événement
+      if (eventId) {
+        socketRef.current.emit('event:join', eventId);
+        socketRef.current.emit('tracking:subscribe', eventId);
+      }
+    });
+    
+    socketRef.current.on('auth:success', (data) => {
+      console.log('✅ Authentification Socket.IO réussie:', data);
+    });
+    
+    socketRef.current.on('auth:error', (error) => {
+      console.error('❌ Erreur auth Socket.IO:', error);
+    });
+    
+    socketRef.current.on('tracking:position_ack', (data) => {
+      console.log('✅ Position confirmée par serveur:', data);
+    });
+    
+    socketRef.current.on('tracking:error', (error) => {
+      console.error('❌ Erreur tracking:', error);
+    });
+    
+    socketRef.current.on('tracking:disabled', (data) => {
+      console.warn('⏸️ Tracking désactivé:', data.message);
     });
 
     socketRef.current.on('disconnect', () => {
@@ -158,19 +204,44 @@ const CheckInLogin = () => {
 
   // Envoyer la mise à jour de localisation via Socket.IO
   const sendLocationUpdate = (location) => {
-    if (socketRef.current && socketRef.current.connected && location) {
-      const user = JSON.parse(localStorage.getItem('checkInUser') || '{}');
-      
-      socketRef.current.emit('location-update', {
+    const user = JSON.parse(localStorage.getItem('checkInUser') || '{}');
+    
+    if (!user.id) {
+      console.log('⚠️ Utilisateur non connecté, position non envoyée');
+      return;
+    }
+    
+    if (!socketRef.current) {
+      console.log('⚠️ Socket.IO non initialisé');
+      initializeSocket(user.id);
+      return;
+    }
+    
+    if (!socketRef.current.connected) {
+      console.log('⚠️ Socket.IO non connecté, reconnexion...');
+      socketRef.current.connect();
+      return;
+    }
+    
+    if (location) {
+      const data = {
         userId: user.id,
         latitude: location.latitude,
         longitude: location.longitude,
         accuracy: location.accuracy,
         batteryLevel: batteryLevel || 100,
         timestamp: new Date().toISOString()
-      });
+      };
       
-      console.log('📍 Position envoyée:', location);
+      socketRef.current.emit('location-update', data);
+      
+      console.log('📍 Position envoyée via Socket.IO:', {
+        userId: user.id,
+        lat: location.latitude,
+        lng: location.longitude,
+        battery: batteryLevel,
+        connected: socketRef.current.connected
+      });
     }
   };
 

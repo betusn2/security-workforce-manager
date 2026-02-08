@@ -63,17 +63,36 @@ const EventDetails = () => {
       console.log('🔌 Socket.IO connecté pour suivi temps réel');
       // Rejoindre la room de l'événement
       socketRef.current.emit('join-event', id);
+      socketRef.current.emit('event:join', id);
+      socketRef.current.emit('tracking:subscribe', id);
     });
 
-    // Écouter les mises à jour de localisation
-    socketRef.current.on('location-update', (data) => {
-      console.log('📍 Position GPS reçue:', data);
+    // Écouter les mises à jour de localisation depuis le backend
+    socketRef.current.on('tracking:position_update', (data) => {
+      console.log('📍 Position GPS reçue (tracking:position_update):', data);
       setAgentLocations(prev => ({
         ...prev,
         [data.userId]: {
           lat: data.latitude,
           lng: data.longitude,
-          battery: data.batteryLevel,
+          battery: data.batteryLevel || 100,
+          accuracy: data.accuracy,
+          timestamp: new Date(),
+          isOnline: true
+        }
+      }));
+      setOnlineAgents(prev => new Set([...prev, data.userId]));
+    });
+    
+    // Supporter aussi l'ancien format location-update
+    socketRef.current.on('location-update', (data) => {
+      console.log('📍 Position GPS reçue (location-update):', data);
+      setAgentLocations(prev => ({
+        ...prev,
+        [data.userId]: {
+          lat: data.latitude,
+          lng: data.longitude,
+          battery: data.batteryLevel || 100,
           accuracy: data.accuracy,
           timestamp: new Date(),
           isOnline: true

@@ -39,6 +39,7 @@ class SocketIOService {
       
       // Tracking GPS
       socket.on('tracking:position', (data) => this.handlePositionUpdate(socket, data));
+      socket.on('location-update', (data) => this.handlePositionUpdate(socket, data)); // Support alias
       socket.on('tracking:subscribe', (eventId) => this.subscribeToTracking(socket, eventId));
       socket.on('tracking:unsubscribe', (eventId) => this.unsubscribeFromTracking(socket, eventId));
       
