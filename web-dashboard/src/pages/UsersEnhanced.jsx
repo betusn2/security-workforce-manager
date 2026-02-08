@@ -33,6 +33,11 @@ const UsersEnhanced = () => {
     unassignedAgents: 0
   });
 
+  // Modal états
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+
   // Charger les utilisateurs
   useEffect(() => {
     fetchUsers();
@@ -65,6 +70,36 @@ const UsersEnhanced = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Fonctions pour gérer les modals
+  const openCreateModal = () => {
+    setSelectedUser(null);
+    setShowCreateModal(true);
+  };
+
+  const openEditModal = (user) => {
+    setSelectedUser(user);
+    setShowEditModal(true);
+  };
+
+  const handleDelete = async (userId) => {
+    if (window.confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?')) {
+      try {
+        await usersAPI.delete(userId);
+        toast.success('Utilisateur supprimé avec succès');
+        fetchUsers();
+      } catch (error) {
+        console.error('Erreur suppression utilisateur:', error);
+        toast.error('Erreur lors de la suppression');
+      }
+    }
+  };
+
+  const handleSaveUser = () => {
+    fetchUsers();
+    setShowCreateModal(false);
+    setShowEditModal(false);
   };
 
   // Filtrer et trier les utilisateurs
@@ -378,18 +413,21 @@ const UsersEnhanced = () => {
         {/* Actions */}
         <div className="flex gap-2">
           <button
+            onClick={() => openEditModal(user)}
             className="flex-1 py-2 px-3 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-100 transition-colors flex items-center justify-center text-sm font-medium"
           >
             <FiEye className="mr-1" size={16} />
             Voir
           </button>
           <button
+            onClick={() => openEditModal(user)}
             className="flex-1 py-2 px-3 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-center text-sm font-medium"
           >
             <FiEdit2 className="mr-1" size={16} />
             Modifier
           </button>
           <button
+            onClick={() => handleDelete(user.id)}
             className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
           >
             <FiTrash2 size={16} />
@@ -444,15 +482,24 @@ const UsersEnhanced = () => {
             <FiMoreVertical size={18} className="text-gray-400" />
           </button>
           <div className="absolute right-0 mt-1 w-48 bg-white rounded-xl shadow-xl border border-gray-200 hidden group-hover:block z-10">
-            <button className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 flex items-center">
+            <button 
+              onClick={() => openEditModal(user)}
+              className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 flex items-center"
+            >
               <FiEye className="mr-3 text-blue-600" size={16} />
               Voir détails
             </button>
-            <button className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 flex items-center border-t">
+            <button 
+              onClick={() => openEditModal(user)}
+              className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 flex items-center border-t"
+            >
               <FiEdit2 className="mr-3 text-green-600" size={16} />
               Modifier
             </button>
-            <button className="w-full px-4 py-3 text-left text-sm hover:bg-red-50 flex items-center text-red-600 border-t">
+            <button 
+              onClick={() => handleDelete(user.id)}
+              className="w-full px-4 py-3 text-left text-sm hover:bg-red-50 flex items-center text-red-600 border-t"
+            >
               <FiTrash2 className="mr-3" size={16} />
               Supprimer
             </button>
@@ -499,7 +546,10 @@ const UsersEnhanced = () => {
                 {filteredUsers.length} utilisateur{filteredUsers.length > 1 ? 's' : ''}
               </p>
             </div>
-            <button className="lg:hidden p-3 bg-primary-600 text-white rounded-xl shadow-lg hover:bg-primary-700 transition-colors">
+            <button 
+              onClick={openCreateModal}
+              className="lg:hidden p-3 bg-primary-600 text-white rounded-xl shadow-lg hover:bg-primary-700 transition-colors"
+            >
               <FiPlus size={20} />
             </button>
           </div>
@@ -678,15 +728,213 @@ const UsersEnhanced = () => {
       </div>
 
       {/* Floating Action Button - Mobile */}
-      <button className="lg:hidden fixed bottom-6 right-6 w-14 h-14 bg-primary-600 text-white rounded-full shadow-2xl hover:bg-primary-700 transition-all flex items-center justify-center z-50 hover:scale-110">
+      <button 
+        onClick={openCreateModal}
+        className="lg:hidden fixed bottom-6 right-6 w-14 h-14 bg-primary-600 text-white rounded-full shadow-2xl hover:bg-primary-700 transition-all flex items-center justify-center z-50 hover:scale-110"
+      >
         <FiPlus size={24} />
       </button>
 
       {/* Desktop Add Button */}
-      <button className="hidden lg:flex fixed bottom-8 right-8 px-6 py-3 bg-primary-600 text-white rounded-xl shadow-xl hover:bg-primary-700 transition-all items-center z-50 hover:scale-105">
+      <button 
+        onClick={openCreateModal}
+        className="hidden lg:flex fixed bottom-8 right-8 px-6 py-3 bg-primary-600 text-white rounded-xl shadow-xl hover:bg-primary-700 transition-all items-center z-50 hover:scale-105"
+      >
         <FiPlus className="mr-2" size={20} />
         Nouvel utilisateur
       </button>
+
+      {/* Modal Créer/Modifier Utilisateur */}
+      {(showCreateModal || showEditModal) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+              <h2 className="text-xl font-bold text-gray-900">
+                {selectedUser ? 'Modifier l\'utilisateur' : 'Nouvel utilisateur'}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setShowEditModal(false);
+                  setSelectedUser(null);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <FiX size={24} />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const data = {
+                  firstName: formData.get('firstName'),
+                  lastName: formData.get('lastName'),
+                  email: formData.get('email'),
+                  phone: formData.get('phone'),
+                  cin: formData.get('cin'),
+                  role: formData.get('role'),
+                  status: formData.get('status') || 'active'
+                };
+
+                try {
+                  if (selectedUser) {
+                    await usersAPI.update(selectedUser.id, data);
+                    toast.success('Utilisateur modifié avec succès');
+                  } else {
+                    data.password = formData.get('password');
+                    await usersAPI.create(data);
+                    toast.success('Utilisateur créé avec succès');
+                  }
+                  handleSaveUser();
+                } catch (error) {
+                  console.error('Erreur:', error);
+                  toast.error(error.response?.data?.message || 'Erreur lors de l\'enregistrement');
+                }
+              }}
+              className="p-6 space-y-4"
+            >
+              {/* Informations de base */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Prénom *
+                  </label>
+                  <input
+                    type="text"
+                    name="firstName"
+                    defaultValue={selectedUser?.firstName || ''}
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nom *
+                  </label>
+                  <input
+                    type="text"
+                    name="lastName"
+                    defaultValue={selectedUser?.lastName || ''}
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    defaultValue={selectedUser?.email || ''}
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Téléphone *
+                  </label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    defaultValue={selectedUser?.phone || ''}
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    CIN
+                  </label>
+                  <input
+                    type="text"
+                    name="cin"
+                    defaultValue={selectedUser?.cin || ''}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  />
+                </div>
+
+                {!selectedUser && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Mot de passe *
+                    </label>
+                    <input
+                      type="password"
+                      name="password"
+                      required
+                      minLength={6}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Rôle *
+                  </label>
+                  <select
+                    name="role"
+                    defaultValue={selectedUser?.role || 'agent'}
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  >
+                    <option value="agent">Agent</option>
+                    <option value="supervisor">Superviseur</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Statut *
+                  </label>
+                  <select
+                    name="status"
+                    defaultValue={selectedUser?.status || 'active'}
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  >
+                    <option value="active">Actif</option>
+                    <option value="inactive">Inactif</option>
+                    <option value="suspended">Suspendu</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setShowEditModal(false);
+                    setSelectedUser(null);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
+                >
+                  {selectedUser ? 'Modifier' : 'Créer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <style jsx>{`
         .hide-scrollbar::-webkit-scrollbar {
