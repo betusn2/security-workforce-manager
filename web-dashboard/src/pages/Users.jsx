@@ -3543,4 +3543,5 @@ const Users = () => {
   );
 };
 
+export { UserModal };
 export default Users;

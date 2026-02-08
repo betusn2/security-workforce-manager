@@ -11,6 +11,7 @@ import { usersAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { UserModal } from './Users';
 
 const UsersEnhanced = () => {
   // États
@@ -747,197 +748,17 @@ const UsersEnhanced = () => {
         Nouvel utilisateur
       </button>
 
-      {/* Modal Créer/Modifier Utilisateur */}
-      {(showCreateModal || showEditModal) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
-              <h2 className="text-xl font-bold text-gray-900">
-                {selectedUser ? 'Modifier l\'utilisateur' : 'Nouvel utilisateur'}
-              </h2>
-              <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setShowEditModal(false);
-                  setSelectedUser(null);
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <FiX size={24} />
-              </button>
-            </div>
-
-            {/* Form */}
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                const data = {
-                  firstName: formData.get('firstName'),
-                  lastName: formData.get('lastName'),
-                  email: formData.get('email'),
-                  phone: formData.get('phone'),
-                  cin: formData.get('cin'),
-                  role: formData.get('role'),
-                  status: formData.get('status') || 'active'
-                };
-
-                try {
-                  if (selectedUser) {
-                    await usersAPI.update(selectedUser.id, data);
-                    toast.success('Utilisateur modifié avec succès');
-                  } else {
-                    data.password = formData.get('password');
-                    await usersAPI.create(data);
-                    toast.success('Utilisateur créé avec succès');
-                  }
-                  handleSaveUser();
-                } catch (error) {
-                  console.error('Erreur:', error);
-                  toast.error(error.response?.data?.message || 'Erreur lors de l\'enregistrement');
-                }
-              }}
-              className="p-6 space-y-4"
-            >
-              {/* Informations de base */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Prénom *
-                  </label>
-                  <input
-                    type="text"
-                    name="firstName"
-                    defaultValue={selectedUser?.firstName || ''}
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nom *
-                  </label>
-                  <input
-                    type="text"
-                    name="lastName"
-                    defaultValue={selectedUser?.lastName || ''}
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email *
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    defaultValue={selectedUser?.email || ''}
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Téléphone *
-                  </label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    defaultValue={selectedUser?.phone || ''}
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    CIN
-                  </label>
-                  <input
-                    type="text"
-                    name="cin"
-                    defaultValue={selectedUser?.cin || ''}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </div>
-
-                {!selectedUser && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Mot de passe *
-                    </label>
-                    <input
-                      type="password"
-                      name="password"
-                      required
-                      minLength={6}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    />
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Rôle *
-                  </label>
-                  <select
-                    name="role"
-                    defaultValue={selectedUser?.role || 'agent'}
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value="agent">Agent</option>
-                    <option value="supervisor">Superviseur</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Statut *
-                  </label>
-                  <select
-                    name="status"
-                    defaultValue={selectedUser?.status || 'active'}
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value="active">Actif</option>
-                    <option value="inactive">Inactif</option>
-                    <option value="suspended">Suspendu</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-3 pt-4 border-t">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    setShowEditModal(false);
-                    setSelectedUser(null);
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
-                >
-                  {selectedUser ? 'Modifier' : 'Créer'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* UserModal - Modal complet avec tous les onglets */}
+      <UserModal
+        isOpen={showCreateModal || showEditModal}
+        onClose={() => {
+          setShowCreateModal(false);
+          setShowEditModal(false);
+          setSelectedUser(null);
+        }}
+        user={selectedUser}
+        onSave={handleSaveUser}
+      />
 
       <style jsx>{`
         .hide-scrollbar::-webkit-scrollbar {
