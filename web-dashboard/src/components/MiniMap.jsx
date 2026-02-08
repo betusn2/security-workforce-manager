@@ -86,6 +86,35 @@ const createTargetIcon = () => L.divIcon({
   className: 'custom-target-icon'
 });
 
+/**
+ * Create a custom agent marker icon with real-time tracking
+ * @param {boolean} isOnline - Whether agent is online
+ * @param {boolean} inPerimeter - Whether agent is in perimeter
+ * @returns {L.DivIcon} Leaflet DivIcon instance
+ */
+const createAgentIcon = (isOnline = false, inPerimeter = true) => {
+  const color = !isOnline ? '#9CA3AF' : (inPerimeter ? '#10B981' : '#EF4444');
+  const pulseClass = isOnline ? 'user_pulse_outer' : '';
+  
+  return L.divIcon({
+    className: 'agent-marker-icon',
+    html: `
+      <div class="user_marker_wrapper">
+        ${isOnline ? `<div class="${pulseClass}"></div>` : ''}
+        <div class="user_marker_circle" style="background: ${color}; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="white">
+            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+          </svg>
+        </div>
+      </div>
+    `,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+    popupAnchor: [0, -20],
+    className: 'custom-agent-icon'
+  });
+};
+
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
@@ -387,11 +416,15 @@ const MiniMap = ({
   targetLat,
   targetLng,
   geoRadius = 100,
+  radius,
   onPositionChange,
   draggable = false,
   className = '',
   height = '300px',
-  events = []
+  events = [],
+  zones = [],
+  agentLocations = {},
+  assignments = []
 }) => {
   const mapRef = useRef(null);
   const [routeData, setRouteData] = useState(null);
@@ -772,6 +805,85 @@ const MiniMap = ({
                 }}
               />
             ))}
+
+            {/* Zone Circles */}
+            {zones && zones.map((zone, idx) => (
+              zone.latitude && zone.longitude && (
+                <Circle
+                  key={`zone-${idx}`}
+                  center={[parseFloat(zone.latitude), parseFloat(zone.longitude)]}
+                  radius={parseInt(zone.radius) || 500}
+                  pathOptions={{
+                    color: '#10B981',
+                    fillColor: '#D1FAE5',
+                    fillOpacity: 0.15,
+                    weight: 2,
+                    dashArray: '10, 5',
+                    opacity: 0.6
+                  }}
+                />
+              )
+            ))}
+
+            {/* Event Radius Circle */}
+            {hasValidPosition && radius && (
+              <Circle
+                center={center}
+                radius={parseInt(radius)}
+                pathOptions={{
+                  color: '#3B82F6',
+                  fillColor: '#DBEAFE',
+                  fillOpacity: 0.1,
+                  weight: 2,
+                  dashArray: '8, 6',
+                  opacity: 0.7
+                }}
+              />
+            )}
+
+            {/* Real-time Agent Markers */}
+            {Object.entries(agentLocations).map(([agentId, location]) => {
+              if (!location.lat || !location.lng) return null;
+              
+              const assignment = assignments.find(a => a.agentId === agentId);
+              const agentName = assignment?.agent ? `${assignment.agent.firstName} ${assignment.agent.lastName}` : 'Agent';
+              
+              // Calculer si dans périmètre
+              let inPerimeter = true;
+              if (hasValidPosition && radius) {
+                const distance = calculateDistance(
+                  parseFloat(latitude),
+                  parseFloat(longitude),
+                  location.lat,
+                  location.lng
+                );
+                inPerimeter = distance <= parseInt(radius);
+              }
+              
+              return (
+                <Marker
+                  key={`agent-${agentId}`}
+                  position={[location.lat, location.lng]}
+                  icon={createAgentIcon(location.isOnline, inPerimeter)}
+                >
+                  {/* Popup avec informations agent */}
+                  <div className="p-2 text-xs">
+                    <p className="font-bold text-sm mb-1">{agentName}</p>
+                    <p className="text-gray-600">Zone: {assignment?.zone?.name || '-'}</p>
+                    <p className="text-gray-600">Batterie: {location.battery}%</p>
+                    <p className="text-gray-600">
+                      Statut: {location.isOnline ? '🟢 En ligne' : '🔴 Hors ligne'}
+                    </p>
+                    <p className="text-gray-600">
+                      Position: {inPerimeter ? '✅ Dans périmètre' : '⚠️ Hors périmètre'}
+                    </p>
+                    <p className="text-gray-500 text-[10px] mt-1">
+                      Mis à jour: {location.timestamp ? new Date(location.timestamp).toLocaleTimeString('fr-FR') : '-'}
+                    </p>
+                  </div>
+                </Marker>
+              );
+            })}
 
             {/* User Location Marker */}
             {hasValidPosition && (

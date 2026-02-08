@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   FiArrowLeft, FiMapPin, FiClock, FiUsers, FiCalendar, FiEdit2,
   FiTrash2, FiAlertTriangle, FiCheckCircle, FiUserCheck, FiUserX,
   FiActivity, FiShield, FiLayers, FiFlag, FiAlertCircle, FiInfo,
-  FiTrendingUp, FiCopy, FiRepeat
+  FiTrendingUp, FiCopy, FiRepeat, FiBatteryCharging, FiWifi, FiWifiOff, FiNavigation
 } from 'react-icons/fi';
+import io from 'socket.io-client';
 import { eventsAPI, zonesAPI, assignmentsAPI, attendanceAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format, isPast, isFuture, isToday, isTomorrow, differenceInDays, differenceInHours } from 'date-fns';
@@ -22,6 +23,7 @@ const PRIORITY_OPTIONS = [
 const EventDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const socketRef = useRef(null);
 
   const [event, setEvent] = useState(null);
   const [zones, setZones] = useState([]);
@@ -29,12 +31,117 @@ const EventDetails = () => {
   const [attendance, setAttendance] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // États pour le suivi en temps réel
+  const [agentLocations, setAgentLocations] = useState({}); // { agentId: { lat, lng, battery, timestamp, isOnline } }
+  const [onlineAgents, setOnlineAgents] = useState(new Set()); // IDs des agents connectés
 
   useEffect(() => {
     if (id) {
       fetchEventDetails();
+      initializeSocketIO();
     }
+    
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
   }, [id]);
+
+  // Initialiser Socket.IO pour le suivi en temps réel
+  const initializeSocketIO = () => {
+    const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://security-guard-backend.onrender.com';
+    const token = localStorage.getItem('token');
+    
+    socketRef.current = io(BACKEND_URL, {
+      auth: { token },
+      transports: ['websocket', 'polling']
+    });
+
+    socketRef.current.on('connect', () => {
+      console.log('🔌 Socket.IO connecté pour suivi temps réel');
+      // Rejoindre la room de l'événement
+      socketRef.current.emit('join-event', id);
+    });
+
+    // Écouter les mises à jour de localisation
+    socketRef.current.on('location-update', (data) => {
+      console.log('📍 Position GPS reçue:', data);
+      setAgentLocations(prev => ({
+        ...prev,
+        [data.userId]: {
+          lat: data.latitude,
+          lng: data.longitude,
+          battery: data.batteryLevel,
+          accuracy: data.accuracy,
+          timestamp: new Date(),
+          isOnline: true
+        }
+      }));
+      setOnlineAgents(prev => new Set([...prev, data.userId]));
+    });
+
+    // Écouter les connexions/déconnexions
+    socketRef.current.on('agent-online', (agentId) => {
+      setOnlineAgents(prev => new Set([...prev, agentId]));
+    });
+
+    socketRef.current.on('agent-offline', (agentId) => {
+      setOnlineAgents(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(agentId);
+        return newSet;
+      });
+      setAgentLocations(prev => ({
+        ...prev,
+        [agentId]: { ...prev[agentId], isOnline: false }
+      }));
+    });
+
+    socketRef.current.on('disconnect', () => {
+      console.log('🔌 Socket.IO déconnecté');
+    });
+  };
+
+  // Calculer la distance entre deux points GPS (formule Haversine)
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371e3; // Rayon de la Terre en mètres
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // Distance en mètres
+  };
+
+  // Vérifier si l'agent est dans le périmètre
+  const isAgentInPerimeter = (agentId) => {
+    if (!event || !agentLocations[agentId]) return null;
+    
+    const agentLoc = agentLocations[agentId];
+    const distance = calculateDistance(
+      parseFloat(event.latitude),
+      parseFloat(event.longitude),
+      agentLoc.lat,
+      agentLoc.lng
+    );
+    
+    const perimeterRadius = parseFloat(event.radius) || 1000;
+    return distance <= perimeterRadius;
+  };
+
+  // Obtenir la couleur de la batterie
+  const getBatteryColor = (level) => {
+    if (level >= 50) return 'text-green-500';
+    if (level >= 20) return 'text-yellow-500';
+    return 'text-red-500';
+  };
 
   const fetchEventDetails = async () => {
     setLoading(true);
@@ -340,14 +447,30 @@ const EventDetails = () => {
         <div className="card">
           <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
             <FiMapPin className="mr-2 text-blue-600" />
-            Carte de localisation
+            Carte de localisation en temps réel
           </h2>
-          <div className="rounded-xl overflow-hidden" style={{ height: '400px' }}>
+          <div className="mb-3 flex items-center gap-4 text-sm text-gray-600">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+              <span>Événement</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
+              <span>Agents en ligne ({onlineAgents.size})</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-red-500"></div>
+              <span>Hors périmètre</span>
+            </div>
+          </div>
+          <div className="rounded-xl overflow-hidden" style={{ height: '500px' }}>
             <MiniMap
               latitude={event.latitude}
               longitude={event.longitude}
               radius={event.radius}
               zones={zones}
+              agentLocations={agentLocations}
+              assignments={assignments}
             />
           </div>
         </div>
@@ -388,10 +511,22 @@ const EventDetails = () => {
       {/* Agents affectés */}
       {assignments.length > 0 && (
         <div className="card">
-          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
-            <FiUsers className="mr-2 text-purple-600" />
-            Agents affectés ({assignments.length})
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center">
+              <FiUsers className="mr-2 text-purple-600" />
+              Agents affectés ({assignments.length})
+            </h2>
+            <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <FiWifi className="text-green-500" />
+                <span className="text-gray-600">{onlineAgents.size} en ligne</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <FiNavigation className="text-blue-500" />
+                <span className="text-gray-600">Tracking temps réel</span>
+              </div>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -401,6 +536,15 @@ const EventDetails = () => {
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Zone
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    En ligne
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Batterie
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Périmètre
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Statut
@@ -416,17 +560,27 @@ const EventDetails = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {assignments.map((assignment) => {
                   const agentAttendance = attendance.find(a => a.agentId === assignment.agentId);
+                  const isOnline = onlineAgents.has(assignment.agentId);
+                  const location = agentLocations[assignment.agentId];
+                  const inPerimeter = isAgentInPerimeter(assignment.agentId);
+                  
                   return (
                     <tr key={assignment.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          {assignment.agent?.profilePhoto && (
-                            <img
-                              src={assignment.agent.profilePhoto}
-                              alt={`${assignment.agent?.firstName} ${assignment.agent?.lastName}`}
-                              className="w-10 h-10 rounded-full mr-3 object-cover"
-                            />
-                          )}
+                          <div className="relative">
+                            {assignment.agent?.profilePhoto && (
+                              <img
+                                src={assignment.agent.profilePhoto}
+                                alt={`${assignment.agent?.firstName} ${assignment.agent?.lastName}`}
+                                className="w-10 h-10 rounded-full mr-3 object-cover"
+                              />
+                            )}
+                            {/* Indicateur en ligne/hors ligne */}
+                            <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${
+                              isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
+                            }`} />
+                          </div>
                           <div>
                             <p className="font-semibold text-gray-900">
                               {assignment.agent?.firstName} {assignment.agent?.lastName}
@@ -439,6 +593,46 @@ const EventDetails = () => {
                         <span className="text-sm text-gray-900">
                           {assignment.zone?.name || '-'}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        {isOnline ? (
+                          <div className="flex items-center justify-center gap-1 text-green-600">
+                            <FiWifi size={16} />
+                            <span className="text-xs font-medium">En ligne</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center gap-1 text-gray-400">
+                            <FiWifiOff size={16} />
+                            <span className="text-xs">Hors ligne</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        {location?.battery !== undefined ? (
+                          <div className="flex items-center justify-center gap-1">
+                            <FiBatteryCharging className={getBatteryColor(location.battery)} size={16} />
+                            <span className={`text-xs font-medium ${getBatteryColor(location.battery)}`}>
+                              {location.battery}%
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">-</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        {inPerimeter === null ? (
+                          <span className="text-xs text-gray-400">-</span>
+                        ) : inPerimeter ? (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 flex items-center justify-center gap-1">
+                            <FiCheckCircle size={12} />
+                            Dans zone
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 flex items-center justify-center gap-1 animate-pulse">
+                            <FiAlertTriangle size={12} />
+                            Hors zone
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {agentAttendance ? (
