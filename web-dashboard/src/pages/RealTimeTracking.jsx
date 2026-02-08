@@ -199,16 +199,28 @@ const RealTimeTracking = () => {
 
   const loadEvents = async () => {
     try {
-      const response = await api.get('/events?status=active');
+      // Charger événements actifs (en cours) ET scheduled (futurs)
+      const response = await api.get('/events?limit=100');
       const eventsData = Array.isArray(response.data.data) 
         ? response.data.data 
         : (Array.isArray(response.data) ? response.data : []);
       
-      setEvents(eventsData);
+      // Filtrer pour garder seulement les événements en cours et futurs
+      const now = new Date();
+      const relevantEvents = eventsData.filter(event => {
+        const endDate = new Date(event.endDate);
+        // Garder si événement pas encore terminé (endDate dans le futur)
+        return endDate > now;
+      }).sort((a, b) => {
+        // Trier par date de début (événements en cours d'abord, puis futurs)
+        return new Date(a.startDate) - new Date(b.startDate);
+      });
+      
+      setEvents(relevantEvents);
       
       // Sélectionner le premier événement par défaut
-      if (eventsData.length > 0) {
-        setSelectedEvent(eventsData[0]);
+      if (relevantEvents.length > 0) {
+        setSelectedEvent(relevantEvents[0]);
       }
     } catch (error) {
       console.error('❌ Erreur chargement événements:', error);
