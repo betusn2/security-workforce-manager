@@ -541,6 +541,12 @@ const EventDetails = () => {
                     En ligne
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Latitude
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Longitude
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Batterie
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -605,6 +611,24 @@ const EventDetails = () => {
                             <FiWifiOff size={16} />
                             <span className="text-xs">Hors ligne</span>
                           </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        {location?.lat ? (
+                          <span className="text-xs font-mono text-blue-600">
+                            {location.lat.toFixed(6)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">-</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        {location?.lng ? (
+                          <span className="text-xs font-mono text-blue-600">
+                            {location.lng.toFixed(6)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">-</span>
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">

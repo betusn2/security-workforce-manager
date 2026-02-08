@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FiUser, FiCreditCard, FiArrowRight, FiAlertCircle,
   FiCheck, FiShield, FiLock, FiMail, FiArrowLeft,
   FiUsers, FiUserCheck, FiSettings
 } from 'react-icons/fi';
+import io from 'socket.io-client';
 import { authAPI, assignmentsAPI } from '../services/api';
 import useAuthStore from '../hooks/useAuth';
 import { toast } from 'react-toastify';
@@ -18,6 +19,8 @@ import { getDeviceFingerprint, getDeviceInfo } from '../utils/deviceFingerprint'
 const CheckInLogin = () => {
   const navigate = useNavigate();
   const { login: storeLogin, setAuthenticatedUser } = useAuthStore();
+  const socketRef = useRef(null);
+  const locationIntervalRef = useRef(null);
 
   // Étape: 'select' (choix du profil) ou 'login' (formulaire de connexion)
   const [step, setStep] = useState('select');
@@ -35,6 +38,10 @@ const CheckInLogin = () => {
   const [error, setError] = useState('');
   const [userPreview, setUserPreview] = useState(null);
   const [deviceInfo, setDeviceInfo] = useState(null);
+  
+  // États pour le tracking GPS
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [batteryLevel, setBatteryLevel] = useState(null);
 
   useEffect(() => {
     // Récupérer les infos de l'appareil
@@ -44,7 +51,128 @@ const CheckInLogin = () => {
       setDeviceInfo({ fingerprint, ...info });
     };
     loadDeviceInfo();
+    
+    // Démarrer le tracking GPS et batterie
+    startLocationTracking();
+    getBatteryLevel();
+    
+    return () => {
+      stopLocationTracking();
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
   }, []);
+
+  // Initialiser Socket.IO pour envoyer la localisation
+  const initializeSocket = (userId) => {
+    const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://security-guard-backend.onrender.com';
+    const token = localStorage.getItem('checkInToken') || localStorage.getItem('token');
+    
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+    }
+    
+    socketRef.current = io(BACKEND_URL, {
+      auth: { token },
+      transports: ['websocket', 'polling']
+    });
+
+    socketRef.current.on('connect', () => {
+      console.log('🔌 Socket.IO connecté pour tracking GPS');
+    });
+
+    socketRef.current.on('disconnect', () => {
+      console.log('🔌 Socket.IO déconnecté');
+    });
+  };
+
+  // Obtenir le niveau de batterie
+  const getBatteryLevel = async () => {
+    try {
+      if ('getBattery' in navigator) {
+        const battery = await navigator.getBattery();
+        setBatteryLevel(Math.round(battery.level * 100));
+        
+        // Écouter les changements de batterie
+        battery.addEventListener('levelchange', () => {
+          setBatteryLevel(Math.round(battery.level * 100));
+        });
+      }
+    } catch (err) {
+      console.log('Battery API non disponible');
+    }
+  };
+
+  // Démarrer le tracking GPS
+  const startLocationTracking = () => {
+    if (!navigator.geolocation) {
+      console.log('Geolocation non disponible');
+      return;
+    }
+
+    // Obtenir la position immédiatement
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const location = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy
+        };
+        setCurrentLocation(location);
+        sendLocationUpdate(location);
+      },
+      (error) => {
+        console.error('Erreur GPS:', error);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+
+    // Puis mettre à jour toutes les 5 secondes
+    locationIntervalRef.current = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const location = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy
+          };
+          setCurrentLocation(location);
+          sendLocationUpdate(location);
+        },
+        (error) => {
+          console.error('Erreur GPS:', error);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }, 5000); // Toutes les 5 secondes
+  };
+
+  // Arrêter le tracking GPS
+  const stopLocationTracking = () => {
+    if (locationIntervalRef.current) {
+      clearInterval(locationIntervalRef.current);
+      locationIntervalRef.current = null;
+    }
+  };
+
+  // Envoyer la mise à jour de localisation via Socket.IO
+  const sendLocationUpdate = (location) => {
+    if (socketRef.current && socketRef.current.connected && location) {
+      const user = JSON.parse(localStorage.getItem('checkInUser') || '{}');
+      
+      socketRef.current.emit('location-update', {
+        userId: user.id,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracy: location.accuracy,
+        batteryLevel: batteryLevel || 100,
+        timestamp: new Date().toISOString()
+      });
+      
+      console.log('📍 Position envoyée:', location);
+    }
+  };
 
   // Vérification du CIN en temps réel (pour agents et responsables)
   useEffect(() => {
@@ -134,6 +262,9 @@ const CheckInLogin = () => {
 
         // ✅ Mettre à jour le store Zustand pour authentifier l'utilisateur
         setAuthenticatedUser(user, checkInToken);
+        
+        // ✅ Initialiser Socket.IO pour le tracking
+        initializeSocket(user.id);
         
         toast.success(`Connexion réussie! ${validEvents.length} événement(s) disponible(s).`);
         // ✅ Redirection vers /checkin pour agents/superviseurs
