@@ -57,8 +57,9 @@ const EventDetails = () => {
 
       // Fetch assignments
       try {
-        const assignRes = await assignmentsAPI.getByEvent(id);
-        setAssignments(assignRes.data.data || []);
+        const assignRes = await assignmentsAPI.getAll({ eventId: id });
+        const assignmentData = assignRes?.data?.data?.assignments || assignRes?.data?.data || [];
+        setAssignments(Array.isArray(assignmentData) ? assignmentData : []);
       } catch (err) {
         console.log('No assignments for this event');
         setAssignments([]);
@@ -66,8 +67,9 @@ const EventDetails = () => {
 
       // Fetch attendance
       try {
-        const attRes = await attendanceAPI.getByEvent(id);
-        setAttendance(attRes.data.data || []);
+        const attRes = await attendanceAPI.getAll({ eventId: id });
+        const attendanceData = attRes?.data?.data?.attendances || attRes?.data?.data || [];
+        setAttendance(Array.isArray(attendanceData) ? attendanceData : []);
       } catch (err) {
         console.log('No attendance for this event');
         setAttendance([]);
