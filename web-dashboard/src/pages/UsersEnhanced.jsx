@@ -43,20 +43,25 @@ const UsersEnhanced = () => {
     try {
       const response = await usersAPI.getAll();
       const userData = response.data.data || [];
-      setUsers(userData);
+      
+      // S'assurer que userData est un tableau
+      const usersArray = Array.isArray(userData) ? userData : [];
+      
+      setUsers(usersArray);
       
       // Calculer les stats
       setStats({
-        totalUsers: userData.length,
-        totalAgents: userData.filter(u => u.role === 'agent').length,
-        totalSupervisors: userData.filter(u => u.role === 'supervisor').length,
-        totalAdmins: userData.filter(u => u.role === 'admin').length,
-        activeUsers: userData.filter(u => u.status === 'active').length,
-        unassignedAgents: userData.filter(u => u.role === 'agent' && !u.supervisorId).length
+        totalUsers: usersArray.length,
+        totalAgents: usersArray.filter(u => u.role === 'agent').length,
+        totalSupervisors: usersArray.filter(u => u.role === 'supervisor').length,
+        totalAdmins: usersArray.filter(u => u.role === 'admin').length,
+        activeUsers: usersArray.filter(u => u.status === 'active').length,
+        unassignedAgents: usersArray.filter(u => u.role === 'agent' && !u.supervisorId).length
       });
     } catch (error) {
       console.error('Erreur chargement utilisateurs:', error);
       toast.error('Erreur lors du chargement des utilisateurs');
+      setUsers([]); // S'assurer que users est toujours un tableau
     } finally {
       setLoading(false);
     }
@@ -64,7 +69,12 @@ const UsersEnhanced = () => {
 
   // Filtrer et trier les utilisateurs
   const filteredUsers = useMemo(() => {
-    let filtered = users;
+    // S'assurer que users est un tableau
+    if (!Array.isArray(users)) {
+      return [];
+    }
+    
+    let filtered = [...users];
 
     // Recherche
     if (search) {
