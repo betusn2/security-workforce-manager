@@ -1228,9 +1228,13 @@ const Events = () => {
   const hasActiveFilters = search || statusFilter || typeFilter || priorityFilter || dateFilter;
 
   // Stats rapides
+  const inProgressEvents = events.filter(e => e.status === 'active');
+  console.log('📅 Events - Événements EN COURS (status=active):', inProgressEvents.length, inProgressEvents);
+  console.log('📅 Events - Tous les événements:', events.length);
+  
   const stats = {
     total: events.length,
-    active: events.filter(e => e.status === 'active').length,
+    active: inProgressEvents.length,
     scheduled: events.filter(e => e.status === 'scheduled').length,
     today: events.filter(e => isToday(new Date(e.startDate))).length,
   };

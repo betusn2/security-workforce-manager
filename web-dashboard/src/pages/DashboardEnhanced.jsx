@@ -21,6 +21,7 @@ const DashboardEnhanced = () => {
     activeAgents: 0,
     totalEvents: 0,
     todayEvents: 0,
+    inProgressEvents: 0,
     upcomingEvents: 0,
     completedEvents: 0,
     attendanceRate: 0,
@@ -60,6 +61,11 @@ const DashboardEnhanced = () => {
       // Calculer les stats
       const now = new Date();
       const todayEvts = eventsArray.filter(e => isToday(new Date(e.startDate)));
+      
+      // Événements EN COURS (status = 'active')
+      const inProgressEvents = eventsArray.filter(e => e.status === 'active');
+      console.log('📊 Dashboard - Événements EN COURS:', inProgressEvents.length, inProgressEvents);
+      
       const upcoming = eventsArray.filter(e => {
         const start = new Date(e.startDate);
         return start > now && !isToday(start);
@@ -85,6 +91,7 @@ const DashboardEnhanced = () => {
         activeAgents: activeAgents.length,
         totalEvents: eventsArray.length,
         todayEvents: todayEvts.length,
+        inProgressEvents: inProgressEvents.length,
         upcomingEvents: upcoming.length,
         completedEvents: completed.length,
         attendanceRate: attendanceRate,
@@ -382,6 +389,74 @@ const DashboardEnhanced = () => {
             />
           </div>
         </div>
+
+        {/* Événements EN COURS */}
+        {stats.inProgressEvents > 0 && (
+          <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl shadow-lg border-2 border-green-200 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <FiActivity className="text-white animate-pulse" size={20} />
+                </div>
+                <div>
+                  <h2 className="font-bold text-gray-900 flex items-center gap-2">
+                    En cours maintenant
+                    <span className="flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-green-500 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
+                    </span>
+                  </h2>
+                  <p className="text-xs text-green-700 font-medium">{stats.inProgressEvents} événement{stats.inProgressEvents > 1 ? 's' : ''} actif{stats.inProgressEvents > 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              <a
+                href="/tracking"
+                className="text-sm text-green-700 font-bold hover:text-green-800 flex items-center gap-1 bg-white/80 px-3 py-1.5 rounded-lg shadow-sm"
+              >
+                Tracking live
+                <FiNavigation size={14} />
+              </a>
+            </div>
+            <div className="space-y-3">
+              {events.filter(e => e.status === 'active').slice(0, 3).map(event => (
+                <div 
+                  key={event.id}
+                  className="bg-white rounded-xl p-4 shadow-md border-l-4 border-green-500 hover:shadow-lg transition-all cursor-pointer"
+                  onClick={() => window.location.href = `/events/${event.id}`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h3 className="font-bold text-gray-900 mb-1 flex items-center gap-2">
+                        {event.name}
+                        <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">
+                          LIVE
+                        </span>
+                      </h3>
+                      {event.location && (
+                        <div className="flex items-center text-sm text-gray-600 mb-2">
+                          <FiMapPin className="mr-1 flex-shrink-0" size={14} />
+                          <span className="truncate">{event.location}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-3 text-xs text-gray-600">
+                        <div className="flex items-center">
+                          <FiClock className="mr-1" size={12} />
+                          {format(new Date(event.startDate), 'HH:mm', { locale: fr })} - {format(new Date(event.endDate), 'HH:mm', { locale: fr })}
+                        </div>
+                        {event.assignedAgents?.length > 0 && (
+                          <div className="flex items-center">
+                            <FiUsers className="mr-1" size={12} />
+                            {event.assignedAgents.length} agents
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Aujourd'hui */}
         {todayEvents.length > 0 && (

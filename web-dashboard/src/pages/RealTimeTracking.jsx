@@ -219,6 +219,12 @@ const RealTimeTracking = () => {
         return new Date(a.startDate) - new Date(b.startDate);
       });
       
+      // Debug: Afficher événements EN COURS (status = 'active')
+      const inProgressEvents = eventsData.filter(e => e.status === 'active');
+      console.log('🗺️ Tracking - Tous les événements:', eventsData.length);
+      console.log('🗺️ Tracking - Événements EN COURS (status=active):', inProgressEvents.length, inProgressEvents);
+      console.log('🗺️ Tracking - Événements affichés (futurs+en cours):', relevantEvents.length);
+      
       setEvents(relevantEvents);
       
       // Sélectionner le premier événement par défaut
