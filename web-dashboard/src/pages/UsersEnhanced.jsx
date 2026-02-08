@@ -47,10 +47,13 @@ const UsersEnhanced = () => {
     setLoading(true);
     try {
       const response = await usersAPI.getAll();
-      const userData = response.data.data || [];
+      console.log('API Response:', response);
+      const userData = response.data.data || response.data || [];
+      console.log('User Data:', userData);
       
       // S'assurer que userData est un tableau
       const usersArray = Array.isArray(userData) ? userData : [];
+      console.log('Users Array:', usersArray.length, 'utilisateurs');
       
       setUsers(usersArray);
       
