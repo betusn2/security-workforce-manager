@@ -35,6 +35,11 @@ const EventDetails = () => {
   // États pour le suivi en temps réel
   const [agentLocations, setAgentLocations] = useState({}); // { agentId: { lat, lng, battery, timestamp, isOnline } }
   const [onlineAgents, setOnlineAgents] = useState(new Set()); // IDs des agents connectés
+  
+  // État Socket.IO
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [socketError, setSocketError] = useState(null);
+  const [lastSync, setLastSync] = useState(null);
 
   useEffect(() => {
     if (id) {
@@ -61,10 +66,22 @@ const EventDetails = () => {
 
     socketRef.current.on('connect', () => {
       console.log('🔌 Socket.IO connecté pour suivi temps réel');
+      setSocketConnected(true);
+      setSocketError(null);
+      setLastSync(new Date());
+      
       // Rejoindre la room de l'événement
       socketRef.current.emit('join-event', id);
       socketRef.current.emit('event:join', id);
       socketRef.current.emit('tracking:subscribe', id);
+      
+      toast.success('🟢 Suivi temps réel activé', { autoClose: 2000 });
+    });
+
+    socketRef.current.on('connect_error', (error) => {
+      console.error('❌ Erreur connexion Socket.IO:', error);
+      setSocketConnected(false);
+      setSocketError(error.message);
     });
 
     // Écouter les mises à jour de localisation depuis le backend
@@ -82,6 +99,7 @@ const EventDetails = () => {
         }
       }));
       setOnlineAgents(prev => new Set([...prev, data.userId]));
+      setLastSync(new Date());
     });
     
     // Supporter aussi l'ancien format location-update
@@ -99,14 +117,17 @@ const EventDetails = () => {
         }
       }));
       setOnlineAgents(prev => new Set([...prev, data.userId]));
+      setLastSync(new Date());
     });
 
     // Écouter les connexions/déconnexions
     socketRef.current.on('agent-online', (agentId) => {
+      console.log('✅ Agent connecté:', agentId);
       setOnlineAgents(prev => new Set([...prev, agentId]));
     });
 
     socketRef.current.on('agent-offline', (agentId) => {
+      console.log('❌ Agent déconnecté:', agentId);
       setOnlineAgents(prev => {
         const newSet = new Set(prev);
         newSet.delete(agentId);
@@ -118,8 +139,10 @@ const EventDetails = () => {
       }));
     });
 
-    socketRef.current.on('disconnect', () => {
-      console.log('🔌 Socket.IO déconnecté');
+    socketRef.current.on('disconnect', (reason) => {
+      console.log('🔌 Socket.IO déconnecté:', reason);
+      setSocketConnected(false);
+      toast.warning('🔴 Suivi temps réel désactivé', { autoClose: 3000 });
     });
   };
 
@@ -300,6 +323,61 @@ const EventDetails = () => {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* Indicateur Socket.IO en haut */}
+      <div className={`card ${socketConnected ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'} transition-all duration-300`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {socketConnected ? (
+              <>
+                <div className="relative">
+                  <FiWifi className="text-green-600 animate-pulse" size={24} />
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-ping"></div>
+                </div>
+                <div>
+                  <p className="font-bold text-green-900">🟢 Suivi Temps Réel Actif</p>
+                  <p className="text-sm text-green-700">
+                    Connexion établie • {onlineAgents.size} agent(s) en ligne
+                    {lastSync && ` • Dernière sync: ${format(lastSync, 'HH:mm:ss')}`}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <FiWifiOff className="text-red-600" size={24} />
+                <div>
+                  <p className="font-bold text-red-900">🔴 Suivi Temps Réel Désactivé</p>
+                  <p className="text-sm text-red-700">
+                    {socketError ? `Erreur: ${socketError}` : 'Connexion perdue • Reconnexion en cours...'}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {socketConnected && (
+              <div className="flex items-center gap-2 px-3 py-1 bg-green-100 rounded-full">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-xs font-medium text-green-800">LIVE</span>
+              </div>
+            )}
+            <button
+              onClick={() => {
+                if (socketRef.current) {
+                  socketRef.current.disconnect();
+                  socketRef.current.connect();
+                  toast.info('🔄 Reconnexion Socket.IO...', { autoClose: 2000 });
+                }
+              }}
+              className="btn-secondary text-sm py-1 px-3"
+              title="Reconnecter"
+            >
+              <FiRepeat className="mr-1" size={14} />
+              Reconnecter
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Header avec retour */}
       <div className="flex items-center justify-between">
         <button
