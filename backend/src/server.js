@@ -403,6 +403,20 @@ const startServer = async () => {
     // Clean up excessive indexes
     await cleanupDatabaseIndexes(db.sequelize);
 
+    // Run enriched tracking migration
+    console.log('🔄 Running enriched tracking migration...');
+    try {
+      const runMigration = require('./migrations/add-enriched-tracking-columns');
+      await runMigration();
+      console.log('✅ Enriched tracking migration completed.');
+    } catch (error) {
+      if (error.message && error.message.includes('already exists')) {
+        console.log('ℹ️ Migration already applied, skipping.');
+      } else {
+        console.error('⚠️ Migration error (continuing):', error.message);
+      }
+    }
+
     // Sync database (create tables if they don't exist)
     if (process.env.NODE_ENV !== 'production' || process.env.FORCE_DB_SYNC === 'true') {
       await db.sequelize.sync({ alter: false });

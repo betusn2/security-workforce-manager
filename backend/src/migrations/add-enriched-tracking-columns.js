@@ -227,14 +227,21 @@ async function migrate() {
     }
 
     console.log('\n🎉 Migration terminée avec succès!');
-    process.exit(0);
+    return true;
 
   } catch (error) {
     console.error('\n❌ Erreur migration:', error);
     console.error(error.stack);
-    process.exit(1);
+    throw error;
   }
 }
 
-// Exécuter la migration
-migrate();
+// Exécuter la migration si appelé directement
+if (require.main === module) {
+  migrate()
+    .then(() => process.exit(0))
+    .catch(() => process.exit(1));
+}
+
+// Exporter pour utilisation dans server.js
+module.exports = migrate;
