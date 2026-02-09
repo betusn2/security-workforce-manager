@@ -386,10 +386,12 @@ const CheckIn = () => {
                 .map(res => res.data?.data)
                 .filter(Boolean);
 
-              // 🔥 FILTRER SEULEMENT ÉVÉNEMENTS ACTIFS OU FUTURS
+              // 🔥 FILTRER SEULEMENT ÉVÉNEMENTS ACTIFS (fenêtre check-in ouverte)
+              // ❌ Exclure: scheduled (avant 2h), completed, cancelled, terminated
               const filteredEvents = events.filter(event => {
                 const status = computeEventStatus(event);
-                return status === 'active' || status === 'scheduled';
+                // Agent peut SEULEMENT accéder pendant la fenêtre de check-in (2h avant → fin)
+                return status === 'active';
               }).sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
               
               setTodayEvents(filteredEvents);
@@ -492,13 +494,12 @@ const CheckIn = () => {
                 console.log('Event names:', events.map(e => e.name).join(', '));
               }
               
-              // 🔥 FILTRER SEULEMENT ÉVÉNEMENTS ACTIFS OU FUTURS
-              // Exclure: completed (terminé), cancelled (annulé), terminated (clos)
+              // 🔥 FILTRER SEULEMENT ÉVÉNEMENTS ACTIFS (fenêtre check-in ouverte)
+              // ❌ Exclure: scheduled (avant 2h), completed, cancelled, terminated
               const filteredEvents = events.filter(event => {
                 const status = computeEventStatus(event);
-                // ✅ Accepter seulement: active (en cours) et scheduled (planifié)
-                // ❌ Refuser: completed, cancelled, terminated
-                return status === 'active' || status === 'scheduled';
+                // Agent peut SEULEMENT accéder pendant la fenêtre de check-in (2h avant → fin)
+                return status === 'active';
               }).sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
               
               console.log('✅ Events after filtering:', filteredEvents.length);

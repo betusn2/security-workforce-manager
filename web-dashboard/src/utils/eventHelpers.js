@@ -200,13 +200,13 @@ export const hasActiveOrUpcomingEvents = (events) => {
     return false;
   }
 
-  // Filtrer les événements actifs ou planifiés (exclure completed/cancelled/terminated)
+  // ✅ Accepter SEULEMENT événements "active" (fenêtre check-in ouverte: 2h avant → fin)
+  // ❌ Refuser: scheduled (avant fenêtre 2h), completed, cancelled, terminated
   const validEvents = events.filter(event => {
     const status = computeEventStatus(event);
 
-    // ✅ Accepter seulement: active (en cours) et scheduled (planifié)
-    // ❌ Refuser: completed (terminé), cancelled (annulé), terminated (clos)
-    return status === 'active' || status === 'scheduled';
+    // Agent peut SEULEMENT accéder pendant la fenêtre de check-in (statut 'active')
+    return status === 'active';
   });
 
   return validEvents.length > 0;
