@@ -11,7 +11,7 @@ import {
 import { authAPI, attendanceAPI, eventsAPI, usersAPI, assignmentsAPI, zonesAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { getDeviceFingerprint, getDeviceInfo } from '../utils/deviceFingerprint';
-import { shouldDisplayEvent } from '../utils/eventHelpers';
+import { computeEventStatus } from '../utils/eventHelpers';
 import { getEventTimeStatus, formatTimeRemaining, getHelpMessage, shouldTrackGPS } from '../utils/eventTimeWindows';
 import * as faceapi from 'face-api.js';
 import SmartMiniMap from '../components/SmartMiniMap';
@@ -386,8 +386,11 @@ const CheckIn = () => {
                 .map(res => res.data?.data)
                 .filter(Boolean);
 
-              const filteredEvents = events.filter(event => shouldDisplayEvent(event))
-                .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+              // 🔥 FILTRER SEULEMENT ÉVÉNEMENTS ACTIFS OU FUTURS
+              const filteredEvents = events.filter(event => {
+                const status = computeEventStatus(event);
+                return status === 'active' || status === 'scheduled';
+              }).sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
               
               setTodayEvents(filteredEvents);
               console.log('✅ Filtered events:', filteredEvents.length);
@@ -489,9 +492,14 @@ const CheckIn = () => {
                 console.log('Event names:', events.map(e => e.name).join(', '));
               }
               
-              // Filtrer les événements pour exclure completed/terminated/cancelled
-              const filteredEvents = events.filter(event => shouldDisplayEvent(event))
-                .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+              // 🔥 FILTRER SEULEMENT ÉVÉNEMENTS ACTIFS OU FUTURS
+              // Exclure: completed (terminé), cancelled (annulé), terminated (clos)
+              const filteredEvents = events.filter(event => {
+                const status = computeEventStatus(event);
+                // ✅ Accepter seulement: active (en cours) et scheduled (planifié)
+                // ❌ Refuser: completed, cancelled, terminated
+                return status === 'active' || status === 'scheduled';
+              }).sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
               
               console.log('✅ Events after filtering:', filteredEvents.length);
               setTodayEvents(filteredEvents);
