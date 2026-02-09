@@ -553,6 +553,24 @@ const CheckIn = () => {
     }
   }, [isConnected, user]);
 
+  // 🔥 BLOQUER L'ACCÈS SI TOUS LES ÉVÉNEMENTS SONT TERMINÉS
+  useEffect(() => {
+    // Attendre que les données soient chargées
+    if (loading || !user) return;
+
+    // Si aucun événement après filtrage, rediriger vers /no-active-events
+    if (todayEvents.length === 0 && !loading) {
+      console.log('⛔ Aucun événement actif. Redirection vers /no-active-events');
+      toast.error('Tous vos événements sont terminés. Accès au pointage refusé.', {
+        autoClose: 5000
+      });
+
+      setTimeout(() => {
+        navigate('/no-active-events');
+      }, 2000);
+    }
+  }, [todayEvents, loading, user, navigate]);
+
   // Écouter les check-in/check-out en temps réel
   useSyncEvent('checkin', ({ attendance, agent }) => {
     console.log('✅ Check-in détecté:', agent.firstName, agent.lastName);
