@@ -200,8 +200,14 @@ export const hasActiveOrUpcomingEvents = (events) => {
     return false;
   }
 
-  // Filtrer les événements qui doivent être affichés (non terminés, non annulés)
-  const validEvents = events.filter(event => shouldDisplayEvent(event));
+  // Filtrer les événements actifs ou planifiés (exclure completed/cancelled/terminated)
+  const validEvents = events.filter(event => {
+    const status = computeEventStatus(event);
+
+    // ✅ Accepter seulement: active (en cours) et scheduled (planifié)
+    // ❌ Refuser: completed (terminé), cancelled (annulé), terminated (clos)
+    return status === 'active' || status === 'scheduled';
+  });
 
   return validEvents.length > 0;
 };
