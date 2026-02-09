@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { FiMail, FiLock, FiEye, FiEyeOff, FiGlobe, FiShield, FiCheck, FiSmartphone, FiDownload } from 'react-icons/fi';
 import useAuthStore from '../hooks/useAuth';
 import useI18n from '../hooks/useI18n';
+import { assignmentsAPI, eventsAPI } from '../services/api';
+import { hasActiveOrUpcomingEvents } from '../utils/eventHelpers';
+import { toast } from 'react-toastify';
 
 const Login = () => {
   const [loginMode, setLoginMode] = useState('email'); // 'email' or 'cin'
@@ -34,8 +37,65 @@ const Login = () => {
       // Login by CIN (for agents/supervisors)
       const result = await loginByCin(cin.trim());
       if (result.success) {
-        // Redirect to check-in page for agents/supervisors
-        navigate('/checkin');
+        // 🔥 VÉRIFIER SI L'UTILISATEUR A DES ÉVÉNEMENTS ACTIFS/FUTURS
+        try {
+          // Afficher un toast de chargement
+          const toastId = toast.info('Vérification de vos événements...', { autoClose: false });
+
+          // Récupérer les assignments de l'utilisateur
+          const assignmentsResponse = await assignmentsAPI.getMyAssignments();
+
+          if (!assignmentsResponse.data?.success || !assignmentsResponse.data.data) {
+            toast.dismiss(toastId);
+            toast.error('Aucun événement assigné. Contactez votre superviseur.');
+            navigate('/no-active-events');
+            return;
+          }
+
+          const assignments = assignmentsResponse.data.data;
+
+          // Récupérer les IDs des événements
+          const eventIds = assignments
+            .map(a => a.eventId)
+            .filter(Boolean);
+
+          if (eventIds.length === 0) {
+            toast.dismiss(toastId);
+            toast.error('Aucun événement assigné. Contactez votre superviseur.');
+            navigate('/no-active-events');
+            return;
+          }
+
+          // Récupérer les événements complets
+          const eventPromises = eventIds.map(eventId => eventsAPI.getById(eventId));
+          const eventResponses = await Promise.all(eventPromises);
+          const events = eventResponses
+            .map(res => res.data?.data)
+            .filter(Boolean);
+
+          // Vérifier s'il y a au moins un événement actif ou à venir
+          const hasValidEvents = hasActiveOrUpcomingEvents(events);
+
+          toast.dismiss(toastId);
+
+          if (!hasValidEvents) {
+            // ❌ TOUS LES ÉVÉNEMENTS SONT TERMINÉS/ANNULÉS
+            toast.error('Tous vos événements sont terminés. Accès au pointage refusé.');
+            navigate('/no-active-events');
+            return;
+          }
+
+          // ✅ AU MOINS UN ÉVÉNEMENT ACTIF/FUTUR
+          toast.success('Connexion réussie! Redirection vers le pointage...');
+          navigate('/checkin');
+        } catch (error) {
+          console.error('❌ Erreur vérification événements:', error);
+
+          // En cas d'erreur API, on laisse passer par sécurité
+          // (peut-être l'API a un problème temporaire)
+          toast.warning('Impossible de vérifier vos événements. Redirection...');
+          navigate('/checkin');
+        }
       }
     } else {
       // Regular email/password login (for admins)

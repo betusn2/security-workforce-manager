@@ -9,6 +9,7 @@ import Login from './pages/Login';
 import CheckInLogin from './pages/CheckInLogin';
 import CheckIn from './pages/CheckIn';
 import MissingProfile from './pages/MissingProfile';
+import NoActiveEvents from './pages/NoActiveEvents';
 import AdminFacialManager from './pages/AdminFacialManager';
 import AdminNotifications from './pages/AdminNotifications';
 import AdminLogs from './pages/AdminLogs';
@@ -108,6 +109,10 @@ function App() {
           }
         />
         <Route path="/missing-profile" element={<MissingProfile />} />
+
+        {/* 🔥 Page pour utilisateurs sans événements actifs */}
+        <Route path="/no-active-events" element={<NoActiveEvents />} />
+
         <Route path="/admin/facial/:userId" element={<AdminFacialManager />} />
 
         {/* Protected routes */}

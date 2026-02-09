@@ -158,7 +158,7 @@ export const formatEventDateTime = (date, time) => {
  */
 export const getStatusBadge = (event) => {
   const status = event.computedStatus || computeEventStatus(event);
-  
+
   const statusConfig = {
     active: {
       text: 'En cours',
@@ -185,6 +185,23 @@ export const getStatusBadge = (event) => {
       className: 'bg-red-500/20 text-red-300'
     }
   };
-  
+
   return statusConfig[status] || statusConfig.scheduled;
+};
+
+/**
+ * 🔥 Vérifie si un utilisateur a au moins un événement actif ou à venir
+ * Utilisé pour bloquer l'accès au CheckIn si tous les événements sont terminés
+ * @param {Array} events - Liste des événements de l'utilisateur
+ * @returns {boolean} - true si au moins 1 événement actif/futur, false sinon
+ */
+export const hasActiveOrUpcomingEvents = (events) => {
+  if (!events || events.length === 0) {
+    return false;
+  }
+
+  // Filtrer les événements qui doivent être affichés (non terminés, non annulés)
+  const validEvents = events.filter(event => shouldDisplayEvent(event));
+
+  return validEvents.length > 0;
 };
