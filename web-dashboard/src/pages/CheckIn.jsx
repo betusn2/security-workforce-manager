@@ -566,16 +566,12 @@ const CheckIn = () => {
     // Attendre que les données soient chargées
     if (loading || !user) return;
 
-    // Si aucun événement après filtrage, rediriger vers /no-active-events
+    // Si aucun événement après filtrage, rediriger IMMÉDIATEMENT vers /no-active-events
     if (todayEvents.length === 0 && !loading) {
-      console.log('⛔ Aucun événement actif. Redirection vers /no-active-events');
-      toast.error('Tous vos événements sont terminés. Accès au pointage refusé.', {
-        autoClose: 5000
-      });
+      console.log('⛔ Aucun événement actif. Redirection immédiate vers /no-active-events');
 
-      setTimeout(() => {
-        navigate('/no-active-events');
-      }, 2000);
+      // Redirection immédiate sans attendre
+      navigate('/no-active-events', { replace: true });
     }
   }, [todayEvents, loading, user, navigate]);
 
