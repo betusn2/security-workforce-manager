@@ -49,6 +49,7 @@ const CheckIn = () => {
   const animationRef = useRef(null);
   const lastPositionsRef = useRef([]);
   const autoSubmitRef = useRef(false);  // Track if auto-submit already happened
+  const gpsWatchIdRef = useRef(null);   // 🔥 CORRECTION #5: Track GPS watch ID across renders
 
   // User and data states
   const [user, setUser] = useState(null);
@@ -105,6 +106,7 @@ const CheckIn = () => {
   // Auto check-in states
   const [autoSubmitDone, setAutoSubmitDone] = useState(false);
   const [autoSubmitMessage, setAutoSubmitMessage] = useState('');
+  const [isAutoSubmitting, setIsAutoSubmitting] = useState(false); // 🔥 Protection race condition
 
   // Location states
   const [location, setLocation] = useState(null);
@@ -515,15 +517,9 @@ const CheckIn = () => {
           }
         }
 
-        // Check today's attendance status
-        try {
-          const todayStatus = await attendanceAPI.getTodayStatus();
-          if (todayStatus.data?.success) {
-            setTodayAttendance(todayStatus.data.data);
-          }
-        } catch (err) {
-          console.warn('Could not load today status:', err.message);
-        }
+        // 🔥 CORRECTION: Ne pas charger todayAttendance ici car selectedEventId n'est pas encore disponible
+        // Le chargement se fera automatiquement dans useEffect après auto-select (voir ligne ~1660)
+        // Check today's attendance status - DÉPLACÉ vers après auto-select selectedEventId
 
         // Vérifier le statut de la caméra
         checkCameraStatus();
@@ -719,25 +715,37 @@ const CheckIn = () => {
   });
 
   // 🔥 TRACKING GPS EN TEMPS RÉEL après le check-in
+  // CORRECTION #5: Utiliser ref pour éviter restart inutiles
   useEffect(() => {
-    let watchId = null;
-    
-    // Démarrer le tracking seulement si:
-    // 0. L'utilisateur a au moins un événement assigné
-    // 1. L'utilisateur a pointé
-    // 2. L'utilisateur n'est pas encore sorti
-    // 3. On est dans la fenêtre temporelle autorisée (2h avant -> fin événement)
+    // Fonction pour arrêter le tracking
+    const stopTracking = () => {
+      if (gpsWatchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+        console.log('🛑 GPS Watch arrêté, ID:', gpsWatchIdRef.current);
+        gpsWatchIdRef.current = null;
+      }
+    };
+
+    // Vérifier si on doit tracker
+    // Conditions: événements assignés, pointé, pas sorti, fenêtre temporelle valide
     if (todayEvents.length === 0) {
       console.log('⏸️ GPS Watch désactivé - Aucun événement assigné');
+      stopTracking();
       return;
     }
-    
+
     const selectedEvent = todayEvents.find(e => e.id === selectedEventId) || todayEvents[0];
     const shouldTrack = shouldTrackGPS(selectedEvent, todayAttendance?.checkedIn, todayAttendance?.checkedOut);
-    
+
     if (shouldTrack && user?.id) {
+      // Éviter de démarrer si déjà en cours
+      if (gpsWatchIdRef.current !== null) {
+        console.log('⏭️ GPS Watch déjà actif, ID:', gpsWatchIdRef.current);
+        return;
+      }
+
       console.log('📡 Démarrage du tracking GPS en temps réel...');
-      
+
       const sendPosition = (position) => {
         const positionData = {
           userId: user.id,
@@ -748,19 +756,19 @@ const CheckIn = () => {
           isMoving: (position.coords.speed || 0) > 0.5,
           timestamp: new Date(position.timestamp).toISOString()
         };
-        
+
         // Envoyer via syncService
         const syncService = require('../services/syncService').default;
         const sent = syncService.sendPosition(positionData);
-        
+
         if (sent) {
           console.log('📍 Position GPS envoyée:', positionData.latitude, positionData.longitude);
         }
       };
-      
+
       // Démarrer le watch GPS
       if (navigator.geolocation) {
-        watchId = navigator.geolocation.watchPosition(
+        const watchId = navigator.geolocation.watchPosition(
           sendPosition,
           (error) => console.error('❌ Erreur GPS tracking:', error),
           {
@@ -769,20 +777,20 @@ const CheckIn = () => {
             maximumAge: 0
           }
         );
-        
+
+        gpsWatchIdRef.current = watchId;
         console.log('✅ GPS Watch démarré, ID:', watchId);
       }
-    } else if (todayAttendance?.checkedIn && !todayAttendance?.checkedOut) {
-      console.log('⏸️ GPS Watch en pause - hors fenêtre temporelle événement');
-    }
-    
-    // Cleanup
-    return () => {
-      if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
-        console.log('🛑 GPS Watch arrêté');
+    } else {
+      // Conditions non remplies → arrêter si en cours
+      if (todayAttendance?.checkedIn && !todayAttendance?.checkedOut) {
+        console.log('⏸️ GPS Watch en pause - hors fenêtre temporelle événement');
       }
-    };
+      stopTracking();
+    }
+
+    // Cleanup lors du démontage du composant
+    return stopTracking;
   }, [todayAttendance?.checkedIn, todayAttendance?.checkedOut, user?.id, selectedEventId, todayEvents]);
 
   // Auto-sélectionner le premier événement quand la liste change (pour agents et responsables)
@@ -1653,7 +1661,7 @@ const CheckIn = () => {
   // Fonction pour recharger les pointages du jour
   const loadTodayAttendance = useCallback(async () => {
     if (!selectedEventId) return;
-    
+
     try {
       const response = await attendanceAPI.getTodayAttendance(selectedEventId);
       if (response.data?.success) {
@@ -1663,6 +1671,13 @@ const CheckIn = () => {
       console.error('Erreur chargement pointages:', error);
     }
   }, [selectedEventId]);
+
+  // 🔥 CORRECTION #2: Charger attendance quand selectedEventId change
+  useEffect(() => {
+    if (selectedEventId) {
+      loadTodayAttendance();
+    }
+  }, [selectedEventId, loadTodayAttendance]);
 
   const submitCheckIn = useCallback(async (type) => {
     console.log('⏱️ submitCheckIn called with type:', type);
@@ -1794,7 +1809,7 @@ const CheckIn = () => {
     } finally {
       setSubmitting(false);
     }
-  }, [location, locationAccuracy, distanceToEvent, todayEvents, facialVerified, matchScore, deviceFingerprint, deviceInfo, todayAttendance?.attendanceId]);
+  }, [location, locationAccuracy, distanceToEvent, todayEvents, selectedEventId, facialVerified, matchScore, deviceFingerprint, deviceInfo, todayAttendance?.attendanceId]);
 
   // Logout
   const handleLogout = () => {
