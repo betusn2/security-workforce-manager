@@ -14,8 +14,6 @@ import { fr } from 'date-fns/locale';
 import MiniMap from '../components/MiniMap';
 import AgentInfoPanel from '../components/AgentInfoPanel';
 import trackingStatsService from '../services/trackingStatsService';
-import AgentInfoPanel from '../components/AgentInfoPanel';
-import trackingStatsService from '../services/trackingStatsService';
 
 const PRIORITY_OPTIONS = [
   { value: 'low', label: 'Basse', color: 'text-gray-500', bg: 'bg-gray-100' },
