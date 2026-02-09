@@ -45,9 +45,6 @@ const EventDetails = () => {
   
   // 🆕 État pour le panneau d'informations enrichies
   const [selectedAgent, setSelectedAgent] = useState(null);
-  
-  // 🆕 État pour le panneau d'informations enrichies
-  const [selectedAgent, setSelectedAgent] = useState(null);
 
   useEffect(() => {
     if (id) {
