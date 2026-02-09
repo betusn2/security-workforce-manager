@@ -1,0 +1,266 @@
+/* 📊 PANNEAU D'INFORMATIONS AGENT */
+
+.agent-info-panel {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  width: 420px;
+  max-height: calc(100vh - 100px);
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  z-index: 1000;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.panel-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.agent-id {
+  margin: 4px 0 0 0;
+  opacity: 0.9;
+  font-size: 13px;
+}
+
+.close-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 18px;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.1);
+}
+
+.panel-content {
+  padding: 20px;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+}
+
+/* SECTIONS */
+.info-section {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.info-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.section-title svg {
+  width: 16px;
+  height: 16px;
+  color: #667eea;
+}
+
+/* GRILLE D'INFORMATIONS */
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.info-item.full-width {
+  grid-column: 1 / -1;
+}
+
+.info-item .label {
+  font-size: 12px;
+  color: #6B7280;
+  font-weight: 500;
+}
+
+.info-item .value {
+  font-size: 14px;
+  color: #111827;
+  font-weight: 600;
+}
+
+.info-item .value.bold {
+  font-size: 16px;
+  color: #667eea;
+}
+
+.info-item .value.status {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.info-item .value.status.moving {
+  background: #D1FAE5;
+  color: #065F46;
+}
+
+.info-item .value.status.stopped {
+  background: #FEE2E2;
+  color: #991B1B;
+}
+
+/* BATTERIE */
+.battery-display {
+  margin-bottom: 12px;
+}
+
+.battery-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.battery-icon {
+  font-size: 32px;
+}
+
+.battery-level {
+  font-size: 24px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.charging-badge {
+  background: #10B981;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.battery-progress {
+  height: 8px;
+  background: #E5E7EB;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.battery-fill {
+  height: 100%;
+  transition: all 0.3s ease;
+  border-radius: 4px;
+}
+
+/* RÉSEAU */
+.network-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.network-icon {
+  font-size: 32px;
+}
+
+.network-type {
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+  text-transform: uppercase;
+}
+
+.network-status {
+  font-size: 13px;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+/* ÉCRAN */
+.screen-on {
+  color: #10B981 !important;
+}
+
+.screen-off {
+  color: #EF4444 !important;
+}
+
+/* TIMESTAMP */
+.timestamp {
+  font-size: 14px;
+  color: #6B7280;
+  text-align: center;
+  padding: 8px;
+  background: #F9FAFB;
+  border-radius: 8px;
+}
+
+/* SCROLLBAR */
+.panel-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.panel-content::-webkit-scrollbar-track {
+  background: #F3F4F6;
+  border-radius: 3px;
+}
+
+.panel-content::-webkit-scrollbar-thumb {
+  background: #D1D5DB;
+  border-radius: 3px;
+}
+
+.panel-content::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
+}
+
+/* RESPONSIVE */
+@media (max-width: 768px) {
+  .agent-info-panel {
+    width: calc(100% - 40px);
+    right: 20px;
+    left: 20px;
+  }
+}

@@ -40,25 +40,131 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       comment: 'Direction 0-360 degres'
     },
+    
+    // 🔋 BATTERIE - Infos complètes
     batteryLevel: {
       type: DataTypes.INTEGER,
-      allowNull: true
+      allowNull: true,
+      comment: 'Niveau batterie 0-100%'
     },
+    batteryCharging: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      comment: 'Appareil en charge ?'
+    },
+    batteryChargingTime: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Secondes jusqu\'à charge complète'
+    },
+    batteryDischargingTime: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Secondes batterie restantes'
+    },
+    batteryStatus: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      comment: 'charging, critical, low, medium, good'
+    },
+    batteryEstimatedTime: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      comment: 'Temps restant lisible (ex: 2h 30min)'
+    },
+    
+    // 📶 RÉSEAU - Infos détaillées
+    networkType: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      comment: 'wifi, 4g, 5g, slow-2g, 2g, 3g'
+    },
+    networkDownlink: {
+      type: DataTypes.DECIMAL(8, 2),
+      allowNull: true,
+      comment: 'Vitesse téléchargement Mbps'
+    },
+    networkRtt: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Latence réseau en ms'
+    },
+    networkSaveData: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      comment: 'Mode économie données activé ?'
+    },
+    networkOnline: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      comment: 'Appareil connecté à internet ?'
+    },
+    networkStatus: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      comment: 'online, offline, slow, moderate, fast, excellent'
+    },
+    
+    // 📱 APPAREIL - Infos système
+    deviceOS: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      comment: 'Windows, macOS, Linux, Android, iOS'
+    },
+    deviceBrowser: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      comment: 'Chrome, Firefox, Safari, Edge, Opera'
+    },
+    deviceType: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      comment: 'mobile, tablet, desktop'
+    },
+    devicePlatform: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      comment: 'Win32, MacIntel, iPhone, Android, etc.'
+    },
+    deviceLanguage: {
+      type: DataTypes.STRING(10),
+      allowNull: true,
+      comment: 'Langue appareil (en, fr, ar, etc.)'
+    },
+    deviceCPUCores: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Nombre de cœurs CPU'
+    },
+    deviceMemory: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'RAM en GB'
+    },
+    deviceScreenResolution: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      comment: 'Résolution écran (ex: 1920x1080)'
+    },
+    deviceScreenOn: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      comment: 'Écran allumé ou éteint ?'
+    },
+    
+    // 🛡️ SÉCURITÉ
     isMockLocation: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
       comment: 'Detection GPS spoofing'
-    },
-    networkType: {
-      type: DataTypes.STRING(20),
-      allowNull: true,
-      comment: 'wifi, 4g, 5g, etc.'
     },
     cellTowerInfo: {
       type: DataTypes.JSON,
       allowNull: true,
       comment: 'Info triangulation'
     },
+    
+    // 🌍 GÉOFENCING
     isWithinGeofence: {
       type: DataTypes.BOOLEAN,
       defaultValue: true
@@ -68,9 +174,16 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       comment: 'Distance en metres'
     },
+    
+    // ⏱️ TRACKING
     recordedAt: {
       type: DataTypes.DATE,
       allowNull: false
+    },
+    isMoving: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      comment: 'Agent en mouvement ?'
     }
   }, {
     tableName: 'geo_tracking',
@@ -80,7 +193,10 @@ module.exports = (sequelize, DataTypes) => {
     indexes: [
       { fields: ['user_id', 'event_id'] },
       { fields: ['recorded_at'] },
-      { fields: ['user_id', 'recorded_at'] }
+      { fields: ['user_id', 'recorded_at'] },
+      { fields: ['battery_level'] },
+      { fields: ['network_status'] },
+      { fields: ['device_screen_on'] }
     ]
   });
 

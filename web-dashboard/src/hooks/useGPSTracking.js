@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import api from '../services/api';
+import deviceInfoService from '../services/deviceInfoService';
 
 const SOCKET_URL = process.env.REACT_APP_API_URL?.replace('/api', '') || 
                    'https://security-guard-backend.onrender.com';
@@ -142,18 +143,74 @@ const useGPSTracking = (isCheckedIn, eventId) => {
 
   const sendPosition = async (position) => {
     try {
-      // Récupérer le niveau de batterie (si disponible)
-      let batteryLevel = 100;
-      if ('getBattery' in navigator) {
-        const battery = await navigator.getBattery();
-        batteryLevel = Math.round(battery.level * 100);
-      }
+      // 🆕 Récupérer TOUTES les informations de l'appareil
+      const deviceData = await deviceInfoService.getAllInfo();
+      
+      // 🆕 Informations GPS étendues
+      const gpsExtended = await deviceInfoService.getGPSExtendedInfo({
+        coords: {
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracy: position.accuracy,
+          altitude: null,
+          altitudeAccuracy: null,
+          heading: null,
+          speed: position.isMoving ? 1 : 0
+        },
+        timestamp: position.timestamp
+      });
 
       const payload = {
-        ...position,
-        batteryLevel,
-        eventId
+        // GPS de base
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracy: position.accuracy,
+        isMoving: position.isMoving,
+        timestamp: position.timestamp,
+        eventId,
+        
+        // 🔋 BATTERIE COMPLÈTE
+        batteryLevel: deviceData.battery?.level || 100,
+        batteryCharging: deviceData.battery?.charging || false,
+        batteryChargingTime: deviceData.battery?.chargingTime || null,
+        batteryDischargingTime: deviceData.battery?.dischargingTime || null,
+        batteryStatus: deviceData.battery?.status || 'unknown',
+        batteryEstimatedTime: deviceData.battery?.estimatedTimeRemaining || 'N/A',
+        
+        // 📶 RÉSEAU
+        networkType: deviceData.network?.type || 'unknown',
+        networkDownlink: deviceData.network?.downlink || null,
+        networkRtt: deviceData.network?.rtt || null,
+        networkSaveData: deviceData.network?.saveData || false,
+        networkOnline: deviceData.network?.isOnline || true,
+        networkStatus: deviceData.network?.status || 'unknown',
+        
+        // 📱 APPAREIL
+        deviceOS: deviceData.device?.os || 'Unknown',
+        deviceBrowser: deviceData.device?.browser || 'Unknown',
+        deviceType: deviceData.device?.deviceType || 'unknown',
+        devicePlatform: deviceData.device?.platform || 'Unknown',
+        deviceLanguage: deviceData.device?.language || 'fr',
+        deviceCPUCores: deviceData.device?.cpuCores || null,
+        deviceMemory: deviceData.device?.memory || null,
+        deviceScreenResolution: deviceData.device?.screenResolution || null,
+        deviceScreenOn: deviceData.device?.screenOn || true,
+        
+        // 📍 GPS ÉTENDU
+        altitude: gpsExtended.altitude,
+        altitudeAccuracy: gpsExtended.altitudeAccuracy,
+        heading: gpsExtended.heading,
+        speed: gpsExtended.speed,
+        speedKmh: gpsExtended.speedKmh
       };
+
+      console.log('📤 Envoi position enrichie:', {
+        coords: `${position.latitude.toFixed(6)}, ${position.longitude.toFixed(6)}`,
+        battery: `${deviceData.battery?.level}% (${deviceData.battery?.status})`,
+        network: `${deviceData.network?.type} (${deviceData.network?.status})`,
+        device: `${deviceData.device?.os} - ${deviceData.device?.browser}`,
+        screenOn: deviceData.device?.screenOn
+      });
 
       // Envoyer via API HTTP
       await api.post('/tracking/update-position', payload);

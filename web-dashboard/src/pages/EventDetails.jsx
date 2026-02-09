@@ -12,6 +12,10 @@ import { toast } from 'react-toastify';
 import { format, isPast, isFuture, isToday, isTomorrow, differenceInDays, differenceInHours } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import MiniMap from '../components/MiniMap';
+import AgentInfoPanel from '../components/AgentInfoPanel';
+import trackingStatsService from '../services/trackingStatsService';
+import AgentInfoPanel from '../components/AgentInfoPanel';
+import trackingStatsService from '../services/trackingStatsService';
 
 const PRIORITY_OPTIONS = [
   { value: 'low', label: 'Basse', color: 'text-gray-500', bg: 'bg-gray-100' },
@@ -33,13 +37,19 @@ const EventDetails = () => {
   const [error, setError] = useState('');
   
   // États pour le suivi en temps réel
-  const [agentLocations, setAgentLocations] = useState({}); // { agentId: { lat, lng, battery, timestamp, isOnline } }
+  const [agentLocations, setAgentLocations] = useState({}); // { agentId: { lat, lng, battery, timestamp, isOnline, ...(toutes infos enrichies) } }
   const [onlineAgents, setOnlineAgents] = useState(new Set()); // IDs des agents connectés
   
   // État Socket.IO
   const [socketConnected, setSocketConnected] = useState(false);
   const [socketError, setSocketError] = useState(null);
   const [lastSync, setLastSync] = useState(null);
+  
+  // 🆕 État pour le panneau d'informations enrichies
+  const [selectedAgent, setSelectedAgent] = useState(null);
+  
+  // 🆕 État pour le panneau d'informations enrichies
+  const [selectedAgent, setSelectedAgent] = useState(null);
 
   useEffect(() => {
     if (id) {
@@ -100,15 +110,62 @@ const EventDetails = () => {
         const updated = {
           ...prev,
           [data.userId]: {
+            // Position GPS
             lat: data.latitude,
             lng: data.longitude,
-            battery: data.batteryLevel || 100,
+            latitude: data.latitude,
+            longitude: data.longitude,
             accuracy: data.accuracy,
-            timestamp: new Date(),
-            isOnline: true
+            altitude: data.altitude,
+            speed: data.speed,
+            speedKmh: data.speedKmh,
+            heading: data.heading,
+            isMoving: data.isMoving,
+            
+            // 🔋 Batterie complète
+            battery: data.batteryLevel || 100,
+            batteryLevel: data.batteryLevel || 100,
+            batteryCharging: data.batteryCharging,
+            batteryChargingTime: data.batteryChargingTime,
+            batteryDischargingTime: data.batteryDischargingTime,
+            batteryStatus: data.batteryStatus,
+            batteryEstimatedTime: data.batteryEstimatedTime,
+            
+            // 📶 Réseau
+            networkType: data.networkType,
+            networkDownlink: data.networkDownlink,
+            networkRtt: data.networkRtt,
+            networkSaveData: data.networkSaveData,
+            networkOnline: data.networkOnline,
+            networkStatus: data.networkStatus,
+            
+            // 📱 Appareil
+            deviceOS: data.deviceOS,
+            deviceBrowser: data.deviceBrowser,
+            deviceType: data.deviceType,
+            devicePlatform: data.devicePlatform,
+            deviceLanguage: data.deviceLanguage,
+            deviceCPUCores: data.deviceCPUCores,
+            deviceMemory: data.deviceMemory,
+            deviceScreenResolution: data.deviceScreenResolution,
+            deviceScreenOn: data.deviceScreenOn,
+            
+            // 📊 Statistiques
+            stats: data.stats,
+            
+            // 🗺️ Trajet
+            path: data.path,
+            
+            // Utilisateur
+            user: data.user,
+            
+            // Méta
+            timestamp: new Date(data.timestamp),
+            isOnline: true,
+            status: data.status
           }
         };
-        console.log('🗺️ AgentLocations MAJ:', updated);
+        console.log('🗺️ AgentLocations MAJ avec infos enrichies:', updated[data.userId]);
         return updated;
       });
       
@@ -116,6 +173,19 @@ const EventDetails = () => {
         const updated = new Set([...prev, data.userId]);
         console.log('👥 OnlineAgents MAJ:', Array.from(updated));
         return updated;
+      });
+      
+      // 🆕 Mettre à jour l'agent sélectionné si c'est celui-ci
+      setSelectedAgent(prev => {
+        if (prev && prev.userId === data.userId) {
+          return {
+            ...prev,
+            ...data,
+            lat: data.latitude,
+            lng: data.longitude
+          };
+        }
+        return prev;
       });
       
       setLastSync(new Date());
@@ -687,7 +757,23 @@ const EventDetails = () => {
                   const inPerimeter = isAgentInPerimeter(assignment.agentId);
                   
                   return (
-                    <tr key={assignment.id} className="hover:bg-gray-50">
+                    <tr 
+                      key={assignment.id} 
+                      className="hover:bg-gray-50 transition-colors cursor-pointer"
+                      onClick={() => {
+                        if (location && isOnline) {
+                          setSelectedAgent({
+                            userId: assignment.agentId,
+                            ...location,
+                            user: assignment.agent || location.user
+                          });
+                          toast.info(`📊 Infos détaillées: ${assignment.agent?.firstName} ${assignment.agent?.lastName}`, { autoClose: 2000 });
+                        } else {
+                          toast.warning('❌ Agent non connecté ou pas de données GPS', { autoClose: 2000 });
+                        }
+                      }}
+                      title="Cliquer pour voir les informations détaillées"
+                    >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="relative">
@@ -822,6 +908,15 @@ const EventDetails = () => {
             Gérer les affectations
           </button>
         </div>
+      )}
+
+      {/* 🆕 PANNEAU D'INFORMATIONS ENRICHIES */}
+      {selectedAgent && (
+        <AgentInfoPanel
+          agent={selectedAgent}
+          stats={selectedAgent.stats}
+          onClose={() => setSelectedAgent(null)}
+        />
       )}
     </div>
   );

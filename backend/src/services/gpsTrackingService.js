@@ -5,6 +5,7 @@
 
 const db = require('../models');
 const { Op } = require('sequelize');
+const TrackingStatsService = require('./trackingStatsService');
 
 class GPSTrackingService {
   constructor(io) {
@@ -12,6 +13,7 @@ class GPSTrackingService {
     this.activeTrackers = new Map(); // userId -> intervalId
     this.agentStatuses = new Map(); // userId -> {status, lastPosition, battery}
     this.geofenceAlerts = new Map(); // userId -> lastAlertTime
+    this.statsService = new TrackingStatsService(); // 📊 Service de statistiques
   }
 
   /**
@@ -47,6 +49,9 @@ class GPSTrackingService {
         startTime: new Date()
       });
 
+      // 📊 Initialiser les statistiques
+      this.statsService.initializeAgent(userId, initialPosition);
+
       // Émettre la position initiale
       await this.emitPosition(userId, initialPosition);
 
@@ -76,16 +81,49 @@ class GPSTrackingService {
         return;
       }
 
-      // Sauvegarder la position dans la base de données
+      // 📊 Mettre à jour les statistiques AVANT de sauvegarder
+      const stats = this.statsService.updatePosition(userId, positionData);
+
+      // Sauvegarder la position COMPLÈTE dans la base de données
       await db.GeoTracking.create({
         userId,
         eventId: agentStatus.eventId,
         latitude: positionData.latitude,
         longitude: positionData.longitude,
         accuracy: positionData.accuracy,
+        altitude: positionData.altitude,
+        speed: positionData.speed,
+        heading: positionData.heading,
+        isMoving: positionData.isMoving || false,
+        
+        // 🔋 Batterie complète
         batteryLevel: positionData.batteryLevel,
-        recordedAt: new Date(),
-        isMoving: positionData.isMoving || false
+        batteryCharging: positionData.batteryCharging,
+        batteryChargingTime: positionData.batteryChargingTime,
+        batteryDischargingTime: positionData.batteryDischargingTime,
+        batteryStatus: positionData.batteryStatus,
+        batteryEstimatedTime: positionData.batteryEstimatedTime,
+        
+        // 📶 Réseau
+        networkType: positionData.networkType,
+        networkDownlink: positionData.networkDownlink,
+        networkRtt: positionData.networkRtt,
+        networkSaveData: positionData.networkSaveData,
+        networkOnline: positionData.networkOnline,
+        networkStatus: positionData.networkStatus,
+        
+        // 📱 Appareil
+        deviceOS: positionData.deviceOS,
+        deviceBrowser: positionData.deviceBrowser,
+        deviceType: positionData.deviceType,
+        devicePlatform: positionData.devicePlatform,
+        deviceLanguage: positionData.deviceLanguage,
+        deviceCPUCores: positionData.deviceCPUCores,
+        deviceMemory: positionData.deviceMemory,
+        deviceScreenResolution: positionData.deviceScreenResolution,
+        deviceScreenOn: positionData.deviceScreenOn,
+        
+        recordedAt: new Date()
       });
 
       // Mettre à jour le statut local
@@ -98,8 +136,8 @@ class GPSTrackingService {
       // Vérifier le niveau de batterie
       await this.checkBatteryLevel(userId, positionData.batteryLevel);
 
-      // Émettre la position en temps réel
-      await this.emitPosition(userId, positionData);
+      // Émettre la position en temps réel AVEC les statistiques
+      await this.emitPosition(userId, positionData, stats);
 
     } catch (error) {
       console.error(`❌ Erreur mise à jour position user ${userId}:`, error);
@@ -277,22 +315,60 @@ class GPSTrackingService {
   /**
    * Émet la position en temps réel via Socket.IO
    */
-  async emitPosition(userId, positionData) {
+  async emitPosition(userId, positionData, stats = null) {
     try {
       const user = await db.User.findByPk(userId);
       const agentStatus = this.agentStatuses.get(userId);
 
       if (!user || !agentStatus) return;
 
+      // 📊 Récupérer les statistiques si pas fournies
+      if (!stats) {
+        stats = this.statsService.getStats(userId);
+      }
+
+      // 🗺️ Récupérer le chemin parcouru
+      const path = this.statsService.getPath(userId);
+
       const payload = {
         userId,
         eventId: agentStatus.eventId,
+        
+        // 📍 Position
         latitude: positionData.latitude,
         longitude: positionData.longitude,
         accuracy: positionData.accuracy,
-        batteryLevel: positionData.batteryLevel,
-        timestamp: new Date(),
+        altitude: positionData.altitude,
+        speed: positionData.speed,
+        speedKmh: positionData.speedKmh,
+        heading: positionData.heading,
         isMoving: positionData.isMoving || false,
+        
+        // 🔋 Batterie complète
+        batteryLevel: positionData.batteryLevel,
+        batteryCharging: positionData.batteryCharging,
+        batteryStatus: positionData.batteryStatus,
+        batteryEstimatedTime: positionData.batteryEstimatedTime,
+        
+        // 📶 Réseau
+        networkType: positionData.networkType,
+        networkStatus: positionData.networkStatus,
+        networkOnline: positionData.networkOnline,
+        networkDownlink: positionData.networkDownlink,
+        networkRtt: positionData.networkRtt,
+        
+        // 📱 Appareil
+        deviceOS: positionData.deviceOS,
+        deviceBrowser: positionData.deviceBrowser,
+        deviceType: positionData.deviceType,
+        deviceScreenOn: positionData.deviceScreenOn,
+        
+        // 📊 Statistiques en temps réel
+        stats: stats || {},
+        path: path || [],
+        
+        // Méta
+        timestamp: new Date(),
         status: agentStatus.status,
         user: {
           id: user.id,
@@ -327,13 +403,22 @@ class GPSTrackingService {
       if (agentStatus) {
         agentStatus.status = 'completed';
         
-        // Émettre un événement de fin de tracking
+        // 📊 Récupérer les stats finales avant nettoyage
+        const finalStats = this.statsService.getStats(userId);
+        const finalPath = this.statsService.getPath(userId);
+        
+        // Émettre un événement de fin de tracking avec les stats finales
         this.io.to(`event:${agentStatus.eventId}`).emit('tracking:agent_stopped', {
           userId,
-          timestamp: new Date()
+          timestamp: new Date(),
+          finalStats,
+          path: finalPath
         });
 
         this.agentStatuses.delete(userId);
+        
+        // 📊 Nettoyer les statistiques
+        this.statsService.clearAgent(userId);
       }
 
       this.geofenceAlerts.delete(userId);

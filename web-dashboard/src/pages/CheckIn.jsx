@@ -715,19 +715,28 @@ const CheckIn = () => {
   });
 
   // 🔥 TRACKING GPS EN TEMPS RÉEL après le check-in
-  // CORRECTION #5: Utiliser ref pour éviter restart inutiles
+  // AMÉLIORATION PHASE 1: Intervalle fixe 5s + Battery API complète
   useEffect(() => {
+    let watchId = null;
+    let intervalId = null;
+    let lastPosition = null;
+    let battery = null;
+
     // Fonction pour arrêter le tracking
     const stopTracking = () => {
-      if (gpsWatchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(gpsWatchIdRef.current);
-        console.log('🛑 GPS Watch arrêté, ID:', gpsWatchIdRef.current);
-        gpsWatchIdRef.current = null;
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        console.log('🛑 GPS Watch arrêté');
+        watchId = null;
+      }
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+        console.log('🛑 Intervalle 5s arrêté');
+        intervalId = null;
       }
     };
 
     // Vérifier si on doit tracker
-    // Conditions: événements assignés, pointé, pas sorti, fenêtre temporelle valide
     if (todayEvents.length === 0) {
       console.log('⏸️ GPS Watch désactivé - Aucun événement assigné');
       stopTracking();
@@ -738,39 +747,35 @@ const CheckIn = () => {
     const shouldTrack = shouldTrackGPS(selectedEvent, todayAttendance?.checkedIn, todayAttendance?.checkedOut);
 
     if (shouldTrack && user?.id) {
-      // Éviter de démarrer si déjà en cours
-      if (gpsWatchIdRef.current !== null) {
-        console.log('⏭️ GPS Watch déjà actif, ID:', gpsWatchIdRef.current);
-        return;
+      console.log('📡 Démarrage du tracking GPS optimisé (5s fixe + Battery API)...');
+
+      // Initialiser Battery API
+      if ('getBattery' in navigator) {
+        navigator.getBattery().then(batteryManager => {
+          battery = batteryManager;
+          console.log('🔋 Battery API initialisée:', {
+            level: Math.round(battery.level * 100) + '%',
+            charging: battery.charging
+          });
+        }).catch(err => {
+          console.warn('⚠️ Battery API non disponible:', err);
+        });
       }
 
-      console.log('📡 Démarrage du tracking GPS en temps réel...');
-
-      const sendPosition = (position) => {
-        const positionData = {
-          userId: user.id,
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          speed: position.coords.speed || 0,
-          isMoving: (position.coords.speed || 0) > 0.5,
-          timestamp: new Date(position.timestamp).toISOString()
-        };
-
-        // Envoyer via syncService
-        const syncService = require('../services/syncService').default;
-        const sent = syncService.sendPosition(positionData);
-
-        if (sent) {
-          console.log('📍 Position GPS envoyée:', positionData.latitude, positionData.longitude);
-        }
-      };
-
-      // Démarrer le watch GPS
+      // 1. Watch position natif (mise à jour variable selon appareil)
       if (navigator.geolocation) {
-        const watchId = navigator.geolocation.watchPosition(
-          sendPosition,
-          (error) => console.error('❌ Erreur GPS tracking:', error),
+        watchId = navigator.geolocation.watchPosition(
+          (position) => {
+            lastPosition = position;
+            console.log('📍 Position GPS mise à jour (watch):', {
+              lat: position.coords.latitude.toFixed(6),
+              lng: position.coords.longitude.toFixed(6),
+              accuracy: Math.round(position.coords.accuracy) + 'm'
+            });
+          },
+          (error) => {
+            console.error('❌ Erreur GPS tracking:', error);
+          },
           {
             enableHighAccuracy: true,
             timeout: 10000,
@@ -778,18 +783,79 @@ const CheckIn = () => {
           }
         );
 
-        gpsWatchIdRef.current = watchId;
-        console.log('✅ GPS Watch démarré, ID:', watchId);
+        console.log('✅ GPS Watch démarré');
       }
+
+      // 2. Envoi FIXE toutes les 5 secondes (sync parfait)
+      const sendGPSUpdate = async () => {
+        if (!lastPosition) {
+          console.log('⏸️ Pas de position GPS disponible encore');
+          return;
+        }
+
+        try {
+          // Récupérer état batterie actuel
+          let batteryData = {
+            level: 100,
+            charging: false,
+            chargingTime: null,
+            dischargingTime: null
+          };
+
+          if (battery) {
+            batteryData = {
+              level: Math.round(battery.level * 100),
+              charging: battery.charging,
+              chargingTime: battery.chargingTime,
+              dischargingTime: battery.dischargingTime
+            };
+          }
+
+          const positionData = {
+            userId: user.id,
+            role: user.role,
+            eventId: selectedEventId,
+            latitude: lastPosition.coords.latitude,
+            longitude: lastPosition.coords.longitude,
+            accuracy: lastPosition.coords.accuracy,
+            speed: lastPosition.coords.speed || 0,
+            isMoving: (lastPosition.coords.speed || 0) > 0.5,
+            battery: batteryData,
+            timestamp: new Date().toISOString()
+          };
+
+          // Envoyer via syncService
+          const syncService = require('../services/syncService').default;
+          const sent = syncService.sendPosition(positionData);
+
+          if (sent) {
+            console.log('✅ Position GPS envoyée (5s):', {
+              lat: positionData.latitude.toFixed(6),
+              lng: positionData.longitude.toFixed(6),
+              battery: batteryData.level + '%' + (batteryData.charging ? ' ⚡' : ''),
+              eventId: selectedEventId
+            });
+          }
+        } catch (error) {
+          console.error('❌ Erreur envoi GPS:', error);
+        }
+      };
+
+      // Démarrer intervalle fixe 5 secondes
+      intervalId = setInterval(sendGPSUpdate, 5000);
+      console.log('✅ Intervalle 5s démarré');
+
+      // Envoi immédiat au démarrage
+      setTimeout(sendGPSUpdate, 1000);
+
     } else {
-      // Conditions non remplies → arrêter si en cours
       if (todayAttendance?.checkedIn && !todayAttendance?.checkedOut) {
         console.log('⏸️ GPS Watch en pause - hors fenêtre temporelle événement');
       }
       stopTracking();
     }
 
-    // Cleanup lors du démontage du composant
+    // Cleanup lors du démontage
     return stopTracking;
   }, [todayAttendance?.checkedIn, todayAttendance?.checkedOut, user?.id, selectedEventId, todayEvents]);
 
