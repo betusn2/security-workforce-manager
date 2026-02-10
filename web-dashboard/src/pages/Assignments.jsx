@@ -611,6 +611,8 @@ const AssignmentsResponsive = () => {
                   onConfirm={handleConfirm}
                   onDecline={handleDecline}
                   onRemove={handleRemove}
+                  isSelected={selectedIds.includes(assignment.id)}
+                  onSelect={handleSelectOne}
                 />
               ))}
             </div>
@@ -627,6 +629,8 @@ const AssignmentsResponsive = () => {
                       onConfirm={handleConfirm}
                       onDecline={handleDecline}
                       onRemove={handleRemove}
+                      isSelected={selectedIds.includes(assignment.id)}
+                      onSelect={handleSelectOne}
                     />
                   ))}
                 </div>
