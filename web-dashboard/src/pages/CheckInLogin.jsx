@@ -56,7 +56,7 @@ const CheckInLogin = () => {
     
     // Vérifier si utilisateur déjà connecté
     const checkInUser = localStorage.getItem('checkInUser');
-    const token = localStorage.getItem('checkInToken') || localStorage.getItem('token');
+    const token = localStorage.getItem('checkInToken') || localStorage.getItem('accessToken') || localStorage.getItem('token');
     
     if (checkInUser && token) {
       const user = JSON.parse(checkInUser);
@@ -79,7 +79,7 @@ const CheckInLogin = () => {
   // Initialiser Socket.IO pour envoyer la localisation
   const initializeSocket = (userId) => {
     const BACKEND_URL = process.env.REACT_APP_API_URL?.replace('/api', '') || 'https://security-guard-backend.onrender.com';
-    const token = localStorage.getItem('checkInToken') || localStorage.getItem('token');
+    const token = localStorage.getItem('checkInToken') || localStorage.getItem('accessToken') || localStorage.getItem('token');
     const validEvents = JSON.parse(localStorage.getItem('validEvents') || '[]');
     const eventId = validEvents[0]?.id || null;
     
