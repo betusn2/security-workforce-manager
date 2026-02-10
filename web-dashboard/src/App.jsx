@@ -18,6 +18,7 @@ import Dashboard from './pages/Dashboard';
 import DashboardEnhanced from './pages/DashboardEnhanced';
 import Users from './pages/Users';
 import UsersEnhanced from './pages/UsersEnhanced';
+import UsersResponsive from './pages/UsersResponsive';
 import Events from './pages/Events';
 import EventDetails from './pages/EventDetails';
 import Attendance from './pages/Attendance';
@@ -136,7 +137,7 @@ function App() {
           path="/users"
           element={
             <ProtectedRoute roles={['admin', 'supervisor']}>
-              <UsersEnhanced />
+              <UsersResponsive />
             </ProtectedRoute>
           }
         />
