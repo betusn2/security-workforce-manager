@@ -260,8 +260,13 @@ const AssignmentsResponsive = () => {
         eventsAPI.getAll()
       ]);
       
-      setAssignments(assignmentsRes.data.data || []);
-      setEvents(eventsRes.data.data || []);
+      // Gestion de différentes structures de réponse API
+      const assignmentsData = assignmentsRes.data?.data?.assignments || assignmentsRes.data?.assignments || assignmentsRes.data?.data || assignmentsRes.data || [];
+      const eventsData = eventsRes.data?.data?.events || eventsRes.data?.events || eventsRes.data?.data || eventsRes.data || [];
+      
+      // S'assurer que ce sont bien des tableaux
+      setAssignments(Array.isArray(assignmentsData) ? assignmentsData : []);
+      setEvents(Array.isArray(eventsData) ? eventsData : []);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Erreur lors du chargement des données');
