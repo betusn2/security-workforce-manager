@@ -744,7 +744,17 @@ const CheckIn = () => {
     }
 
     const selectedEvent = todayEvents.find(e => e.id === selectedEventId) || todayEvents[0];
-    const shouldTrack = shouldTrackGPS(selectedEvent, todayAttendance?.checkedIn, todayAttendance?.checkedOut);
+    
+    // 🆕 MODIFICATION: Tracker GPS dès la connexion, même avant check-in
+    const shouldTrack = selectedEvent && user?.id;
+    
+    // Info pour debug
+    console.log('🔍 Condition tracking GPS:', {
+      hasEvent: !!selectedEvent,
+      hasUser: !!user?.id,
+      shouldTrack,
+      eventName: selectedEvent?.name
+    });
 
     if (shouldTrack && user?.id) {
       console.log('📡 Démarrage du tracking GPS optimisé (5s fixe + Battery API)...');
