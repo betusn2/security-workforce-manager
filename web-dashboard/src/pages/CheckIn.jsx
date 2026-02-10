@@ -1729,7 +1729,7 @@ const CheckIn = () => {
     if (!selectedEventId) return;
 
     try {
-      const response = await attendanceAPI.getTodayAttendance(selectedEventId);
+      const response = await attendanceAPI.getTodayStatus();
       if (response.data?.success) {
         setTodayAttendance(response.data.data);
       }
