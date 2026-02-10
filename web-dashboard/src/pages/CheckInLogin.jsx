@@ -78,7 +78,7 @@ const CheckInLogin = () => {
 
   // Initialiser Socket.IO pour envoyer la localisation
   const initializeSocket = (userId) => {
-    const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://security-guard-backend.onrender.com';
+    const BACKEND_URL = process.env.REACT_APP_API_URL?.replace('/api', '') || 'https://security-guard-backend.onrender.com';
     const token = localStorage.getItem('checkInToken') || localStorage.getItem('token');
     const validEvents = JSON.parse(localStorage.getItem('validEvents') || '[]');
     const eventId = validEvents[0]?.id || null;

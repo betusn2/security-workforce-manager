@@ -61,7 +61,7 @@ const EventDetails = () => {
 
   // Initialiser Socket.IO pour le suivi en temps réel
   const initializeSocketIO = () => {
-    const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://security-guard-backend.onrender.com';
+    const BACKEND_URL = process.env.REACT_APP_API_URL?.replace('/api', '') || 'https://security-guard-backend.onrender.com';
     const token = localStorage.getItem('token');
     
     socketRef.current = io(BACKEND_URL, {
