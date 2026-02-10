@@ -10,6 +10,7 @@ import { authAPI, assignmentsAPI } from '../services/api';
 import useAuthStore from '../hooks/useAuth';
 import { toast } from 'react-toastify';
 import { getDeviceFingerprint, getDeviceInfo } from '../utils/deviceFingerprint';
+import deviceInfoService from '../services/deviceInfoService';
 
 /**
  * Page de connexion unifiée
@@ -210,7 +211,7 @@ const CheckInLogin = () => {
   };
 
   // Envoyer la mise à jour de localisation via Socket.IO
-  const sendLocationUpdate = (location) => {
+  const sendLocationUpdate = async (location) => {
     const user = JSON.parse(localStorage.getItem('checkInUser') || '{}');
     
     if (!user.id) {
@@ -237,14 +238,54 @@ const CheckInLogin = () => {
     }
     
     if (location) {
+      // 🆕 Collecter TOUTES les infos enrichies
+      const enrichedInfo = await deviceInfoService.getAllInfo();
+      
       const data = {
         userId: user.id,
+        // GPS
         latitude: location.latitude,
         longitude: location.longitude,
         accuracy: location.accuracy,
-        batteryLevel: batteryLevel || 100,
+        altitude: location.altitude || null,
+        speed: location.speed || 0,
+        heading: location.heading || null,
+        
+        // 🔋 Batterie complète
+        batteryLevel: enrichedInfo.battery?.level || batteryLevel || 100,
+        batteryCharging: enrichedInfo.battery?.charging,
+        batteryChargingTime: enrichedInfo.battery?.chargingTime,
+        batteryDischargingTime: enrichedInfo.battery?.dischargingTime,
+        batteryStatus: enrichedInfo.battery?.status,
+        batteryEstimatedTime: enrichedInfo.battery?.estimatedTimeRemaining,
+        
+        // 📶 Réseau
+        networkType: enrichedInfo.network?.type,
+        networkDownlink: enrichedInfo.network?.downlink,
+        networkRtt: enrichedInfo.network?.rtt,
+        networkSaveData: enrichedInfo.network?.saveData,
+        networkOnline: enrichedInfo.network?.online,
+        networkStatus: enrichedInfo.network?.status,
+        
+        // 📱 Appareil
+        deviceOS: enrichedInfo.device?.os,
+        deviceBrowser: enrichedInfo.device?.browser,
+        deviceType: enrichedInfo.device?.type,
+        devicePlatform: enrichedInfo.device?.platform,
+        deviceLanguage: enrichedInfo.device?.language,
+        deviceCPUCores: enrichedInfo.device?.cpuCores,
+        deviceMemory: enrichedInfo.device?.memory,
+        deviceScreenResolution: enrichedInfo.device?.screenResolution,
+        deviceScreenOn: enrichedInfo.device?.screenOn,
+        
         timestamp: new Date().toISOString()
       };
+      
+      console.log('📡 Envoi position enrichie:', {
+        battery: enrichedInfo.battery?.level + '%',
+        network: enrichedInfo.network?.type,
+        device: enrichedInfo.device?.os + ' ' + enrichedInfo.device?.browser
+      });
       
       socketRef.current.emit('location-update', data);
       
