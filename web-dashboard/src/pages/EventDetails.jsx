@@ -77,7 +77,7 @@ const EventDetails = () => {
       
       // Rejoindre la room de l'événement
       console.log('🚪 Joining rooms pour eventId:', id);
-      socketRef.current.emit('join-event', id);
+      socketRef.current.emit('event:join', id);
       socketRef.current.emit('event:join', id);
       socketRef.current.emit('tracking:subscribe', id);
       
