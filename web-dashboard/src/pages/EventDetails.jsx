@@ -75,13 +75,34 @@ const EventDetails = () => {
       setSocketError(null);
       setLastSync(new Date());
       
-      // Rejoindre la room de l'événement
-      console.log('🚪 Joining rooms pour eventId:', id);
-      socketRef.current.emit('event:join', id);
-      socketRef.current.emit('event:join', id);
-      socketRef.current.emit('tracking:subscribe', id);
+      // 🔐 Authentifier d'abord via Socket.IO
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const authData = {
+        userId: user.id,
+        role: user.role,
+        eventId: id,
+        token: token
+      };
+      
+      console.log('🔐 Authentification Socket.IO EventDetails:', authData);
+      socketRef.current.emit('auth', authData);
       
       toast.success('🟢 Suivi temps réel activé', { autoClose: 2000 });
+    });
+
+    // Écouter la confirmation d'authentification
+    socketRef.current.on('auth:success', (data) => {
+      console.log('✅ Authentification Socket.IO réussie:', data);
+      
+      // Maintenant rejoindre la room de l'événement
+      console.log('🚪 Joining rooms pour eventId:', id);
+      socketRef.current.emit('event:join', id);
+      socketRef.current.emit('tracking:subscribe', id);
+    });
+
+    socketRef.current.on('auth:error', (error) => {
+      console.error('❌ Erreur authentification Socket.IO:', error);
+      setSocketError('Erreur d\'authentification');
     });
 
     socketRef.current.on('connect_error', (error) => {
