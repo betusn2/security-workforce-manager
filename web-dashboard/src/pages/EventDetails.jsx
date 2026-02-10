@@ -14,6 +14,7 @@ import { fr } from 'date-fns/locale';
 import MiniMap from '../components/MiniMap';
 import AgentInfoPanel from '../components/AgentInfoPanel';
 import trackingStatsService from '../services/trackingStatsService';
+import useAuthStore from '../hooks/useAuth';
 
 const PRIORITY_OPTIONS = [
   { value: 'low', label: 'Basse', color: 'text-gray-500', bg: 'bg-gray-100' },
@@ -26,6 +27,7 @@ const EventDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const socketRef = useRef(null);
+  const { user: authUser } = useAuthStore();
 
   const [event, setEvent] = useState(null);
   const [zones, setZones] = useState([]);
@@ -76,10 +78,18 @@ const EventDetails = () => {
       setLastSync(new Date());
       
       // 🔐 Authentifier d'abord via Socket.IO
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      console.log('👤 User from authStore:', authUser);
+      console.log('🔑 Token:', token ? `${token.substring(0, 20)}...` : 'NO TOKEN');
+      
+      if (!authUser || !authUser.id) {
+        console.error('❌ Utilisateur non authentifié dans authStore');
+        toast.error('Session expirée. Reconnectez-vous.');
+        return;
+      }
+      
       const authData = {
-        userId: user.id,
-        role: user.role,
+        userId: authUser.id,
+        role: authUser.role,
         eventId: id,
         token: token
       };
@@ -102,7 +112,9 @@ const EventDetails = () => {
 
     socketRef.current.on('auth:error', (error) => {
       console.error('❌ Erreur authentification Socket.IO:', error);
-      setSocketError('Erreur d\'authentification');
+      console.error('❌ Détails erreur:', JSON.stringify(error, null, 2));
+      setSocketError(error.message || 'Erreur d\'authentification');
+      toast.error(`❌ Auth Socket.IO: ${error.message || 'Erreur'}`, { autoClose: 5000 });
     });
 
     socketRef.current.on('connect_error', (error) => {
