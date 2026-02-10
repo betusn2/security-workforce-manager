@@ -54,17 +54,27 @@ const RoleBadge = ({ role }) => {
 };
 
 // 📱 Card pour mobile
-const AssignmentCard = ({ assignment, onViewDetails, onConfirm, onDecline, onRemove }) => (
-  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+const AssignmentCard = ({ assignment, onViewDetails, onConfirm, onDecline, onRemove, isSelected, onSelect }) => (
+  <div className={`bg-white rounded-xl shadow-sm border-2 overflow-hidden hover:shadow-md transition-all ${
+    isSelected ? 'border-primary-500 ring-2 ring-primary-200' : 'border-gray-200'
+  }`}>
     {/* Header */}
     <div className="p-4 bg-gradient-to-r from-primary-50 to-primary-100 border-b border-primary-200">
       <div className="flex items-start justify-between mb-2">
-        <div className="flex-1">
-          <h3 className="font-semibold text-gray-900 text-sm line-clamp-1">{assignment.event?.name || 'Événement'}</h3>
-          <p className="text-xs text-gray-600 mt-0.5 flex items-center gap-1">
-            <FiCalendar size={10} />
-            {assignment.event?.startTime ? format(parseISO(assignment.event.startTime), 'dd MMM yyyy', { locale: fr }) : 'N/A'}
-          </p>
+        <div className="flex items-start gap-3 flex-1">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onSelect(assignment.id)}
+            className="mt-0.5 w-5 h-5 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+          />
+          <div className="flex-1">
+            <h3 className="font-semibold text-gray-900 text-sm line-clamp-1">{assignment.event?.name || 'Événement'}</h3>
+            <p className="text-xs text-gray-600 mt-0.5 flex items-center gap-1">
+              <FiCalendar size={10} />
+              {assignment.event?.startTime ? format(parseISO(assignment.event.startTime), 'dd MMM yyyy', { locale: fr }) : 'N/A'}
+            </p>
+          </div>
         </div>
         <StatusBadge status={assignment.status} />
       </div>
@@ -136,8 +146,10 @@ const AssignmentCard = ({ assignment, onViewDetails, onConfirm, onDecline, onRem
 );
 
 // 🖥️ Row pour desktop
-const AssignmentRow = ({ assignment, onViewDetails, onConfirm, onDecline, onRemove }) => (
-  <tr className="hover:bg-gray-50 transition-colors">
+const AssignmentRow = ({ assignment, onViewDetails, onConfirm, onDecline, onRemove, isSelected, onSelect }) => (
+  <tr className={`transition-colors ${
+    isSelected ? 'bg-primary-50 hover:bg-primary-100' : 'hover:bg-gray-50'
+  }`}>
     {/* Event */}
     <td className="px-6 py-4">
       <div>
@@ -246,6 +258,9 @@ const AssignmentsResponsive = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [eventFilter, setEventFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
+  
+  // Sélection en masse
+  const [selectedIds, setSelectedIds] = useState([]);
 
   // Charger les données
   useEffect(() => {
@@ -310,6 +325,98 @@ const AssignmentsResponsive = () => {
 
   const handleViewDetails = (assignment) => {
     navigate(`/events/${assignment.eventId}`);
+  };
+
+  // Sélection en masse
+  const handleSelectOne = (id) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.length === filteredAssignments.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredAssignments.map(a => a.id));
+    }
+  };
+
+  const handleSelectByEvent = (eventId) => {
+    const eventAssignments = filteredAssignments.filter(a => a.eventId === eventId);
+    const eventIds = eventAssignments.map(a => a.id);
+    const allSelected = eventIds.every(id => selectedIds.includes(id));
+    
+    if (allSelected) {
+      setSelectedIds(prev => prev.filter(id => !eventIds.includes(id)));
+    } else {
+      setSelectedIds(prev => [...new Set([...prev, ...eventIds])]);
+    }
+  };
+
+  // Actions en masse
+  const handleBulkConfirm = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Confirmer ${selectedIds.length} affectation(s) ?`)) return;
+    
+    try {
+      await Promise.all(
+        selectedIds.map(id => assignmentsAPI.update(id, { status: 'confirmed' }))
+      );
+      toast.success(`${selectedIds.length} affectation(s) confirmée(s)`);
+      setSelectedIds([]);
+      fetchData();
+    } catch (error) {
+      toast.error('Erreur lors de la confirmation en masse');
+    }
+  };
+
+  const handleBulkCancelConfirmation = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Annuler la confirmation de ${selectedIds.length} affectation(s) ?`)) return;
+    
+    try {
+      await Promise.all(
+        selectedIds.map(id => assignmentsAPI.update(id, { status: 'pending' }))
+      );
+      toast.success(`Confirmation annulée pour ${selectedIds.length} affectation(s)`);
+      setSelectedIds([]);
+      fetchData();
+    } catch (error) {
+      toast.error('Erreur lors de l\'annulation');
+    }
+  };
+
+  const handleBulkDecline = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Refuser ${selectedIds.length} affectation(s) ?`)) return;
+    
+    try {
+      await Promise.all(
+        selectedIds.map(id => assignmentsAPI.update(id, { status: 'declined' }))
+      );
+      toast.success(`${selectedIds.length} affectation(s) refusée(s)`);
+      setSelectedIds([]);
+      fetchData();
+    } catch (error) {
+      toast.error('Erreur lors du refus en masse');
+    }
+  };
+
+  const handleBulkRemove = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Supprimer ${selectedIds.length} affectation(s) ? Cette action est irréversible.`)) return;
+    
+    try {
+      await Promise.all(
+        selectedIds.map(id => assignmentsAPI.delete(id))
+      );
+      toast.success(`${selectedIds.length} affectation(s) supprimée(s)`);
+      setSelectedIds([]);
+      fetchData();
+    } catch (error) {
+      toast.error('Erreur lors de la suppression en masse');
+    }
   };
 
   // Filtrage
@@ -456,6 +563,26 @@ const AssignmentsResponsive = () => {
                 ))}
               </select>
             </div>
+
+            {/* Actions de sélection rapide */}
+            {eventFilter !== 'all' && filteredAssignments.length > 0 && (
+              <div className="mt-3 flex items-center gap-2 p-3 bg-primary-50 border border-primary-200 rounded-xl">
+                <FiUserCheck className="text-primary-600" size={18} />
+                <span className="text-sm text-primary-800 font-medium">
+                  Sélection rapide pour cet événement:
+                </span>
+                <button
+                  onClick={() => handleSelectByEvent(eventFilter)}
+                  className="ml-auto px-4 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5"
+                >
+                  <FiCheck size={14} />
+                  {filteredAssignments.filter(a => a.eventId === eventFilter).every(a => selectedIds.includes(a.id))
+                    ? 'Tout désélectionner'
+                    : `Sélectionner tout (${filteredAssignments.filter(a => a.eventId === eventFilter).length})`
+                  }
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -509,6 +636,14 @@ const AssignmentsResponsive = () => {
                     <table className="w-full">
                       <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
+                          <th className="px-6 py-3 w-12">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.length > 0 && selectedIds.length === filteredAssignments.length}
+                              onChange={handleSelectAll}
+                              className="w-5 h-5 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+                            />
+                          </th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Événement</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agent</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Zone</th>
@@ -526,6 +661,8 @@ const AssignmentsResponsive = () => {
                             onConfirm={handleConfirm}
                             onDecline={handleDecline}
                             onRemove={handleRemove}
+                            isSelected={selectedIds.includes(assignment.id)}
+                            onSelect={handleSelectOne}
                           />
                         ))}
                       </tbody>
@@ -547,6 +684,70 @@ const AssignmentsResponsive = () => {
           </div>
         )}
       </div>
+
+      {/* Barre d'actions flottante - sélection en masse */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-slide-up">
+          <div className="bg-gray-900 text-white rounded-2xl shadow-2xl px-6 py-4 flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-primary-500 flex items-center justify-center font-bold">
+                {selectedIds.length}
+              </div>
+              <span className="font-medium hidden sm:inline">sélectionné(s)</span>
+            </div>
+            
+            <div className="h-6 w-px bg-gray-700"></div>
+            
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleBulkConfirm}
+                className="px-4 py-2 bg-green-500 hover:bg-green-600 rounded-lg font-medium transition-colors flex items-center gap-2"
+                title="Confirmer la sélection"
+              >
+                <FiCheck size={16} />
+                <span className="hidden sm:inline">Confirmer</span>
+              </button>
+              
+              <button
+                onClick={handleBulkCancelConfirmation}
+                className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 rounded-lg font-medium transition-colors flex items-center gap-2"
+                title="Annuler confirmation"
+              >
+                <FiRefreshCw size={16} />
+                <span className="hidden sm:inline">Annuler</span>
+              </button>
+              
+              <button
+                onClick={handleBulkDecline}
+                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 rounded-lg font-medium transition-colors flex items-center gap-2"
+                title="Refuser la sélection"
+              >
+                <FiAlertCircle size={16} />
+                <span className="hidden sm:inline">Refuser</span>
+              </button>
+              
+              <button
+                onClick={handleBulkRemove}
+                className="px-4 py-2 bg-red-500 hover:bg-red-600 rounded-lg font-medium transition-colors flex items-center gap-2"
+                title="Supprimer la sélection"
+              >
+                <FiX size={16} />
+                <span className="hidden sm:inline">Supprimer</span>
+              </button>
+            </div>
+            
+            <div className="h-6 w-px bg-gray-700"></div>
+            
+            <button
+              onClick={() => setSelectedIds([])}
+              className="px-3 py-2 hover:bg-gray-800 rounded-lg transition-colors"
+              title="Tout désélectionner"
+            >
+              <FiX size={18} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

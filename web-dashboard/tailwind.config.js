@@ -31,7 +31,16 @@ module.exports = {
           800: '#1e293b',
           900: '#0f172a',
         }
-      }
+      },
+      animation: {
+        'slide-up': 'slideUp 0.3s ease-out',
+      },
+      keyframes: {
+        slideUp: {
+          '0%': { transform: 'translateY(100%)', opacity: '0' },
+          '100%': { transform: 'translateY(0)', opacity: '1' },
+        },
+      },
     },
   },
   plugins: [],
