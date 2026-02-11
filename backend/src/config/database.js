@@ -45,21 +45,20 @@ module.exports = {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT || (isPostgres ? 5432 : 3306),
     dialect: dialect,
-    logging: false,
+    logging: console.log, // Enable logging to debug connection issues
     dialectOptions: isPostgres ? {
       ssl: {
         require: true,
         rejectUnauthorized: false
       }
     } : {
-      ssl: process.env.DB_SSL !== 'false' ? {
-        require: true,
-        rejectUnauthorized: false
-      } : false,
-      connectTimeout: 60000
+      ssl: false, // Railway MySQL doesn't use SSL for external connections
+      connectTimeout: 60000,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10000
     },
     pool: {
-      max: 10,
+      max: 5,
       min: 0,
       acquire: 60000,
       idle: 10000,
@@ -67,7 +66,7 @@ module.exports = {
       handleDisconnects: true
     },
     retry: {
-      max: 3,
+      max: 5,
       timeout: 10000
     }
   }

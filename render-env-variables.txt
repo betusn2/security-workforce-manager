@@ -1,17 +1,29 @@
 NODE_ENV=production
 PORT=5000
+
+# Railway MySQL Database
 DB_HOST=centerbeam.proxy.rlwy.net
 DB_PORT=13158
 DB_NAME=railway
 DB_USER=root
 DB_PASSWORD=qiKrxloVWBcLjxmnUpStvvNTqLyyPHWQ
-DB_SSL=true
+DB_DIALECT=mysql
+
+# JWT & Security
 JWT_SECRET=security_guard_secret_key_2024_very_secure
 JWT_EXPIRES_IN=7d
 SESSION_SECRET=BrO9YoRyMtAX21QSNWdbusZKGP6wz3geLmhFcCI4HTnV5jkJ7qUlEa0ipfDvx8
 ENCRYPTION_KEY=12345678901234567890123456789012
-FRONTEND_URL=https://temporary.vercel.app
-SOCKET_CORS_ORIGIN=https://temporary.vercel.app
+
+# Frontend URLs (Render Web)
+FRONTEND_URL=https://security-guard-web.onrender.com
+SOCKET_CORS_ORIGIN=https://security-guard-web.onrender.com
+
+# Face Recognition
 FACE_RECOGNITION_MODE=local
 FACE_MATCH_THRESHOLD=0.45
 FACE_DETECTION_CONFIDENCE=0.8
+
+# Mode Test
+BYPASS_TIME_WINDOWS=true
+FORCE_DB_SYNC=true
