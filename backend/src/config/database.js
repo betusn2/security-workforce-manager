@@ -52,22 +52,26 @@ module.exports = {
         rejectUnauthorized: false
       }
     } : {
-      ssl: false, // Railway MySQL doesn't use SSL for external connections
+      ssl: {
+        require: false,
+        rejectUnauthorized: false
+      },
       connectTimeout: 60000,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 10000
+      flags: '+FOUND_ROWS',
+      charset: 'utf8mb4',
+      timezone: '+00:00'
     },
     pool: {
-      max: 5,
+      max: 3,
       min: 0,
-      acquire: 60000,
-      idle: 10000,
-      evict: 10000,
+      acquire: 90000,
+      idle: 30000,
+      evict: 30000,
       handleDisconnects: true
     },
     retry: {
-      max: 5,
-      timeout: 10000
+      max: 10,
+      timeout: 15000
     }
   }
 };
