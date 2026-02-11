@@ -1,13 +1,24 @@
 require('dotenv').config();
 
+// Auto-detect dialect from environment or host
+const getDialect = () => {
+  if (process.env.DB_DIALECT) return process.env.DB_DIALECT;
+  if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('postgres')) return 'postgres';
+  if (process.env.DB_HOST && process.env.DB_HOST.includes('postgres')) return 'postgres';
+  return 'mysql';
+};
+
+const dialect = getDialect();
+const isPostgres = dialect === 'postgres';
+
 module.exports = {
   development: {
     username: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'security_guard_db',
     host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 3306,
-    dialect: 'mysql',
+    port: process.env.DB_PORT || (isPostgres ? 5432 : 3306),
+    dialect: dialect,
     logging: console.log,
     pool: {
       max: 5,
@@ -22,19 +33,25 @@ module.exports = {
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME + '_test' || 'security_guard_db_test',
     host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 3306,
-    dialect: 'mysql',
+    port: process.env.DB_PORT || (isPostgres ? 5432 : 3306),
+    dialect: dialect,
     logging: false
   },
   production: {
+    use_env_variable: process.env.DATABASE_URL ? 'DATABASE_URL' : null,
     username: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     host: process.env.DB_HOST,
-    port: process.env.DB_PORT || 3306,
-    dialect: 'mysql',
+    port: process.env.DB_PORT || (isPostgres ? 5432 : 3306),
+    dialect: dialect,
     logging: false,
-    dialectOptions: {
+    dialectOptions: isPostgres ? {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false
+      }
+    } : {
       ssl: process.env.DB_SSL !== 'false' ? {
         require: true,
         rejectUnauthorized: false
