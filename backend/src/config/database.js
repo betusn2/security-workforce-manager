@@ -34,11 +34,24 @@ module.exports = {
     port: process.env.DB_PORT || 3306,
     dialect: 'mysql',
     logging: false,
+    dialectOptions: {
+      ssl: process.env.DB_SSL !== 'false' ? {
+        require: true,
+        rejectUnauthorized: false
+      } : false,
+      connectTimeout: 60000
+    },
     pool: {
       max: 10,
-      min: 2,
-      acquire: 30000,
-      idle: 10000
+      min: 0,
+      acquire: 60000,
+      idle: 10000,
+      evict: 10000,
+      handleDisconnects: true
+    },
+    retry: {
+      max: 3,
+      timeout: 10000
     }
   }
 };
