@@ -7,9 +7,9 @@ const dbConfig = config[env];
 
 // Function to create database if it doesn't exist (MySQL only)
 const createDatabaseIfNotExists = async () => {
-  // Skip database creation for PostgreSQL (database already exists)
-  if (dbConfig.dialect === 'postgres' || process.env.DATABASE_URL) {
-    console.log('✅ Using PostgreSQL database (database creation not required)');
+  // Skip database creation for PostgreSQL or production (database already exists)
+  if (dbConfig.dialect === 'postgres' || process.env.DATABASE_URL || env === 'production') {
+    console.log(`✅ Using existing database (${dbConfig.dialect || 'MySQL'}) - creation skipped in ${env} mode`);
     return;
   }
 
@@ -40,6 +40,7 @@ let sequelize;
 
 if (process.env.DATABASE_URL && dbConfig.use_env_variable) {
   // Use DATABASE_URL for PostgreSQL (Render's preferred method)
+  console.log(`🔌 Connecting with DATABASE_URL (${dbConfig.dialect})`);
   sequelize = new Sequelize(process.env.DATABASE_URL, {
     dialect: 'postgres',
     logging: dbConfig.logging,
@@ -48,6 +49,7 @@ if (process.env.DATABASE_URL && dbConfig.use_env_variable) {
   });
 } else {
   // Use individual credentials (MySQL or PostgreSQL with separate env vars)
+  console.log(`🔌 Connecting to ${dbConfig.dialect} at ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`);
   sequelize = new Sequelize(
     dbConfig.database,
     dbConfig.username,
