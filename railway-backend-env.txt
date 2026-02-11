@@ -3,20 +3,13 @@
 NODE_ENV=production
 PORT=5000
 
-# Database Railway (Utilise les variables internes Railway)
-# Railway fournit automatiquement ces variables:
-# - MYSQLHOST (utilise le hostname privé automatiquement)
-# - MYSQLPORT 
-# - MYSQLUSER
-# - MYSQLPASSWORD
-# - MYSQLDATABASE
-
-# Ou configurez manuellement avec les connexions privées:
-DB_HOST=${{MySQL.MYSQL_PRIVATE_URL}}
+# Database Railway (Variables automatiques du service MySQL)
+# Railway référence automatiquement les variables du service MySQL:
+DB_HOST=${{RAILWAY_PRIVATE_DOMAIN}}
 DB_PORT=3306
-DB_USER=${{MySQL.MYSQLUSER}}
-DB_PASSWORD=${{MySQL.MYSQLPASSWORD}}
-DB_NAME=${{MySQL.MYSQLDATABASE}}
+DB_USER=root
+DB_PASSWORD=${{MYSQL_ROOT_PASSWORD}}
+DB_NAME=${{MYSQL_DATABASE}}
 DB_DIALECT=mysql
 
 # JWT & Security
