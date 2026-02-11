@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FiPlus, FiSearch, FiUser, FiCalendar, FiMapPin, FiFilter,
   FiGrid, FiList, FiUserCheck, FiShield, FiChevronDown,
-  FiCheck, FiX, FiAlertCircle, FiRefreshCw, FiEye
+  FiCheck, FiX, FiAlertCircle, FiRefreshCw, FiEye, FiArrowLeft
 } from 'react-icons/fi';
-import { assignmentsAPI, eventsAPI, usersAPI } from '../services/api';
+import { assignmentsAPI, eventsAPI, usersAPI, zonesAPI } from '../services/api';
 import { toast } from 'react-toastify';
-import {format, parseISO } from 'date-fns';
+import { format, parseISO, isBefore, isToday } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import useAuthStore from '../hooks/useAuth';
 
@@ -50,6 +50,293 @@ const RoleBadge = ({ role }) => {
       {role === 'supervisor' ? <FiShield size={10} className="mr-1" /> : <FiUser size={10} className="mr-1" />}
       {labels[role] || role}
     </span>
+  );
+};
+
+// Modal de création d'affectation
+const AssignmentModal = ({ isOpen, onClose, onSave, events, agents, supervisors }) => {
+  const [step, setStep] = useState(1);
+  const [formData, setFormData] = useState({
+    eventId: '',
+    selectedAgents: [],
+    selectedSupervisor: '',
+    notes: ''
+  });
+  const [loading, setLoading] = useState(false);
+  const [searchAgent, setSearchAgent] = useState('');
+  const [searchEvent, setSearchEvent] = useState('');
+  const [selectedEvent, setSelectedEvent] = useState(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setFormData({ eventId: '', selectedAgents: [], selectedSupervisor: '', notes: '' });
+      setSelectedEvent(null);
+      setStep(1);
+    }
+  }, [isOpen]);
+
+  const handleEventSelect = (event) => {
+    setFormData({ ...formData, eventId: event.id, selectedAgents: [], selectedSupervisor: '' });
+    setSelectedEvent(event);
+    setStep(2);
+  };
+
+  const toggleAgent = (agent) => {
+    const isSelected = formData.selectedAgents.some(a => a.id === agent.id);
+    if (isSelected) {
+      setFormData({
+        ...formData,
+        selectedAgents: formData.selectedAgents.filter(a => a.id !== agent.id)
+      });
+    } else {
+      setFormData({
+        ...formData,
+        selectedAgents: [...formData.selectedAgents, agent]
+      });
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!formData.eventId) {
+      toast.error('Sélectionnez un événement');
+      return;
+    }
+    if (formData.selectedAgents.length === 0 && !formData.selectedSupervisor) {
+      toast.error('Sélectionnez au moins un agent ou un responsable');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const promises = [];
+
+      // Créer les affectations pour les agents
+      if (formData.selectedAgents.length > 0) {
+        if (formData.selectedAgents.length === 1) {
+          promises.push(assignmentsAPI.create({
+            eventId: formData.eventId,
+            agentId: formData.selectedAgents[0].id,
+            role: 'primary',
+            notes: formData.notes
+          }));
+        } else {
+          promises.push(assignmentsAPI.createBulk({
+            eventId: formData.eventId,
+            agentIds: formData.selectedAgents.map(a => a.id),
+            role: 'primary',
+            notes: formData.notes
+          }));
+        }
+      }
+
+      // Créer l'affectation pour le superviseur
+      if (formData.selectedSupervisor) {
+        promises.push(assignmentsAPI.create({
+          eventId: formData.eventId,
+          agentId: formData.selectedSupervisor,
+          role: 'supervisor',
+          notes: formData.notes
+        }));
+      }
+
+      await Promise.all(promises);
+      toast.success('Affectation(s) créée(s) avec succès');
+      onSave();
+      onClose();
+    } catch (error) {
+      console.error('Assignment creation error:', error);
+      toast.error(error.response?.data?.message || 'Erreur lors de la création');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredEvents = events.filter(event => {
+    if (!searchEvent) return true;
+    const search = searchEvent.toLowerCase();
+    return event.name?.toLowerCase().includes(search) ||
+           event.location?.toLowerCase().includes(search);
+  });
+
+  const filteredAgents = agents.filter(agent => {
+    if (!searchAgent) return true;
+    const search = searchAgent.toLowerCase();
+    return agent.firstName?.toLowerCase().includes(search) ||
+           agent.lastName?.toLowerCase().includes(search) ||
+           agent.employeeId?.toLowerCase().includes(search);
+  });
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
+        {/* Header */}
+        <div className="p-6 border-b bg-gradient-to-r from-primary-50 to-blue-50">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Nouvelle Affectation</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                {step === 1 ? 'Étape 1: Sélectionnez un événement' : 'Étape 2: Sélectionnez les agents'}
+              </p>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+              <FiX size={20} />
+            </button>
+          </div>
+
+          {/* Progress bar */}
+          <div className="flex items-center gap-2 mt-4">
+            <div className={`flex-1 h-2 rounded-full ${step >= 1 ? 'bg-primary-500' : 'bg-gray-200'}`} />
+            <div className={`flex-1 h-2 rounded-full ${step >= 2 ? 'bg-primary-500' : 'bg-gray-200'}`} />
+          </div>
+        </div>
+
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+          {/* Step 1: Sélection de l'événement */}
+          {step === 1 && (
+            <div className="space-y-4">
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Rechercher un événement..."
+                  value={searchEvent}
+                  onChange={(e) => setSearchEvent(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
+
+              <div className="grid gap-3 max-h-96 overflow-y-auto">
+                {filteredEvents.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">Aucun événement trouvé</p>
+                ) : (
+                  filteredEvents.map(event => (
+                    <div
+                      key={event.id}
+                      onClick={() => handleEventSelect(event)}
+                      className="p-4 border rounded-xl hover:border-primary-500 hover:bg-primary-50 cursor-pointer transition-all"
+                    >
+                      <h3 className="font-semibold text-gray-900">{event.name}</h3>
+                      <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
+                        <span className="flex items-center gap-1">
+                          <FiCalendar size={14} />
+                          {event.startDate ? format(parseISO(event.startDate), 'dd MMM yyyy', { locale: fr }) : 'N/A'}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <FiMapPin size={14} />
+                          {event.location}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Sélection des agents */}
+          {step === 2 && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setStep(1)}
+                  className="flex items-center gap-2 text-primary-600 hover:text-primary-700"
+                >
+                  <FiArrowLeft /> Retour
+                </button>
+                <div className="text-sm text-gray-600">
+                  {formData.selectedAgents.length} agent(s) sélectionné(s)
+                </div>
+              </div>
+
+              <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+                <h3 className="font-semibold text-gray-900">{selectedEvent?.name}</h3>
+                <p className="text-sm text-gray-600 mt-1">{selectedEvent?.location}</p>
+              </div>
+
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Rechercher un agent..."
+                  value={searchAgent}
+                  onChange={(e) => setSearchAgent(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
+
+              <div className="grid gap-3 max-h-96 overflow-y-auto">
+                {filteredAgents.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">Aucun agent trouvé</p>
+                ) : (
+                  filteredAgents.map(agent => {
+                    const isSelected = formData.selectedAgents.some(a => a.id === agent.id);
+                    return (
+                      <div
+                        key={agent.id}
+                        onClick={() => toggleAgent(agent)}
+                        className={`p-4 border rounded-xl cursor-pointer transition-all ${
+                          isSelected
+                            ? 'border-primary-500 bg-primary-50'
+                            : 'border-gray-200 hover:border-primary-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                            isSelected ? 'bg-primary-500 border-primary-500' : 'border-gray-300'
+                          }`}>
+                            {isSelected && <FiCheck size={12} className="text-white" />}
+                          </div>
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-gray-900">
+                              {agent.firstName} {agent.lastName}
+                            </h4>
+                            <p className="text-sm text-gray-600">{agent.employeeId}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Notes (optionnel)
+                </label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  rows="3"
+                  placeholder="Ajouter des notes..."
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer*/}
+        <div className="p-6 border-t bg-gray-50 flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-6 py-2.5 border border-gray-300 rounded-xl hover:bg-gray-100 transition-colors"
+          >
+            Annuler
+          </button>
+          {step === 2 && (
+            <button
+              onClick={handleSubmit}
+              disabled={loading || (formData.selectedAgents.length === 0 && !formData.selectedSupervisor)}
+              className="px-6 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Création...' : 'Créer l\'affectation'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -250,8 +537,13 @@ const AssignmentsResponsive = () => {
   // États
   const [assignments, setAssignments] = useState([]);
   const [events, setEvents] = useState([]);
+  const [agents, setAgents] = useState([]);
+  const [supervisors, setSupervisors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('grid'); // 'grid' ou 'list'
+  
+  // Modal
+  const [showModal, setShowModal] = useState(false);
   
   // Filtres
   const [searchQuery, setSearchQuery] = useState('');
@@ -270,18 +562,26 @@ const AssignmentsResponsive = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [assignmentsRes, eventsRes] = await Promise.all([
+      const [assignmentsRes, eventsRes, usersRes] = await Promise.all([
         assignmentsAPI.getAll(),
-        eventsAPI.getAll()
+        eventsAPI.getAll(),
+        usersAPI.getAll()
       ]);
       
       // Gestion de différentes structures de réponse API
       const assignmentsData = assignmentsRes.data?.data?.assignments || assignmentsRes.data?.assignments || assignmentsRes.data?.data || assignmentsRes.data || [];
       const eventsData = eventsRes.data?.data?.events || eventsRes.data?.events || eventsRes.data?.data || eventsRes.data || [];
+      const usersData = usersRes.data?.data?.users || usersRes.data?.users || usersRes.data?.data || usersRes.data || [];
       
       // S'assurer que ce sont bien des tableaux
       setAssignments(Array.isArray(assignmentsData) ? assignmentsData : []);
       setEvents(Array.isArray(eventsData) ? eventsData : []);
+      
+      // Séparer agents et superviseurs
+      if (Array.isArray(usersData)) {
+        setAgents(usersData.filter(u => u.role === 'agent'));
+        setSupervisors(usersData.filter(u => u.role === 'supervisor'));
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Erreur lors du chargement des données');
@@ -467,7 +767,7 @@ const AssignmentsResponsive = () => {
               <p className="text-sm text-gray-600 mt-1">Gérez les affectations d'agents aux événements</p>
             </div>
             <button
-              onClick={() => navigate('/events')}
+              onClick={() => setShowModal(true)}
               className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-xl font-medium hover:from-primary-700 hover:to-primary-800 transition-all shadow-lg shadow-primary-500/30 flex items-center justify-center gap-2"
             >
               <FiPlus size={18} />
@@ -752,6 +1052,16 @@ const AssignmentsResponsive = () => {
           </div>
         </div>
       )}
+
+      {/* Modal d'affectation */}
+      <AssignmentModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        onSave={fetchData}
+        events={events}
+        agents={agents}
+        supervisors={supervisors}
+      />
     </div>
   );
 };
