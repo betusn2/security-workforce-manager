@@ -5,8 +5,14 @@ const config = require('../config/database');
 const env = process.env.NODE_ENV || 'development';
 const dbConfig = config[env];
 
-// Function to create database if it doesn't exist
+// Function to create database if it doesn't exist (MySQL only)
 const createDatabaseIfNotExists = async () => {
+  // Skip database creation for PostgreSQL (database already exists)
+  if (dbConfig.dialect === 'postgres' || process.env.DATABASE_URL) {
+    console.log('✅ Using PostgreSQL database (database creation not required)');
+    return;
+  }
+
   try {
     const connection = await mysql.createConnection({
       host: dbConfig.host,
@@ -19,29 +25,43 @@ const createDatabaseIfNotExists = async () => {
       `CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`
     );
 
-    console.log(`✅ Database '${dbConfig.database}' is ready.`);
+    console.log(`✅ MySQL Database '${dbConfig.database}' is ready.`);
     await connection.end();
   } catch (error) {
     console.error('Error creating database:', error.message);
   }
 };
 
-// Create database before initializing Sequelize
+// Create database before initializing Sequelize (MySQL only)
 const initPromise = createDatabaseIfNotExists();
 
-const sequelize = new Sequelize(
-  dbConfig.database,
-  dbConfig.username,
-  dbConfig.password,
-  {
-    host: dbConfig.host,
-    port: dbConfig.port,
-    dialect: dbConfig.dialect,
+// Initialize Sequelize with DATABASE_URL or individual credentials
+let sequelize;
+
+if (process.env.DATABASE_URL && dbConfig.use_env_variable) {
+  // Use DATABASE_URL for PostgreSQL (Render's preferred method)
+  sequelize = new Sequelize(process.env.DATABASE_URL, {
+    dialect: 'postgres',
     logging: dbConfig.logging,
     pool: dbConfig.pool,
     dialectOptions: dbConfig.dialectOptions
-  }
-);
+  });
+} else {
+  // Use individual credentials (MySQL or PostgreSQL with separate env vars)
+  sequelize = new Sequelize(
+    dbConfig.database,
+    dbConfig.username,
+    dbConfig.password,
+    {
+      host: dbConfig.host,
+      port: dbConfig.port,
+      dialect: dbConfig.dialect,
+      logging: dbConfig.logging,
+      pool: dbConfig.pool,
+      dialectOptions: dbConfig.dialectOptions
+    }
+  );
+}
 
 const db = {};
 db.initPromise = initPromise;
