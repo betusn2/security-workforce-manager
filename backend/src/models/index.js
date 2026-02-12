@@ -45,7 +45,12 @@ if (process.env.DATABASE_URL && dbConfig.use_env_variable) {
     dialect: 'postgres',
     logging: dbConfig.logging,
     pool: dbConfig.pool,
-    dialectOptions: dbConfig.dialectOptions
+    dialectOptions: dbConfig.dialectOptions,
+    define: {
+      underscored: true, // Use snake_case in database
+      timestamps: true,
+      paranoid: true
+    }
   });
 } else {
   // Use individual credentials (MySQL or PostgreSQL with separate env vars)
@@ -60,7 +65,12 @@ if (process.env.DATABASE_URL && dbConfig.use_env_variable) {
       dialect: dbConfig.dialect,
       logging: dbConfig.logging,
       pool: dbConfig.pool,
-      dialectOptions: dbConfig.dialectOptions
+      dialectOptions: dbConfig.dialectOptions,
+      define: {
+        underscored: true, // Use snake_case in database
+        timestamps: true,
+        paranoid: true
+      }
     }
   );
 }
