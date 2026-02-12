@@ -31,37 +31,29 @@ exports.getUsers = async (req, res) => {
       ];
     }
 
-    const { count, rows } = await User.findAndCountAll({
+    console.log('🔍 [DEBUG] Starting getUsers query...');
+    
+    // VERSION SIMPLIFIÉE TEMPORAIRE - Diagnostic
+    const users = await User.findAll({
       where,
       order: [[sortBy, sortOrder.toUpperCase()]],
       limit: parseInt(limit),
       offset: (parseInt(page) - 1) * parseInt(limit),
-      attributes: { exclude: ['password', 'refreshToken', 'facialVector'] },
-      include: [
-        {
-          model: User,
-          as: 'supervisor',
-          attributes: ['id', 'firstName', 'lastName', 'employeeId', 'profilePhoto', 'role']
-        },
-        {
-          model: User,
-          as: 'creator',
-          attributes: ['id', 'firstName', 'lastName', 'employeeId', 'role'],
-          required: false
-        },
-        {
-          model: UserDocument,
-          as: 'documents',
-          attributes: ['id', 'documentType', 'customName', 'expiryDate', 'status'],
-          required: false
-        }
-      ]
+      attributes: { 
+        exclude: ['password', 'refreshToken', 'facialVector'],
+        include: ['id', 'email', 'firstName', 'lastName', 'role', 'status', 'employeeId']
+      }
+      // TEMPORAIREMENT SUPPRIMÉ: tous les includes pour identifier le problème
     });
+
+    console.log(`✅ [DEBUG] Query successful, found ${users.length} users`);
+
+    const count = await User.count({ where });
 
     res.json({
       success: true,
       data: {
-        users: rows,
+        users: users,
         pagination: {
           total: count,
           page: parseInt(page),
@@ -71,10 +63,15 @@ exports.getUsers = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get users error:', error);
+    console.error('❌ [DEBUG] Get users error:', error.message);
+    console.error('   Stack:', error.stack);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de la récupération des utilisateurs'
+      message: 'Erreur lors de la récupération des utilisateurs',
+      debug: {
+        error: error.message,
+        name: error.name
+      }
     });
   }
 };
