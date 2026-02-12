@@ -31,9 +31,9 @@ exports.getUsers = async (req, res) => {
       ];
     }
 
-    console.log('🔍 [DEBUG] Starting getUsers query with supervisor include...');
+    console.log('🔍 [DEBUG] Starting getUsers query with supervisor + creator includes...');
     
-    // VERSION PROGRESSIVE - Test avec supervisor include seulement
+    // VERSION PROGRESSIVE - Test avec supervisor + creator includes
     const users = await User.findAll({
       where,
       order: [[sortBy, sortOrder.toUpperCase()]],
@@ -45,12 +45,18 @@ exports.getUsers = async (req, res) => {
           model: User,
           as: 'supervisor',
           attributes: ['id', 'firstName', 'lastName', 'employeeId', 'profilePhoto', 'role'],
-          required: false // Rendre explicitement optionnel
+          required: false
+        },
+        {
+          model: User,
+          as: 'creator',
+          attributes: ['id', 'firstName', 'lastName', 'employeeId', 'role'],
+          required: false
         }
       ]
     });
 
-    console.log(`✅ [DEBUG] Query successful with supervisor, found ${users.length} users`);
+    console.log(`✅ [DEBUG] Query successful with supervisor + creator, found ${users.length} users`);
 
     const count = await User.count({ where });
 
@@ -75,7 +81,7 @@ exports.getUsers = async (req, res) => {
       debug: {
         error: error.message,
         name: error.name,
-        step: 'supervisor_include'
+        step: 'supervisor_creator_include'
       }
     });
   }
