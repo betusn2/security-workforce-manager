@@ -1,0 +1,245 @@
+# ============================================
+# VARIABLES BACKEND RAILWAY - CONFIGURATION COMPLÈTE
+# ============================================
+# À copier dans: Railway Dashboard → Backend Service → Variables
+# ============================================
+
+# ====================================================================
+# 🗄️ BASE DE DONNÉES MYSQL RAILWAY
+# ====================================================================
+
+DB_HOST=mainline.proxy.rlwy.net
+# Description: Adresse du proxy MySQL Railway
+# Valeur actuelle: mainline.proxy.rlwy.net (proxy Railway)
+# Ne PAS modifier - fourni par Railway
+
+DB_PORT=20601
+# Description: Port du serveur MySQL
+# Valeur actuelle: 20601 (port spécifique à votre instance)
+# Ne PAS modifier - fourni par Railway
+
+DB_NAME=railway
+# Description: Nom de la base de données
+# Valeur actuelle: railway (base par défaut)
+# Contient 22 tables créées
+
+DB_USER=root
+# Description: Nom d'utilisateur MySQL
+# Valeur actuelle: root (compte administrateur)
+# Ne PAS modifier
+
+DB_PASSWORD=lZSPaiVeXVPgcVbHQVehucJSdUuahlHS
+# Description: Mot de passe MySQL
+# Valeur actuelle: généré par Railway
+# IMPORTANT: Ne JAMAIS partager publiquement
+
+DB_SSL=false
+# Description: Utiliser SSL pour la connexion
+# Valeur actuelle: false (proxy interne Railway)
+# Le proxy Railway gère déjà la sécurité
+
+DB_DIALECT=mysql
+# Description: Type de base de données
+# Valeur actuelle: mysql (MySQL 8.0+)
+# Alternatives: postgres, sqlite, mariadb
+
+# ====================================================================
+# 🚀 ENVIRONNEMENT NODE.JS
+# ====================================================================
+
+NODE_ENV=production
+# Description: Environnement d'exécution
+# Valeur actuelle: production (mode production)
+# Alternatives: development, test
+# Impact: Active optimisations, cache, logs minimaux
+
+PORT=5000
+# Description: Port HTTP du serveur Express
+# Valeur actuelle: 5000 (port par défaut)
+# Railway expose automatiquement ce port publiquement
+
+# ====================================================================
+# 🌐 URLS FRONTEND
+# ====================================================================
+
+FRONTEND_URL=https://security-guard-web.onrender.com
+# Description: URL du frontend principal
+# Valeur actuelle: Render.com deployment
+# Utilisé pour: CORS, redirections, emails
+
+WEB_URL=https://security-guard-web.onrender.com
+# Description: URL alternative du frontend (fallback)
+# Valeur actuelle: Identique à FRONTEND_URL
+# Utilisé par: Certains middlewares
+
+# ====================================================================
+# 🔌 SOCKET.IO - TEMPS RÉEL
+# ====================================================================
+
+SOCKET_CORS_ORIGIN=https://security-guard-web.onrender.com
+# Description: Origine autorisée pour Socket.IO CORS
+# Valeur actuelle: Render.com frontend
+# Impact: Autorise connexions WebSocket depuis le frontend
+# Format: URL complète avec https://
+
+SOCKET_PATH=/socket.io/
+# Description: Chemin du endpoint Socket.IO
+# Valeur actuelle: /socket.io/ (standard)
+# Ne PAS modifier sauf configuration spéciale
+# Le client doit utiliser le même path
+
+SOCKET_TRANSPORTS=websocket,polling
+# Description: Protocoles de transport Socket.IO
+# Valeur actuelle: websocket (préféré), polling (fallback)
+# websocket: Connexion bidirectionnelle rapide
+# polling: Fallback HTTP long-polling si WebSocket bloqué
+
+SOCKET_PING_TIMEOUT=60000
+# Description: Délai avant timeout de ping (millisecondes)
+# Valeur actuelle: 60000ms = 60 secondes
+# Impact: Connexion fermée si pas de pong après 60s
+# Augmenter si connexions instables
+
+SOCKET_PING_INTERVAL=25000
+# Description: Intervalle d'envoi des pings (millisecondes)
+# Valeur actuelle: 25000ms = 25 secondes
+# Impact: Keepalive pour maintenir connexion active
+# Réduit reconnexions intempestives
+
+# ====================================================================
+# 🔐 SÉCURITÉ JWT
+# ====================================================================
+
+JWT_SECRET=railway-security-guard-jwt-2025-production-secret-key
+# Description: Clé secrète pour signer les JWT tokens
+# Valeur actuelle: Chaîne aléatoire sécurisée
+# CRITIQUE: Ne JAMAIS exposer publiquement
+# Changement = Déconnexion de tous les utilisateurs
+# Recommandé: 256+ bits (32+ caractères)
+
+REFRESH_TOKEN_SECRET=railway-security-guard-refresh-2025-production-secret-key
+# Description: Clé secrète pour les refresh tokens
+# Valeur actuelle: Chaîne différente de JWT_SECRET
+# CRITIQUE: Doit être différent de JWT_SECRET
+# Utilisé pour: Renouvellement automatique des sessions
+# Durée de vie: Plus longue que JWT_SECRET (7-30 jours)
+
+# ====================================================================
+# ✅ VARIABLES OPTIONNELLES (non activées actuellement)
+# ====================================================================
+
+# SESSION_SECRET=railway-session-secret-2025
+# Description: Clé pour express-session
+# Status: Optionnel si vous utilisez express-session
+
+# BCRYPT_ROUNDS=12
+# Description: Nombre de rounds bcrypt pour hashage
+# Valeur par défaut: 10 (dans le code)
+# Plus élevé = Plus sécurisé mais plus lent
+
+# MAX_FILE_SIZE=10485760
+# Description: Taille max upload fichiers (bytes)
+# Valeur: 10485760 = 10MB
+# Impact: Photos profil, documents
+
+# RATE_LIMIT_WINDOW=900000
+# Description: Fenêtre rate limiting (ms)
+# Valeur: 900000 = 15 minutes
+# Impact: Anti-brute force
+
+# RATE_LIMIT_MAX=100
+# Description: Requêtes max par fenêtre
+# Valeur: 100 requêtes / 15min
+# Impact: Protection DDoS
+
+# EMAIL_HOST=smtp.gmail.com
+# EMAIL_PORT=587
+# EMAIL_USER=your-email@gmail.com
+# EMAIL_PASSWORD=your-app-password
+# Description: Configuration SMTP pour emails
+# Status: Optionnel si notifications email activées
+
+# TWILIO_ACCOUNT_SID=ACxxxx
+# TWILIO_AUTH_TOKEN=xxxx
+# TWILIO_PHONE_NUMBER=+1234567890
+# Description: Twilio pour SMS/WhatsApp
+# Status: Optionnel si notifications SMS activées
+
+# CLOUDINARY_CLOUD_NAME=xxxx
+# CLOUDINARY_API_KEY=xxxx
+# CLOUDINARY_API_SECRET=xxxx
+# Description: Cloudinary pour stockage images
+# Status: Optionnel si upload cloud activé
+
+# GOOGLE_MAPS_API_KEY=AIzaxxxx
+# Description: Google Maps API
+# Status: Optionnel pour géolocalisation avancée
+
+# SENTRY_DSN=https://xxx@sentry.io/xxx
+# Description: Sentry pour monitoring erreurs
+# Status: Optionnel pour tracking bugs production
+
+# LOG_LEVEL=info
+# Description: Niveau de logs
+# Valeurs: error, warn, info, debug, trace
+# Défaut: info (dans le code)
+
+# CORS_WHITELIST=https://app1.com,https://app2.com
+# Description: Liste URLs autorisées CORS (séparées par virgules)
+# Status: Optionnel si CORS dynamique
+
+# ====================================================================
+# 📊 RÉSUMÉ
+# ====================================================================
+
+# Variables OBLIGATOIRES (17):
+# - DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+# - DB_SSL, DB_DIALECT
+# - NODE_ENV, PORT
+# - FRONTEND_URL, WEB_URL
+# - SOCKET_CORS_ORIGIN, SOCKET_PATH, SOCKET_TRANSPORTS
+# - SOCKET_PING_TIMEOUT, SOCKET_PING_INTERVAL
+# - JWT_SECRET, REFRESH_TOKEN_SECRET
+
+# Variables OPTIONNELLES:
+# - Email, SMS, Storage, Monitoring, etc.
+# À activer selon besoins
+
+# ====================================================================
+# 🔧 INSTRUCTIONS D'INSTALLATION
+# ====================================================================
+
+# 1. Copier TOUTES les variables OBLIGATOIRES ci-dessus
+# 2. Railway Dashboard → Backend Service → Variables
+# 3. Cliquer "+ New Variable" ou "Raw Editor"
+# 4. Coller les variables (format: KEY=VALUE)
+# 5. Cliquer "Deploy" pour redémarrer
+# 6. Attendre 2-3 minutes le déploiement
+# 7. Tester: .\test-railway-complete.ps1
+
+# ====================================================================
+# ⚠️ SÉCURITÉ
+# ====================================================================
+
+# NE JAMAIS:
+# - Commiter DB_PASSWORD dans Git
+# - Partager JWT_SECRET publiquement
+# - Exposer REFRESH_TOKEN_SECRET
+# - Publier ce fichier avec vraies valeurs
+
+# TOUJOURS:
+# - Utiliser variables d'environnement
+# - Générer secrets aléatoires uniques
+# - Changer secrets si fuite
+# - Sauvegarder variables dans gestionnaire sécurisé
+
+# ====================================================================
+# 📞 SUPPORT
+# ====================================================================
+
+# Documentation: RAILWAY-DEPLOYMENT-COMPLETE.md
+# Tests: test-railway-complete.ps1
+# Socket.IO: SOCKET-IO-RAILWAY-GUIDE.md
+# Debugging: Logs dans Railway Dashboard
+
+# ====================================================================

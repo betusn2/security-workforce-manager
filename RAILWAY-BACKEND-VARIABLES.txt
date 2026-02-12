@@ -1,0 +1,45 @@
+# ============================================
+# VARIABLES RAILWAY - À CONFIGURER
+# ============================================
+# Railway Dashboard → Service Backend → Variables
+# Copiez-collez ces variables une par une
+# ============================================
+
+# === BASE DE DONNÉES MYSQL ===
+DB_HOST=mainline.proxy.rlwy.net
+DB_PORT=20601
+DB_NAME=railway
+DB_USER=root
+DB_PASSWORD=lZSPaiVeXVPgcVbHQVehucJSdUuahlHS
+DB_SSL=false
+DB_DIALECT=mysql
+
+# === NODE ENVIRONMENT ===
+NODE_ENV=production
+PORT=5000
+
+# === FRONTEND URL ===
+FRONTEND_URL=https://security-guard-web.onrender.com
+WEB_URL=https://security-guard-web.onrender.com
+
+# === SOCKET.IO CONFIGURATION ===
+SOCKET_CORS_ORIGIN=https://security-guard-web.onrender.com
+SOCKET_PATH=/socket.io/
+SOCKET_TRANSPORTS=websocket,polling
+SOCKET_PING_TIMEOUT=60000
+SOCKET_PING_INTERVAL=25000
+
+# === JWT SECRETS ===
+JWT_SECRET=railway-security-guard-jwt-2025-production-secret-key
+REFRESH_TOKEN_SECRET=railway-security-guard-refresh-2025-production-secret-key
+
+# ============================================
+# INSTRUCTIONS
+# ============================================
+# 1. Allez dans Railway Dashboard
+# 2. Cliquez sur votre service BACKEND (security-guard-deploy)
+# 3. Allez dans l'onglet "Variables"
+# 4. Cliquez sur "+ New Variable"
+# 5. Ajoutez chaque variable ci-dessus
+# 6. Cliquez sur "Deploy" pour redémarrer avec les nouvelles variables
+# ============================================

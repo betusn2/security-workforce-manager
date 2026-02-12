@@ -31,22 +31,26 @@ exports.getUsers = async (req, res) => {
       ];
     }
 
-    console.log('🔍 [DEBUG] Starting getUsers query...');
+    console.log('🔍 [DEBUG] Starting getUsers query with supervisor include...');
     
-    // VERSION SIMPLIFIÉE TEMPORAIRE - Diagnostic
+    // VERSION PROGRESSIVE - Test avec supervisor include seulement
     const users = await User.findAll({
       where,
       order: [[sortBy, sortOrder.toUpperCase()]],
       limit: parseInt(limit),
       offset: (parseInt(page) - 1) * parseInt(limit),
-      attributes: { 
-        exclude: ['password', 'refreshToken', 'facialVector'],
-        include: ['id', 'email', 'firstName', 'lastName', 'role', 'status', 'employeeId']
-      }
-      // TEMPORAIREMENT SUPPRIMÉ: tous les includes pour identifier le problème
+      attributes: { exclude: ['password', 'refreshToken', 'facialVector'] },
+      include: [
+        {
+          model: User,
+          as: 'supervisor',
+          attributes: ['id', 'firstName', 'lastName', 'employeeId', 'profilePhoto', 'role'],
+          required: false // Rendre explicitement optionnel
+        }
+      ]
     });
 
-    console.log(`✅ [DEBUG] Query successful, found ${users.length} users`);
+    console.log(`✅ [DEBUG] Query successful with supervisor, found ${users.length} users`);
 
     const count = await User.count({ where });
 
@@ -70,7 +74,8 @@ exports.getUsers = async (req, res) => {
       message: 'Erreur lors de la récupération des utilisateurs',
       debug: {
         error: error.message,
-        name: error.name
+        name: error.name,
+        step: 'supervisor_include'
       }
     });
   }
