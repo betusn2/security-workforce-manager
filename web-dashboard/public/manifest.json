@@ -16,28 +16,22 @@
   ],
   "icons": [
     {
-      "src": "/favicon-16.svg",
+      "src": "/favicon-16.png",
       "sizes": "16x16",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/favicon-32.svg", 
+      "src": "/favicon-32.png", 
       "sizes": "32x32",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/favicon.svg",
-      "sizes": "32x32",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    },
-    {
-      "src": "/favicon-180.svg",
+      "src": "/favicon-180.png",
       "sizes": "180x180", 
-      "type": "image/svg+xml",
-      "purpose": "any"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ],
   "shortcuts": [
@@ -48,7 +42,7 @@
       "url": "/",
       "icons": [
         {
-          "src": "/favicon-32.svg",
+          "src": "/favicon-32.png",
           "sizes": "32x32"
         }
       ]
@@ -60,7 +54,7 @@
       "url": "/agent-tracking",
       "icons": [
         {
-          "src": "/favicon-32.svg",
+          "src": "/favicon-32.png",
           "sizes": "32x32"
         }
       ]
@@ -72,7 +66,7 @@
       "url": "/checkin-v2",
       "icons": [
         {
-          "src": "/favicon-32.svg", 
+          "src": "/favicon-32.png", 
           "sizes": "32x32"
         }
       ]
@@ -84,7 +78,7 @@
       "url": "/events",
       "icons": [
         {
-          "src": "/favicon-32.svg",
+          "src": "/favicon-32.png",
           "sizes": "32x32"
         }
       ]

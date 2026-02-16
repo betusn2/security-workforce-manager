@@ -18,19 +18,47 @@
       "dest": "/static/$1"
     },
     {
-      "src": "/favicon.ico",
+      "src": "/sounds/(.*)",
+      "headers": {
+        "cache-control": "public, max-age=86400"
+      },
+      "dest": "/sounds/$1"
+    },
+    {
+      "src": "/favicon\\.ico",
+      "headers": {
+        "cache-control": "public, max-age=86400"
+      },
       "dest": "/favicon.ico"
     },
     {
-      "src": "/asset-manifest.json",
-      "dest": "/asset-manifest.json"
+      "src": "/favicon-([0-9]+)\\.(png|svg)",
+      "headers": {
+        "cache-control": "public, max-age=86400"
+      },
+      "dest": "/favicon-$1.$2"
     },
     {
-      "src": "/manifest.json",
+      "src": "/favicon\\.svg",
+      "headers": {
+        "cache-control": "public, max-age=86400"
+      },
+      "dest": "/favicon.svg"
+    },
+    {
+      "src": "/manifest\\.json",
+      "headers": {
+        "cache-control": "public, max-age=86400",
+        "content-type": "application/manifest+json"
+      },
       "dest": "/manifest.json"
     },
     {
-      "src": "/robots.txt",
+      "src": "/asset-manifest\\.json",
+      "dest": "/asset-manifest.json"
+    },
+    {
+      "src": "/robots\\.txt",
       "dest": "/robots.txt"
     },
     {
