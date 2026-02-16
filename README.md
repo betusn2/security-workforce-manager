@@ -1,17 +1,45 @@
-# Security Guard Management System
+# 🏢 Security Workforce Manager
 
-Système complet de gestion et pointage des agents de sécurité avec reconnaissance faciale et géolocalisation.
+> Système complet de gestion et de suivi des agents de sécurité avec tracking GPS en temps réel.
 
-## 📋 Table des matières
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/betusn2/security-workforce-manager)
+[![Deploy on Render](https://render.com/images/deploy-to-render-button.svg)](https://dashboard.render.com)
 
-- [Fonctionnalités](#fonctionnalités)
-- [Architecture](#architecture)
-- [Prérequis](#prérequis)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Utilisation](#utilisation)
-- [API Endpoints](#api-endpoints)
-- [Structure du Projet](#structure-du-projet)
+## 🚀 Déploiement Production
+
+### Configuration Recommandée
+- **Frontend**: React Dashboard → **Vercel** (CDN Global)
+- **Backend**: Node.js API + WebSocket → **Render** (Frankfurt)
+- **Database**: PostgreSQL → **Render** ou MySQL → **PlanetScale**
+
+### 📚 Guides de Déploiement
+
+| Guide | Temps | Description |
+|-------|-------|-------------|
+| [🚀 Quick Start](DEPLOY-QUICKSTART.md) | 25 min | Déploiement rapide étape par étape |
+| [📖 Guide Complet](DEPLOY-VERCEL-RENDER-GUIDE.md) | - | Documentation détaillée complète |
+
+### ⚡ Déploiement en 5 Étapes
+
+```bash
+# 1. Cloner le repository
+git clone https://github.com/betusn2/security-workforce-manager.git
+
+# 2. Déployer Backend sur Render
+# → https://dashboard.render.com
+# → New Web Service → Root: backend/
+
+# 3. Déployer Frontend sur Vercel  
+# → https://vercel.com/new
+# → Root: web-dashboard/
+
+# 4. Mettre à jour les URLs croisées
+
+# 5. Créer l'admin et tester
+# → Render Shell: node create-first-admin.js
+```
+
+---
 
 ## ✨ Fonctionnalités
 

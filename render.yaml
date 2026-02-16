@@ -1,31 +1,56 @@
 services:
-  # Backend Web Service
+  # Backend API + WebSocket Service
   - type: web
-    name: security-guard-backend
+    name: security-workforce-backend
     env: node
     region: frankfurt
     plan: free
     rootDir: backend
     buildCommand: npm install
     startCommand: node src/server.js
+    healthCheckPath: /health
     envVars:
+      # Server Configuration
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 5000
+      
+      # Database Configuration (à configurer manuellement)
+      - key: DATABASE_URL
+        sync: false
       - key: DB_HOST
         sync: false
+      - key: DB_PORT
+        value: 5432
       - key: DB_USER
         sync: false
       - key: DB_PASSWORD
         sync: false
       - key: DB_NAME
-        sync: false
+        value: security_guard_db
+      
+      # Security (auto-généré)
       - key: JWT_SECRET
         generateValue: true
       - key: SESSION_SECRET
         generateValue: true
+      
+      # CORS & WebSocket (mettre à jour après déploiement Vercel)
       - key: FRONTEND_URL
         value: https://your-frontend.vercel.app
       - key: SOCKET_CORS_ORIGIN
         value: https://your-frontend.vercel.app
+      
+      # Options
+      - key: BYPASS_TIME_WINDOWS
+        value: false
+      - key: MAX_FILE_SIZE
+        value: 10485760
+
+  # PostgreSQL Database
+  - type: pserv
+    name: security-guard-db
+    plan: free
+    region: frankfurt
+    ipAllowList: []

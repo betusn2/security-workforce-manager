@@ -37,10 +37,5 @@
       "src": "/(.*)",
       "dest": "/index.html"
     }
-  ],
-  "env": {
-    "REACT_APP_API_URL": "https://security-guard-backend-w3qv.onrender.com/api",
-    "REACT_APP_SOCKET_URL": "https://security-guard-backend-w3qv.onrender.com",
-    "GENERATE_SOURCEMAP": "false"
-  }
+  ]
 }
