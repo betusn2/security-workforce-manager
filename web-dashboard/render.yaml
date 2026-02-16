@@ -2,15 +2,13 @@ services:
   - type: web
     name: security-guard-frontend
     runtime: static
-    buildCommand: npm install --legacy-peer-deps && npm run build
-    staticPublishPath: ./build
+    buildCommand: npm install && npm run build
+    staticPublishPath: build
     envVars:
-      - key: NODE_VERSION
-        value: 22.22.0
       - key: REACT_APP_API_URL
-        value: https://security-guard-backend.onrender.com
+        value: https://security-guard-backend-w3qv.onrender.com/api
       - key: REACT_APP_SOCKET_URL
-        value: https://security-guard-backend.onrender.com
+        value: https://security-guard-backend-w3qv.onrender.com
       - key: REACT_APP_APP_NAME
         value: Security Guard Management
       - key: REACT_APP_ENV

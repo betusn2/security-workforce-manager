@@ -1,20 +1,4 @@
 services:
-  # Frontend Web Service (Node.js + Express for SPA routing)
-  - type: web
-    name: security-guard-web
-    env: node
-    plan: free
-    rootDir: web-dashboard
-    buildCommand: npm install && npm run build
-    startCommand: node server.js
-    envVars:
-      - key: NODE_VERSION
-        value: 22.22.0
-      - key: REACT_APP_API_URL
-        value: https://security-guard-backend.onrender.com/api
-      - key: REACT_APP_SOCKET_URL
-        value: https://security-guard-backend.onrender.com
-
   # Backend Web Service
   - type: web
     name: security-guard-backend
@@ -42,6 +26,6 @@ services:
       - key: SESSION_SECRET
         generateValue: true
       - key: FRONTEND_URL
-        sync: false
+        value: https://your-frontend.vercel.app
       - key: SOCKET_CORS_ORIGIN
-        sync: false
+        value: https://your-frontend.vercel.app
