@@ -7,35 +7,47 @@
 
 ## 🚀 Déploiement Production
 
-### Configuration Recommandée
-- **Frontend**: React Dashboard → **Vercel** (CDN Global)
+### ⭐ Configuration Recommandée (Architecture Hybride)
+- **Database**: MySQL → **Railway** (Déjà configuré)
 - **Backend**: Node.js API + WebSocket → **Render** (Frankfurt)
-- **Database**: PostgreSQL → **Render** ou MySQL → **PlanetScale**
+- **Frontend**: React Dashboard → **Vercel** (CDN Global)
+
+**Pourquoi cette architecture ?**
+- ✅ Railway : MySQL natif, pas de migration nécessaire
+- ✅ Render : Backend stable, WebSocket performant
+- ✅ Vercel : Frontend ultra-rapide, CDN mondial gratuit
+- 💰 Coût : ~$5-10/mois
 
 ### 📚 Guides de Déploiement
 
-| Guide | Temps | Description |
-|-------|-------|-------------|
-| [🚀 Quick Start](DEPLOY-QUICKSTART.md) | 25 min | Déploiement rapide étape par étape |
-| [📖 Guide Complet](DEPLOY-VERCEL-RENDER-GUIDE.md) | - | Documentation détaillée complète |
+| Architecture | Guide | Temps | Description |
+|--------------|-------|-------|-------------|
+| **Railway DB + Render + Vercel** ⭐ | [Quick Start](DEPLOY-HYBRID-QUICKSTART.md) | 25 min | **Recommandé** - Architecture optimale |
+| **Railway DB + Render + Vercel** | [Guide Complet](DEPLOY-HYBRID-GUIDE.md) | - | Documentation détaillée hybride |
+| Railway Complet | [Railway Quick](DEPLOY-RAILWAY-QUICKSTART.md) | 15 min | Tout sur Railway |
+| Railway Complet | [Railway Guide](DEPLOY-RAILWAY-VERCEL-GUIDE.md) | - | Guide Railway détaillé |
+| Render + Vercel | [Render Quick](DEPLOY-QUICKSTART.md) | 25 min | Render avec PostgreSQL |
+| Render + Vercel | [Render Guide](DEPLOY-VERCEL-RENDER-GUIDE.md) | - | Guide Render détaillé |
 
-### ⚡ Déploiement en 5 Étapes
+### ⚡ Déploiement Rapide (Architecture Recommandée)
 
 ```bash
-# 1. Cloner le repository
-git clone https://github.com/betusn2/security-workforce-manager.git
+# Prérequis : Railway DB MySQL déjà configuré ✅
 
-# 2. Déployer Backend sur Render
-# → https://dashboard.render.com
-# → New Web Service → Root: backend/
+# 1. Backend sur Render
+# → https://dashboard.render.com → New Web Service
+# → Repo: betusn2/security-workforce-manager
+# → Root: backend/
+# → Variables: Utiliser infos Railway DB
 
-# 3. Déployer Frontend sur Vercel  
+# 2. Frontend sur Vercel  
 # → https://vercel.com/new
 # → Root: web-dashboard/
+# → Variables: URL Render
 
-# 4. Mettre à jour les URLs croisées
+# 3. Mettre à jour les URLs croisées
 
-# 5. Créer l'admin et tester
+# 4. Créer l'admin
 # → Render Shell: node create-first-admin.js
 ```
 

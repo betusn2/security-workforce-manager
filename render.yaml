@@ -1,5 +1,6 @@
 services:
   # Backend API + WebSocket Service
+  # Database hébergée sur Railway (MySQL)
   - type: web
     name: security-workforce-backend
     env: node
@@ -16,41 +17,49 @@ services:
       - key: PORT
         value: 5000
       
-      # Database Configuration (à configurer manuellement)
-      - key: DATABASE_URL
-        sync: false
+      # Railway MySQL Database (External)
+      # Configurer avec vos valeurs Railway
       - key: DB_HOST
-        sync: false
+        value: mainline.proxy.rlwy.net
       - key: DB_PORT
-        value: 5432
-      - key: DB_USER
-        sync: false
-      - key: DB_PASSWORD
-        sync: false
+        value: 20601
       - key: DB_NAME
-        value: security_guard_db
+        value: railway
+      - key: DB_USER
+        value: root
+      - key: DB_PASSWORD
+        sync: false  # À configurer manuellement
+      - key: DB_DIALECT
+        value: mysql
+      - key: DB_SSL
+        value: false
       
       # Security (auto-généré)
       - key: JWT_SECRET
         generateValue: true
-      - key: SESSION_SECRET
+      - key: REFRESH_TOKEN_SECRET
         generateValue: true
       
       # CORS & WebSocket (mettre à jour après déploiement Vercel)
       - key: FRONTEND_URL
         value: https://your-frontend.vercel.app
+      - key: WEB_URL
+        value: https://your-frontend.vercel.app
       - key: SOCKET_CORS_ORIGIN
         value: https://your-frontend.vercel.app
+      
+      # Socket.IO Configuration
+      - key: SOCKET_PATH
+        value: /socket.io/
+      - key: SOCKET_TRANSPORTS
+        value: websocket,polling
+      - key: SOCKET_PING_TIMEOUT
+        value: 60000
+      - key: SOCKET_PING_INTERVAL
+        value: 25000
       
       # Options
       - key: BYPASS_TIME_WINDOWS
         value: false
       - key: MAX_FILE_SIZE
         value: 10485760
-
-  # PostgreSQL Database
-  - type: pserv
-    name: security-guard-db
-    plan: free
-    region: frankfurt
-    ipAllowList: []
