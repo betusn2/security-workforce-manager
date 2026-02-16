@@ -11,6 +11,8 @@ import useAuthStore from '../hooks/useAuth';
 import { toast } from 'react-toastify';
 import { getDeviceFingerprint, getDeviceInfo } from '../utils/deviceFingerprint';
 import deviceInfoService from '../services/deviceInfoService';
+import AppDownloadBanner from '../components/AppDownloadBanner';
+import soundEffects from '../utils/soundEffects';
 
 /**
  * Page de connexion unifiée
@@ -39,6 +41,7 @@ const CheckInLogin = () => {
   const [error, setError] = useState('');
   const [userPreview, setUserPreview] = useState(null);
   const [deviceInfo, setDeviceInfo] = useState(null);
+  const [showAppBanner, setShowAppBanner] = useState(true);
   
   // États pour le tracking GPS
   const [currentLocation, setCurrentLocation] = useState(null);
@@ -67,6 +70,9 @@ const CheckInLogin = () => {
     // Démarrer le tracking GPS et batterie
     startLocationTracking();
     getBatteryLevel();
+    
+    // Initialiser les effets sonores
+    soundEffects.initialize();
     
     return () => {
       stopLocationTracking();
@@ -350,6 +356,9 @@ const CheckInLogin = () => {
     console.log('🔐 Starting CIN login process...');
     setLoading(true);
     setError('');
+    
+    // 🎵 Son de démarrage connexion
+    soundEffects.playLoginStart();
 
     try {
       console.log('📞 Calling loginByCin API...');
@@ -392,6 +401,8 @@ const CheckInLogin = () => {
         // ✅ Initialiser Socket.IO pour le tracking
         initializeSocket(user.id);
         
+        // 🎵 Son de succès
+        soundEffects.playLoginSuccess();
         toast.success(`Connexion réussie! ${validEvents.length} événement(s) disponible(s).`);
         // ✅ Redirection vers /checkin pour agents/superviseurs
         navigate('/checkin');
@@ -409,6 +420,9 @@ const CheckInLogin = () => {
       const errorCode = err.response?.data?.code;
       const errorData = err.response?.data?.data;
       const message = err.response?.data?.message || 'Erreur de connexion';
+      
+      // 🎵 Son d'erreur
+      soundEffects.playLoginError();
 
       // Afficher le message d'erreur détaillé
       setError(message);
@@ -449,18 +463,24 @@ const CheckInLogin = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
-
+    
+    // 🎵 Son de démarrage connexion
+    soundEffects.playLoginStart();
+    
     try {
       // Utiliser le store Zustand pour la connexion (met à jour isAuthenticated)
       const result = await storeLogin(email, password);
 
       if (result.success) {
+        soundEffects.playLoginSuccess();
         toast.success('Connexion réussie!');
         navigate('/dashboard');
       } else {
+        soundEffects.playLoginError();
         setError(result.error || 'Email ou mot de passe incorrect');
       }
     } catch (err) {
+      soundEffects.playLoginError();
       setError(err.response?.data?.message || 'Email ou mot de passe incorrect');
     } finally {
       setLoading(false);
@@ -798,6 +818,13 @@ const CheckInLogin = () => {
             </div>
           </div>
         </div>
+
+        {/* App Download Banner */}
+        {showAppBanner && (
+          <div className="mt-6">
+            <AppDownloadBanner onDismiss={() => setShowAppBanner(false)} />
+          </div>
+        )}
 
         {/* Note de sécurité */}
         <p className="text-center text-primary-200 text-sm mt-6">
