@@ -6,6 +6,8 @@ import useI18n from '../hooks/useI18n';
 import { assignmentsAPI, eventsAPI } from '../services/api';
 import { hasActiveOrUpcomingEvents } from '../utils/eventHelpers';
 import { toast } from 'react-toastify';
+import AppDownloadBanner from '../components/AppDownloadBanner';
+import soundEffects from '../utils/soundEffects';
 
 const Login = () => {
   const [loginMode, setLoginMode] = useState('email'); // 'email' or 'cin'
@@ -15,6 +17,7 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const [showAppBanner, setShowAppBanner] = useState(true);
   const navigate = useNavigate();
   const { login, loginByCin, isLoading, error, clearError } = useAuthStore();
   const { t, language, changeLanguage, getLanguages, isRTL } = useI18n();
@@ -27,11 +30,17 @@ const Login = () => {
       setEmail(savedEmail);
       setRememberMe(true);
     }
+    
+    // Initialiser les effets sonores
+    soundEffects.initialize();
   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     clearError();
+    
+    // 🎵 Jouer le son de démarrage de connexion
+    soundEffects.playLoginStart();
 
     if (loginMode === 'cin') {
       // Login by CIN (for agents/supervisors)
@@ -47,6 +56,7 @@ const Login = () => {
 
           if (!assignmentsResponse.data?.success || !assignmentsResponse.data.data) {
             toast.dismiss(toastId);
+            soundEffects.playLoginError();
             toast.error('Aucun événement assigné. Contactez votre superviseur.');
             navigate('/no-active-events');
             return;
@@ -61,6 +71,7 @@ const Login = () => {
 
           if (eventIds.length === 0) {
             toast.dismiss(toastId);
+            soundEffects.playLoginError();
             toast.error('Aucun événement assigné. Contactez votre superviseur.');
             navigate('/no-active-events');
             return;
@@ -80,12 +91,14 @@ const Login = () => {
 
           if (!hasValidEvents) {
             // ❌ TOUS LES ÉVÉNEMENTS SONT TERMINÉS/ANNULÉS
+            soundEffects.playLoginError();
             toast.error('Tous vos événements sont terminés. Accès au pointage refusé.');
             navigate('/no-active-events');
             return;
           }
 
           // ✅ AU MOINS UN ÉVÉNEMENT ACTIF/FUTUR
+          soundEffects.playLoginSuccess();
           toast.success('Connexion réussie! Redirection vers le pointage...');
           navigate('/checkin');
         } catch (error) {
@@ -93,6 +106,7 @@ const Login = () => {
 
           // En cas d'erreur API, on laisse passer par sécurité
           // (peut-être l'API a un problème temporaire)
+          soundEffects.playLoginSuccess();
           toast.warning('Impossible de vérifier vos événements. Redirection...');
           navigate('/checkin');
         }
@@ -110,7 +124,10 @@ const Login = () => {
 
       const result = await login(email, password);
       if (result.success) {
+        soundEffects.playLoginSuccess();
         navigate('/dashboard');
+      } else {
+        soundEffects.playLoginError();
       }
     }
   };
@@ -357,6 +374,13 @@ const Login = () => {
             </div>
           </div>
         </div>
+
+        {/* App Download Banner */}
+        {showAppBanner && (
+          <div className="mt-6">
+            <AppDownloadBanner onDismiss={() => setShowAppBanner(false)} />
+          </div>
+        )}
 
         {/* Footer */}
         <div className="text-center mt-6 space-y-4">
