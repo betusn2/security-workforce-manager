@@ -1,0 +1,344 @@
+.app-download-banner {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 20px;
+  padding: 40px 30px;
+  margin: 30px 0;
+  box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
+  color: white;
+  position: relative;
+  overflow: hidden;
+}
+
+.app-download-banner::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+  animation: pulse 15s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.3; }
+  50% { transform: scale(1.1); opacity: 0.5; }
+}
+
+.banner-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* Header */
+.banner-header {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.banner-icon {
+  width: 40px;
+  height: 40px;
+  stroke-width: 2;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+}
+
+.banner-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.banner-subtitle {
+  font-size: 16px;
+  opacity: 0.95;
+  margin: 0 0 30px 0;
+  max-width: 600px;
+}
+
+/* Download Buttons */
+.download-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+.download-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 20px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  color: white;
+  text-decoration: none;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.download-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+.download-btn:active {
+  transform: translateY(0);
+}
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.btn-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.btn-label {
+  font-size: 11px;
+  opacity: 0.9;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-platform {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Platform-specific colors */
+.download-btn-android {
+  background: linear-gradient(135deg, rgba(61, 220, 132, 0.2), rgba(46, 204, 113, 0.2));
+}
+
+.download-btn-android:hover {
+  background: linear-gradient(135deg, rgba(61, 220, 132, 0.3), rgba(46, 204, 113, 0.3));
+}
+
+.download-btn-ios {
+  background: linear-gradient(135deg, rgba(52, 152, 219, 0.2), rgba(41, 128, 185, 0.2));
+}
+
+.download-btn-ios:hover {
+  background: linear-gradient(135deg, rgba(52, 152, 219, 0.3), rgba(41, 128, 185, 0.3));
+}
+
+.download-btn-windows {
+  background: linear-gradient(135deg, rgba(52, 152, 219, 0.2), rgba(9, 132, 227, 0.2));
+}
+
+.download-btn-windows:hover {
+  background: linear-gradient(135deg, rgba(52, 152, 219, 0.3), rgba(9, 132, 227, 0.3));
+}
+
+.download-btn-macos {
+  background: linear-gradient(135deg, rgba(149, 165, 166, 0.2), rgba(127, 140, 141, 0.2));
+}
+
+.download-btn-macos:hover {
+  background: linear-gradient(135deg, rgba(149, 165, 166, 0.3), rgba(127, 140, 141, 0.3));
+}
+
+/* Web Alternative */
+.web-alternative {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin: 30px 0;
+  padding-top: 30px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.web-alt-text {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.web-continue-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.web-continue-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateX(5px);
+}
+
+.arrow-icon {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.5;
+  transition: transform 0.3s ease;
+}
+
+.web-continue-btn:hover .arrow-icon {
+  transform: translateX(3px);
+}
+
+/* Statistics */
+.app-stats {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 20px 0;
+  margin-top: 30px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-number {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 5px;
+  background: linear-gradient(to bottom, #fff, rgba(255,255,255,0.8));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stat-label {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .app-download-banner {
+    padding: 30px 20px;
+    border-radius: 15px;
+  }
+
+  .banner-title {
+    font-size: 24px;
+  }
+
+  .banner-subtitle {
+    font-size: 14px;
+  }
+
+  .download-buttons {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .download-btn {
+    padding: 12px 16px;
+  }
+
+  .web-alternative {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .web-continue-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .app-stats {
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .stat-divider {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .banner-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .banner-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .banner-title {
+    font-size: 20px;
+  }
+
+  .btn-platform {
+    font-size: 14px;
+  }
+
+  .stat-number {
+    font-size: 24px;
+  }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+  .app-download-banner {
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* Animation d'entrée */
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.app-download-banner {
+  animation: slideInUp 0.6s ease-out;
+}
+
+/* Pulse animation pour attirer l'attention */
+@keyframes btnPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+
+.download-btn:first-child {
+  animation: btnPulse 2s infinite;
+}

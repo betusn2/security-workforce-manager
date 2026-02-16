@@ -1,0 +1,399 @@
+/* Sound Settings Component Styles */
+/* Add to: frontend/src/components/Settings/SoundSettings.css */
+
+.sound-settings-container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.sound-settings-header {
+  margin-bottom: 30px;
+}
+
+.sound-settings-header h2 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin: 0 0 10px 0;
+}
+
+.sound-settings-description {
+  font-size: 15px;
+  color: #666;
+  margin: 0;
+}
+
+.sound-settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Setting Card */
+.setting-card {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.3s ease;
+}
+
+.setting-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* Setting Row */
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.setting-info {
+  flex: 1;
+}
+
+.setting-info.full-width {
+  width: 100%;
+}
+
+.setting-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a1a;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.setting-hint {
+  font-size: 14px;
+  color: #888;
+  margin: 0;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 56px;
+  height: 30px;
+  cursor: pointer;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  border-radius: 30px;
+  transition: 0.3s;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 22px;
+  width: 22px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  border-radius: 50%;
+  transition: 0.3s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+input:checked + .toggle-slider {
+  background-color: #4CAF50;
+}
+
+input:checked + .toggle-slider:before {
+  transform: translateX(26px);
+}
+
+/* Volume Control */
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-top: 12px;
+}
+
+.volume-icon {
+  font-size: 20px;
+  opacity: 0.7;
+}
+
+.volume-slider {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, #e0e0e0 0%, #4CAF50 100%);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #4CAF50;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
+}
+
+.volume-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #4CAF50;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
+}
+
+.volume-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* Section Title */
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0 0 12px 0;
+}
+
+.section-description {
+  font-size: 14px;
+  color: #666;
+  margin: 0 0 20px 0;
+}
+
+/* Test Sounds Grid */
+.test-sounds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.test-sound-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  background: #f8f9fa;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  position: relative;
+  overflow: hidden;
+}
+
+.test-sound-btn:hover:not(:disabled) {
+  background: #e9ecef;
+  border-color: #4CAF50;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);
+}
+
+.test-sound-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.test-sound-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.test-sound-btn.testing {
+  animation: pulse 0.5s ease-in-out;
+  background: #e7f5e8;
+  border-color: #4CAF50;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.test-sound-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.test-sound-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #444;
+}
+
+/* Info Panel */
+.info-panel {
+  background: #f0f7ff;
+  border-left: 4px solid #2196F3;
+}
+
+.info-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.info-list li {
+  padding: 10px 0;
+  font-size: 14px;
+  color: #555;
+  line-height: 1.6;
+  border-bottom: 1px solid #e0e9f5;
+}
+
+.info-list li:last-child {
+  border-bottom: none;
+}
+
+.info-list li strong {
+  color: #2196F3;
+  font-weight: 600;
+}
+
+/* Animations */
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .sound-settings-container {
+    padding: 15px;
+  }
+
+  .sound-settings-header h2 {
+    font-size: 24px;
+  }
+
+  .setting-card {
+    padding: 20px;
+  }
+
+  .test-sounds-grid {
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 10px;
+  }
+
+  .test-sound-btn {
+    padding: 14px 10px;
+  }
+
+  .test-sound-icon {
+    font-size: 28px;
+  }
+
+  .test-sound-label {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .setting-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .toggle-switch {
+    align-self: flex-end;
+  }
+
+  .test-sounds-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+  .sound-settings-header h2 {
+    color: #f0f0f0;
+  }
+
+  .sound-settings-description {
+    color: #aaa;
+  }
+
+  .setting-card {
+    background: #2a2a2a;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .setting-label {
+    color: #f0f0f0;
+  }
+
+  .setting-hint {
+    color: #999;
+  }
+
+  .test-sound-btn {
+    background: #333;
+    border-color: #444;
+    color: #ddd;
+  }
+
+  .test-sound-btn:hover:not(:disabled) {
+    background: #3a3a3a;
+  }
+
+  .test-sound-label {
+    color: #ddd;
+  }
+
+  .info-panel {
+    background: #1e3a52;
+    border-left-color: #4CAF50;
+  }
+
+  .info-list li {
+    color: #ccc;
+    border-bottom-color: #2d4a61;
+  }
+
+  .info-list li strong {
+    color: #81c784;
+  }
+}
