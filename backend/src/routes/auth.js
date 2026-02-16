@@ -61,7 +61,8 @@ router.post('/logout', authController.logout);
 router.get('/profile', authController.getProfile);
 router.put('/profile', authController.updateProfile);
 router.put('/change-password', authController.changePassword);
-router.put('/facial-vector', authController.updateFacialVector);
+router.get('/facial-vector', authController.getFacialVectorForCheckIn); // GET pour récupérer
+router.put('/facial-vector', authController.updateFacialVector); // PUT pour mettre à jour
 
 // Gestion des appareils autorisés
 router.get('/devices', authController.getAuthorizedDevices);

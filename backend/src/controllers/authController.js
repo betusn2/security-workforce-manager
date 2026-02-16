@@ -726,9 +726,11 @@ exports.updateFacialVector = async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('❌ Update facial vector error:', error);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de l\'enregistrement du vecteur facial'
+      message: 'Erreur lors de l\'enregistrement du vecteur facial',
+      error: error.message
     });
   }
 };
@@ -827,10 +829,11 @@ exports.getFacialVectorForCheckIn = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get facial vector error:', error);
+    console.error('❌ Get facial vector error:', error);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de la récupération du vecteur facial'
+      message: 'Erreur lors de la récupération du vecteur facial',
+      error: error.message
     });
   }
 };

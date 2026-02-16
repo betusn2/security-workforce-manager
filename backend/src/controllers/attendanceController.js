@@ -713,9 +713,11 @@ exports.getAttendances = async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('❌ getAttendances ERROR:', error);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de la récupération des présences'
+      message: 'Erreur lors de la récupération des présences',
+      error: error.message
     });
   }
 };
@@ -846,8 +848,14 @@ exports.getTodayStatus = async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('❌ getTodayStatus ERROR:', error);
     res.status(500).json({
       success: false,
+      message: 'Erreur lors de la récupération du statut du jour',
+      error: error.message
+    });
+  }
+};
       message: 'Erreur lors de la récupération du statut du jour'
     });
   }

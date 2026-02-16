@@ -984,10 +984,11 @@ exports.searchByCin = async (req, res) => {
       data: userData
     });
   } catch (error) {
-    console.error('Search by CIN error:', error);
+    console.error('❌ Search by CIN error:', error);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de la recherche'
+      message: 'Erreur lors de la recherche',
+      error: error.message
     });
   }
 };

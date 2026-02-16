@@ -12,8 +12,8 @@ router.get('/check-email', userController.checkEmailUnique);
 router.get('/check-cin', userController.checkCinUnique);
 router.get('/check-phone', userController.checkPhoneUnique);
 
-// Search user by CIN (for check-in)
-router.get('/search/cin/:cin', authorize('admin', 'utilisateur', 'responsable'), userController.searchByCin);
+// Search user by CIN (for check-in) - Accessible à tous les agents authentifiés
+router.get('/search/cin/:cin', userController.searchByCin);
 
 // Get all supervisors (supervisors and admins who can manage agents)
 router.get('/supervisors', authorize('admin', 'supervisor'), userController.getSupervisors);
