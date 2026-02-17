@@ -116,26 +116,18 @@ const handleApiError = (error) => {
       headers: error.response.headers
     });
     
-    // Retourner l'erreur pour que le composant puisse la gérer
-    return {
-      success: false,
-      message: error.response.data?.message || `Erreur ${error.response.status}`,
-      error: error.response.data
-    };
+    // Relancer l'erreur pour que le composant puisse la gérer dans son catch
+    throw error;
   } else if (error.request) {
     // La requête a été faite mais aucune réponse n'a été reçue
     console.error('API Error Request:', error.request);
-    return {
-      success: false,
-      message: 'Pas de réponse du serveur. Vérifiez votre connexion internet.'
-    };
+    const networkError = new Error('Pas de réponse du serveur. Vérifiez votre connexion internet.');
+    networkError.isNetworkError = true;
+    throw networkError;
   } else {
     // Une erreur s'est produite lors de la configuration de la requête
     console.error('API Error:', error.message);
-    return {
-      success: false,
-      message: error.message || 'Erreur inconnue'
-    };
+    throw error;
   }
 };
 

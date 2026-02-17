@@ -173,6 +173,14 @@ const generateEmployeeId = async (role) => {
 // Create new user (admin only)
 exports.createUser = async (req, res) => {
   try {
+    console.log('📥 CREATE USER - Début de la requête');
+    console.log('📋 Body reçu:', JSON.stringify({
+      ...req.body,
+      facialVector: req.body.facialVector ? `[${req.body.facialVector.length} points]` : null,
+      facialPhoto: req.body.facialPhoto ? '[photo présente]' : null,
+      profilePhoto: req.body.profilePhoto ? '[photo présente]' : null
+    }, null, 2));
+    
     const {
       firstName, lastName, email, password, phone,
       whatsappNumber, role, address, dateOfBirth, hireDate,
@@ -259,13 +267,30 @@ exports.createUser = async (req, res) => {
     }
 
     // Générer automatiquement l'ID employé
+    console.log('🔄 Génération employeeId pour role:', userRole);
     const employeeId = await generateEmployeeId(userRole);
+    console.log('✅ employeeId généré:', employeeId);
 
     // Pour agents et superviseurs: mot de passe = CIN (si pas de mot de passe fourni)
     let userPassword = password;
     if (['agent', 'supervisor'].includes(userRole) && cin && !password) {
       userPassword = cin.toUpperCase().trim();
+      console.log('🔑 Mot de passe généré depuis CIN');
     }
+    console.log('🔑 Mot de passe défini:', userPassword ? '[présent]' : '[ABSENT - ERREUR]');
+
+    console.log('💾 Création utilisateur avec les données suivantes:', {
+      employeeId,
+      firstName,
+      lastName,
+      email,
+      hasPassword: !!userPassword,
+      phone,
+      whatsappNumber,
+      role: userRole,
+      supervisorId,
+      cin: cin ? cin.toUpperCase().trim() : null
+    });
 
     const user = await User.create({
       employeeId,
@@ -351,6 +376,8 @@ exports.createUser = async (req, res) => {
     // 🔥 BROADCAST TEMPS RÉEL - Nouvel utilisateur
     broadcastUser.created(user.toJSON(), { broadcast: 'all' });
 
+    console.log('✅ Utilisateur créé avec succès:', user.id, user.employeeId);
+
     res.status(201).json({
       success: true,
       message: 'Utilisateur créé avec succès',
@@ -361,11 +388,28 @@ exports.createUser = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Create user error:', error);
+    console.error('❌ CREATE USER ERROR:', error);
+    console.error('❌ Error name:', error.name);
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error stack:', error.stack);
+    
+    // Log des erreurs Sequelize spécifiques
+    if (error.name === 'SequelizeValidationError') {
+      console.error('❌ Validation errors:', error.errors?.map(e => ({
+        field: e.path,
+        message: e.message,
+        value: e.value
+      })));
+    }
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      console.error('❌ Constraint violation:', error.errors?.map(e => e.path));
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la création de l\'utilisateur',
-      error: error.message
+      error: error.message,
+      details: error.name
     });
   }
 };
