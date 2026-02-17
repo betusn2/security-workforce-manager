@@ -856,10 +856,6 @@ exports.getTodayStatus = async (req, res) => {
     });
   }
 };
-      message: 'Erreur lors de la récupération du statut du jour'
-    });
-  }
-};
 
 // Manual attendance update (admin/supervisor)
 exports.updateAttendance = async (req, res) => {
