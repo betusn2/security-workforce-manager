@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   FiHome, FiUsers, FiCalendar, FiClipboard, FiClock,
@@ -89,11 +89,31 @@ const menuStructure = [
 ];
 
 const Layout = ({ children }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expandedSections, setExpandedSections] = useState({});
+  // Charger l'état de la sidebar depuis localStorage (défaut: false pour mobile, true pour desktop)
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    const saved = localStorage.getItem('sidebar_open');
+    return saved !== null ? JSON.parse(saved) : false;
+  });
+  
+  // Charger les sections expandées depuis localStorage
+  const [expandedSections, setExpandedSections] = useState(() => {
+    const saved = localStorage.getItem('sidebar_expanded_sections');
+    return saved ? JSON.parse(saved) : {};
+  });
+  
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, hasRole } = useAuthStore();
+
+  // Persister l'état de la sidebar dans localStorage
+  useEffect(() => {
+    localStorage.setItem('sidebar_open', JSON.stringify(sidebarOpen));
+  }, [sidebarOpen]);
+
+  // Persister les sections expandées dans localStorage
+  useEffect(() => {
+    localStorage.setItem('sidebar_expanded_sections', JSON.stringify(expandedSections));
+  }, [expandedSections]);
 
   const handleLogout = async () => {
     await logout();
