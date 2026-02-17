@@ -210,7 +210,10 @@ exports.createEvent = async (req, res) => {
     const {
       name, description, type, location, latitude, longitude, geoRadius,
       startDate, endDate, checkInTime, checkOutTime, lateThreshold,
-      requiredAgents, recurrence, notes
+      requiredAgents, recurrence, notes,
+      // Additional fields from enhanced frontend
+      priority, color, recurrenceType, recurrenceEndDate,
+      contactName, contactPhone, supervisorId, agentCreationBuffer
     } = req.body;
 
     const event = await Event.create({
@@ -226,8 +229,16 @@ exports.createEvent = async (req, res) => {
       checkInTime,
       checkOutTime,
       lateThreshold: lateThreshold || 15,
+      agentCreationBuffer: agentCreationBuffer || 120,
       requiredAgents: requiredAgents || 1,
       status: 'scheduled',
+      priority: priority || 'medium',
+      color: color || '#3B82F6',
+      recurrenceType: recurrenceType || 'none',
+      recurrenceEndDate: recurrenceEndDate || null,
+      contactName: contactName || null,
+      contactPhone: contactPhone || null,
+      supervisorId: supervisorId || null,
       recurrence,
       notes,
       createdBy: req.user.id
@@ -284,7 +295,7 @@ exports.updateEvent = async (req, res) => {
     const allowedFields = [
       'name', 'description', 'type', 'location', 'latitude', 'longitude',
       'geoRadius', 'startDate', 'endDate', 'checkInTime', 'checkOutTime',
-      'lateThreshold', 'requiredAgents', 'status', 'recurrence', 'notes',
+      'lateThreshold', 'agentCreationBuffer', 'requiredAgents', 'status', 'recurrence', 'notes',
       'supervisorId', 'priority', 'color', 'recurrenceType', 'recurrenceEndDate', 'contactName', 'contactPhone'
     ];
 
