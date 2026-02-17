@@ -55,18 +55,19 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false
     },
     profilePhoto: {
-      type: DataTypes.TEXT,
-      allowNull: true
+      type: DataTypes.TEXT('long'),
+      allowNull: true,
+      comment: 'Photo de profil base64 - LONGTEXT pour images haute résolution'
     },
     facialVector: {
-      type: DataTypes.TEXT,
+      type: DataTypes.TEXT('long'),
       allowNull: true,
-      comment: 'Encrypted facial recognition vector'
+      comment: 'Encrypted facial recognition vector - LONGTEXT'
     },
     facialDescriptor: {
-      type: DataTypes.TEXT,
+      type: DataTypes.TEXT('long'),
       allowNull: true,
-      comment: 'Facial descriptor JSON array for face-api.js recognition'
+      comment: 'Facial descriptor JSON array for face-api.js recognition - LONGTEXT'
     },
     facialVectorUpdatedAt: {
       type: DataTypes.DATE,
