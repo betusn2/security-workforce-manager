@@ -50,13 +50,14 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true
     },
     checkInPhoto: {
-      type: DataTypes.TEXT,
+      type: DataTypes.TEXT('long'),
       allowNull: true,
-      comment: 'Base64 or URL of check-in photo'
+      comment: 'Base64 or URL of check-in photo - LONGTEXT'
     },
     checkOutPhoto: {
-      type: DataTypes.TEXT,
-      allowNull: true
+      type: DataTypes.TEXT('long'),
+      allowNull: true,
+      comment: 'Base64 or URL of check-out photo - LONGTEXT'
     },
     checkInMethod: {
       type: DataTypes.ENUM('facial', 'manual', 'qrcode'),

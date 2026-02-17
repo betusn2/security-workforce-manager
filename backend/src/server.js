@@ -417,6 +417,14 @@ const startServer = async () => {
       }
     }
 
+    // Run photos LONGTEXT migration (fixes "Data too long for column 'profile_photo'")
+    try {
+      const migratePhotosToLongtext = require('./migrations/migrate-photos-longtext');
+      await migratePhotosToLongtext();
+    } catch (error) {
+      console.error('⚠️ Photos LONGTEXT migration error (continuing):', error.message);
+    }
+
     // Sync database (create tables if they don't exist)
     if (process.env.NODE_ENV !== 'production' || process.env.FORCE_DB_SYNC === 'true') {
       await db.sequelize.sync({ alter: false });

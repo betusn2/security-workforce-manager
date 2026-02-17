@@ -1,0 +1,65 @@
+📋 COLONNES DE LA TABLE USERS:
+================================================================================
+1. id - char(36) - NO - PRI
+2. employee_id - varchar(20) - YES - UNI
+3. cin - varchar(20) - YES - MUL
+4. first_name - varchar(100) - NO - 
+5. last_name - varchar(100) - NO - 
+6. email - varchar(255) - NO - UNI
+7. password - varchar(255) - NO - 
+8. phone - varchar(20) - YES - 
+9. whatsapp_number - varchar(20) - YES - 
+10. role - enum('agent','supervisor','admin') - YES - MUL
+11. profile_photo - text - YES - 
+12. facial_vector - text - YES - 
+13. facial_descriptor - text - YES - 
+14. facial_vector_updated_at - datetime - YES - 
+15. address - text - YES - 
+16. date_of_birth - date - YES - 
+17. hire_date - date - YES - 
+18. status - enum('active','inactive','suspended') - YES - MUL
+19. last_login - datetime - YES - 
+20. notification_preferences - json - YES - 
+21. refresh_token - text - YES - 
+22. height - decimal(5,2) - YES - 
+23. weight - decimal(5,2) - YES - 
+24. diploma - varchar(255) - YES - 
+25. diploma_level - varchar(50) - YES - 
+26. security_card - varchar(100) - YES - 
+27. security_card_expiry - date - YES - 
+28. experience_years - int - YES - 
+29. specializations - json - YES - 
+30. languages - json - YES - 
+31. current_latitude - decimal(10,8) - YES - 
+32. current_longitude - decimal(11,8) - YES - 
+33. last_location_update - datetime - YES - 
+34. rating - decimal(3,2) - YES - 
+35. total_ratings - int - YES - 
+36. punctuality_score - decimal(5,2) - YES - 
+37. reliability_score - decimal(5,2) - YES - 
+38. professionalism_score - decimal(5,2) - YES - 
+39. overall_score - decimal(5,2) - YES - 
+40. emergency_contact - varchar(255) - YES - 
+41. emergency_phone - varchar(20) - YES - 
+42. id_card_number - varchar(50) - YES - 
+43. social_security_number - varchar(50) - YES - 
+44. bank_details - json - YES - 
+45. supervisor_id - char(36) - YES - 
+46. authorized_devices - json - YES - 
+47. last_check_in_location - varchar(500) - YES - 
+48. created_by_type - varchar(20) - YES - 
+49. created_by_user_id - char(36) - YES - 
+50. is_temporary - tinyint(1) - YES - 
+51. validated_by - char(36) - YES - 
+52. validated_at - datetime - YES - 
+53. last_liveness_check - datetime - YES - 
+54. fraud_score - int - YES - 
+55. device_fingerprints - json - YES - 
+56. latitude - decimal(10,8) - YES - 
+57. longitude - decimal(11,8) - YES - 
+58. created_at - timestamp - YES - 
+59. updated_at - timestamp - YES - 
+60. deleted_at - datetime - YES - 
+
+================================================================================
+Total colonnes: 60

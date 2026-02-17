@@ -548,31 +548,8 @@ const AgentCreationModal = ({ isOpen, onClose, supervisorId, onSuccess, currentE
             toast.success('✅ Visage capturé avec succès');
             closeCamera();
             
-            // 🚀 AUTO-SUBMIT: Vérifier si le formulaire est complet
-            setTimeout(() => {
-              // Vérifier tous les champs requis
-              const isFormValid = formData.nom?.trim() && 
-                                  formData.prenom?.trim() && 
-                                  formData.telephone?.trim() &&
-                                  cinPhoto &&
-                                  selectedZones.length > 0 &&
-                                  cinExists === false &&
-                                  isWithinAllowedPeriod;
-              
-              if (isFormValid) {
-                console.log('✅ Formulaire complet - Déclenchement auto-soumission...');
-                toast.info('⏱️ Création automatique de l\'agent en cours...');
-                // Trigger form submit programmatically
-                const form = document.querySelector('form');
-                if (form) {
-                  const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-                  form.dispatchEvent(submitEvent);
-                }
-              } else {
-                console.log('⚠️ Formulaire incomplet - Attente des champs manquants');
-                toast.warning('📝 Photo faciale capturée. Complétez le formulaire pour créer l\'agent.');
-              }
-            }, 1500);
+            // Auto-submit géré uniquement par le useEffect (évite double soumission)
+            setAutoProcessing(true);
             
             resolve();
           }, 'image/jpeg', 0.3); // Qualité AGRESSIVE ~10KB
@@ -593,6 +570,12 @@ const AgentCreationModal = ({ isOpen, onClose, supervisorId, onSuccess, currentE
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Guard contre double soumission
+    if (submitting) {
+      console.log('⚠️ Soumission déjà en cours, ignorée');
+      return;
+    }
 
     // Vérifier si le CIN existe déjà
     if (cinExists === true) {
