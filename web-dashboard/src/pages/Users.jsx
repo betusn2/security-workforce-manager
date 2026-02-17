@@ -352,6 +352,20 @@ const UserModal = ({ isOpen, onClose, user, onSave }) => {
     const photoData = canvas.toDataURL('image/jpeg', 0.5);
     setProfilePhoto(photoData);
     stopCamera();
+
+    // 🚀 AUTO-SUBMIT: Vérifier si le formulaire est complet et sauvegarder automatiquement
+    console.log('📸 Photo capturée - Vérification auto-submit...');
+    setTimeout(() => {
+      const errors = validateForm();
+      if (errors.length === 0) {
+        console.log('✅ Formulaire valide - Déclenchement auto-sauvegarde...');
+        toast.info('⏱️ Sauvegarde automatique en cours...');
+        saveUser();
+      } else {
+        console.log('⚠️ Formulaire incomplet:', errors);
+        toast.warning('📝 Photo capturée. Complétez le formulaire pour sauvegarder.');
+      }
+    }, 1000);
   };
 
   // Fonction pour gérer l'upload de photo pour reconnaissance faciale

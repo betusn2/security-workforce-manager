@@ -676,6 +676,30 @@ const CheckInOut = () => {
     if (result.success) {
       setInstructions('✅ Vérification réussie! Photo capturée.');
       toast.success(`✅ Reconnaissance faciale confirmée! (${Math.round(finalMatchScore)}% de correspondance)`);
+      
+      // 🚀 AUTO-SUBMIT: Sauvegarde automatique après capture réussie
+      console.log('🚀 Vérification réussie - Déclenchement auto-submit...');
+      
+      // Déterminer si c'est un check-in ou check-out
+      const eventStatus = getEventStatus(selectedEvent?.id);
+      const hasCheckedIn = eventStatus?.attendance?.checkInTime;
+      const hasCheckedOut = eventStatus?.attendance?.checkOutTime;
+      
+      setTimeout(() => {
+        if (!hasCheckedIn) {
+          // Pas encore de check-in → faire check-in automatique
+          console.log('📥 AUTO CHECK-IN déclenché');
+          toast.info('⏱️ Check-in automatique en cours...');
+          handleCheckIn();
+        } else if (hasCheckedIn && !hasCheckedOut) {
+          // Déjà check-in mais pas check-out → faire check-out automatique
+          console.log('📤 AUTO CHECK-OUT déclenché');
+          toast.info('⏱️ Check-out automatique en cours...');
+          handleCheckOut(eventStatus.attendance.id);
+        } else {
+          console.log('ℹ️ Pointage déjà complet pour cet événement');
+        }
+      }, 1000); // Délai 1s pour permettre au toast de s'afficher
     } else {
       setInstructions('❌ Vérification échouée. Veuillez réessayer.');
       console.warn('❌ Verification failed:', {

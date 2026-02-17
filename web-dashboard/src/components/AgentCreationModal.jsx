@@ -507,6 +507,33 @@ const AgentCreationModal = ({ isOpen, onClose, supervisorId, onSuccess, currentE
             setFaceDescriptor(Array.from(detection.descriptor));
             toast.success('✅ Visage capturé avec succès');
             closeCamera();
+            
+            // 🚀 AUTO-SUBMIT: Vérifier si le formulaire est complet
+            setTimeout(() => {
+              // Vérifier tous les champs requis
+              const isFormValid = formData.nom?.trim() && 
+                                  formData.prenom?.trim() && 
+                                  formData.telephone?.trim() &&
+                                  cinPhoto &&
+                                  selectedZones.length > 0 &&
+                                  cinExists === false &&
+                                  isWithinAllowedPeriod;
+              
+              if (isFormValid) {
+                console.log('✅ Formulaire complet - Déclenchement auto-soumission...');
+                toast.info('⏱️ Création automatique de l\'agent en cours...');
+                // Trigger form submit programmatically
+                const form = document.querySelector('form');
+                if (form) {
+                  const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+                  form.dispatchEvent(submitEvent);
+                }
+              } else {
+                console.log('⚠️ Formulaire incomplet - Attente des champs manquants');
+                toast.warning('📝 Photo faciale capturée. Complétez le formulaire pour créer l\'agent.');
+              }
+            }, 1500);
+            
             resolve();
           }, 'image/jpeg', 0.5);
         });
