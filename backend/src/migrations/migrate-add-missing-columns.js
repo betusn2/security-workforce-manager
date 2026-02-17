@@ -5,6 +5,9 @@
  * définies dans les modèles Sequelize. sync({ alter: false }) ne
  * modifie pas les tables existantes. Cette migration ajoute les
  * colonnes manquantes de façon sûre (vérifie avant d'ajouter).
+ * 
+ * Also fixes columns that were created with wrong types by sync({ alter: true })
+ * (e.g., ENUM columns created as VARCHAR)
  */
 const db = require('../models');
 
@@ -59,6 +62,29 @@ async function addColumnIfMissing(tableName, columnName, columnDef) {
   }
 }
 
+/**
+ * Force a column to the correct type (MODIFY COLUMN)
+ * Used to fix columns created with wrong types by sync({ alter: true })
+ */
+async function ensureColumnType(tableName, columnName, columnDef) {
+  if (!(await tableExists(tableName))) return false;
+  if (!(await columnExists(tableName, columnName))) return false;
+  
+  try {
+    await db.sequelize.query(
+      `ALTER TABLE \`${tableName}\` MODIFY COLUMN \`${columnName}\` ${columnDef}`
+    );
+    console.log(`  🔧 ${tableName}.${columnName} type corrigé`);
+    return true;
+  } catch (err) {
+    // Ignore if already correct type
+    if (!err.message.includes('already exists')) {
+      console.error(`  ⚠️ Erreur MODIFY ${tableName}.${columnName}:`, err.message);
+    }
+    return false;
+  }
+}
+
 async function migrateAddMissingColumns() {
   console.log('🔄 Migration: Ajout colonnes manquantes aux tables existantes...');
   
@@ -91,6 +117,19 @@ async function migrateAddMissingColumns() {
   
   if (await addColumnIfMissing('events', 'supervisor_id', 
     'CHAR(36) NULL DEFAULT NULL COMMENT \'Responsable/Superviseur principal\'')) added++;
+
+  // Fix ENUM columns that may have been created with wrong types by sync({ alter: true })
+  // sync({ alter: true }) on MySQL sometimes creates ENUMs as VARCHAR, causing "Data truncated" errors
+  let fixed = 0;
+  if (await ensureColumnType('events', 'priority', 
+    'ENUM(\'low\', \'medium\', \'high\', \'critical\') DEFAULT \'medium\'')) fixed++;
+  if (await ensureColumnType('events', 'recurrence_type', 
+    'ENUM(\'none\', \'daily\', \'weekly\', \'biweekly\', \'monthly\') DEFAULT \'none\'')) fixed++;
+  if (await ensureColumnType('events', 'status', 
+    'ENUM(\'draft\', \'scheduled\', \'active\', \'completed\', \'cancelled\') DEFAULT \'draft\'')) fixed++;
+  if (await ensureColumnType('events', 'type', 
+    'ENUM(\'regular\', \'special\', \'emergency\') DEFAULT \'regular\'')) fixed++;
+  if (fixed > 0) console.log(`  🔧 ${fixed} colonne(s) ENUM corrigée(s) dans events`);
 
   // =========================================
   // TABLE: assignments
