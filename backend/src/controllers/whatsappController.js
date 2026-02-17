@@ -4,9 +4,8 @@
  */
 
 const whatsappService = require('../services/whatsappService');
-const User = require('../models/User');
-const Event = require('../models/Event');
-const Assignment = require('../models/Assignment');
+const { User, Event, Assignment } = require('../models');
+const { Op } = require('sequelize');
 
 /**
  * Verifier le statut de WhatsApp
@@ -194,13 +193,18 @@ exports.sendWeeklySchedules = async (req, res) => {
       const assignments = await Assignment.findAll({
         where: {
           agentId: agent.id,
-          startDate: {
-            [Op.gte]: today,
-            [Op.lte]: nextWeek
-          }
         },
-        include: [{ model: Event, as: 'event' }],
-        order: [['startDate', 'ASC']]
+        include: [{ 
+          model: Event, 
+          as: 'event',
+          where: {
+            startDate: {
+              [Op.gte]: today,
+              [Op.lte]: nextWeek
+            }
+          }
+        }],
+        order: [[{ model: Event, as: 'event' }, 'startDate', 'ASC']]
       });
 
       if (assignments.length > 0) {

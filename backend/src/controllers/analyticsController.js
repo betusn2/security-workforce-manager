@@ -4,6 +4,8 @@
  */
 
 const analyticsService = require('../services/analyticsService');
+const { User, Attendance, Incident } = require('../models');
+const { Op } = require('sequelize');
 
 /**
  * Obtenir le tableau de bord analytique
@@ -77,8 +79,6 @@ exports.predictAbsenceRisk = async (req, res) => {
  */
 exports.getAgentsAtRisk = async (req, res) => {
   try {
-    const User = require('../models/User');
-
     const agents = await User.findAll({
       where: { role: 'agent', status: 'active' }
     });
@@ -169,8 +169,6 @@ exports.predictStaffingNeeds = async (req, res) => {
 exports.getAttendanceTrends = async (req, res) => {
   try {
     const { days = 30 } = req.query;
-    const { Op } = require('sequelize');
-    const Attendance = require('../models/Attendance');
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(days));
@@ -229,7 +227,6 @@ exports.compareAgents = async (req, res) => {
       });
     }
 
-    const User = require('../models/User');
     const comparisons = [];
 
     for (const agentId of agentIds) {
@@ -264,10 +261,6 @@ exports.compareAgents = async (req, res) => {
 exports.generatePerformanceReport = async (req, res) => {
   try {
     const { startDate, endDate, type = 'summary' } = req.query;
-    const { Op } = require('sequelize');
-    const User = require('../models/User');
-    const Attendance = require('../models/Attendance');
-    const Incident = require('../models/Incident');
 
     const start = startDate ? new Date(startDate) : new Date(new Date().setDate(new Date().getDate() - 30));
     const end = endDate ? new Date(endDate) : new Date();

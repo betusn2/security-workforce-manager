@@ -152,6 +152,7 @@ db.Assignment.belongsTo(db.User, { foreignKey: 'assignedBy', as: 'assignedByUser
 // Attendance associations
 db.Attendance.belongsTo(db.User, { foreignKey: 'agentId', as: 'agent' });
 db.Attendance.belongsTo(db.Event, { foreignKey: 'eventId', as: 'event' });
+db.Attendance.belongsTo(db.User, { foreignKey: 'checkedInBy', as: 'checkedInByUser' });
 
 // Notification associations
 db.Notification.belongsTo(db.User, { foreignKey: 'userId', as: 'user' });

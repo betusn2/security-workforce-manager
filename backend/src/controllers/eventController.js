@@ -463,34 +463,34 @@ exports.getMyEvents = async (req, res) => {
         a.id as assignmentId,
         a.status as assignmentStatus,
         a.role as assignmentRole,
-        a.zoneId,
+        a.zone_id as zoneId,
         e.id as eventId,
         e.name,
         e.description,
         e.location,
-        e.startDate,
-        e.endDate,
-        e.checkInTime,
-        e.checkOutTime,
+        e.start_date as startDate,
+        e.end_date as endDate,
+        e.check_in_time as checkInTime,
+        e.check_out_time as checkOutTime,
         e.status as eventStatus,
-        e.requiredAgents,
-        e.supervisorId,
+        e.required_agents as requiredAgents,
+        e.supervisor_id as supervisorId,
         DATE_ADD(
-          CONCAT(DATE(e.endDate), ' ', IFNULL(e.checkOutTime, '23:59:59')), 
+          CONCAT(DATE(e.end_date), ' ', IFNULL(e.check_out_time, '23:59:59')), 
           INTERVAL 2 HOUR
         ) as eventEndPlus2h
       FROM assignments a
-      INNER JOIN events e ON a.eventId = e.id
-      WHERE a.agentId = ?
+      INNER JOIN events e ON a.event_id = e.id
+      WHERE a.agent_id = ?
         AND a.status IN ('pending', 'confirmed')
-        AND a.deletedAt IS NULL
-        AND e.deletedAt IS NULL
+        AND a.deleted_at IS NULL
+        AND e.deleted_at IS NULL
         AND e.status NOT IN ('cancelled', 'terminated')
         ${upcoming === 'true' ? `AND DATE_ADD(
-          CONCAT(DATE(e.endDate), ' ', IFNULL(e.checkOutTime, '23:59:59')), 
+          CONCAT(DATE(e.end_date), ' ', IFNULL(e.check_out_time, '23:59:59')), 
           INTERVAL 2 HOUR
         ) >= NOW()` : ''}
-      ORDER BY e.startDate ASC
+      ORDER BY e.start_date ASC
     `, {
       replacements: [req.user.id],
       type: Assignment.sequelize.QueryTypes.SELECT

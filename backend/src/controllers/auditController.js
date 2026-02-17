@@ -174,11 +174,11 @@ exports.getLogStats = async (req, res) => {
         createdAt: { [Op.gte]: sevenDaysAgo }
       },
       attributes: [
-        [require('sequelize').fn('DATE', require('sequelize').col('createdAt')), 'date'],
+        [require('sequelize').fn('DATE', require('sequelize').col('created_at')), 'date'],
         [require('sequelize').fn('COUNT', require('sequelize').col('id')), 'count']
       ],
-      group: [require('sequelize').fn('DATE', require('sequelize').col('createdAt'))],
-      order: [[require('sequelize').fn('DATE', require('sequelize').col('createdAt')), 'ASC']],
+      group: [require('sequelize').fn('DATE', require('sequelize').col('created_at'))],
+      order: [[require('sequelize').fn('DATE', require('sequelize').col('created_at')), 'ASC']],
       raw: true
     });
 
@@ -297,7 +297,7 @@ exports.getActionTypes = async (req, res) => {
 
     const entities = await ActivityLog.findAll({
       attributes: [
-        [require('sequelize').fn('DISTINCT', require('sequelize').col('entityType')), 'entityType']
+        [require('sequelize').fn('DISTINCT', require('sequelize').col('entity_type')), 'entityType']
       ],
       raw: true
     });

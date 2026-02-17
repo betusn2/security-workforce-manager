@@ -6,8 +6,7 @@
 
 const faceRecognitionService = require('../services/faceRecognitionService');
 const compreFaceService = require('../services/compreFaceService');
-const User = require('../models/User');
-const Attendance = require('../models/Attendance');
+const { User, Attendance } = require('../models');
 const { Op } = require('sequelize');
 
 // Mode de reconnaissance: 'compreface' ou 'local'
@@ -107,9 +106,8 @@ exports.registerFace = async (req, res) => {
       if (result.success) {
         await User.update(
           {
-            faceRegistered: true,
-            faceRegisteredAt: new Date(),
-            faceDescriptor: JSON.stringify(result.descriptor),
+            facialDescriptor: JSON.stringify(result.descriptor),
+            facialVectorUpdatedAt: new Date(),
           },
           { where: { id: userId } }
         );
@@ -230,7 +228,7 @@ exports.verifyFace = async (req, res) => {
       return res.json(result);
     } else {
       // Mode local (face-api.js)
-      if (!user.faceDescriptor) {
+      if (!user.facialDescriptor) {
         return res.status(400).json({
           success: false,
           message: 'Visage non enregistré pour cet utilisateur',
@@ -239,10 +237,10 @@ exports.verifyFace = async (req, res) => {
       }
 
       // Load descriptor into service cache if not present
-      const descriptor = JSON.parse(user.faceDescriptor);
+      const descriptor = JSON.parse(user.facialDescriptor);
       faceRecognitionService.importUserData(userId, {
         descriptor,
-        registeredAt: user.faceRegisteredAt,
+        registeredAt: user.facialVectorUpdatedAt,
       });
 
       // Verify face
@@ -309,7 +307,7 @@ exports.identifyFace = async (req, res) => {
       const userIds = result.matches.map(m => m.userId);
       const users = await User.findAll({
         where: { id: { [Op.in]: userIds } },
-        attributes: ['id', 'firstName', 'lastName', 'employeeId', 'avatar'],
+        attributes: ['id', 'firstName', 'lastName', 'employeeId', 'profilePhoto'],
       });
 
       const userMap = new Map(users.map(u => [u.id.toString(), u]));
@@ -371,7 +369,7 @@ exports.getStats = async (req, res) => {
 
     // Add database stats
     const dbStats = await User.count({
-      where: { faceRegistered: true },
+      where: { facialDescriptor: { [Op.ne]: null } },
     });
 
     // Recent anomalies
@@ -443,9 +441,8 @@ exports.deleteFaceRegistration = async (req, res) => {
     // Clear from database
     await User.update(
       {
-        faceRegistered: false,
-        faceRegisteredAt: null,
-        faceDescriptor: null,
+        facialDescriptor: null,
+        facialVectorUpdatedAt: null,
       },
       { where: { id: userId } }
     );
@@ -550,18 +547,17 @@ exports.adjustThreshold = async (req, res) => {
 async function loadAllFaceDescriptors() {
   const users = await User.findAll({
     where: {
-      faceRegistered: true,
-      faceDescriptor: { [Op.ne]: null },
+      facialDescriptor: { [Op.ne]: null },
     },
-    attributes: ['id', 'faceDescriptor', 'faceRegisteredAt'],
+    attributes: ['id', 'facialDescriptor', 'facialVectorUpdatedAt'],
   });
 
   for (const user of users) {
     try {
-      const descriptor = JSON.parse(user.faceDescriptor);
+      const descriptor = JSON.parse(user.facialDescriptor);
       faceRecognitionService.importUserData(user.id.toString(), {
         descriptor,
-        registeredAt: user.faceRegisteredAt,
+        registeredAt: user.facialVectorUpdatedAt,
       });
     } catch (e) {
       console.error(`Error loading descriptor for user ${user.id}:`, e);
