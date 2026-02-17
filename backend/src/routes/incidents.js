@@ -143,7 +143,7 @@ router.get('/:id', authenticate, async (req, res) => {
         {
           model: Event,
           as: 'event',
-          attributes: ['id', 'name', 'location', 'clientName']
+          attributes: ['id', 'name', 'location']
         }
       ]
     });

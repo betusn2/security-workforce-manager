@@ -426,11 +426,16 @@ const startServer = async () => {
     }
 
     // Sync database (create tables if they don't exist)
-    if (process.env.NODE_ENV !== 'production' || process.env.FORCE_DB_SYNC === 'true') {
+    // sync({ alter: false }) is safe - only creates missing tables, never alters existing ones
+    try {
       await db.sequelize.sync({ alter: false });
-      console.log('✅ Database synchronized.');
+      console.log('✅ Database synchronized (missing tables created).');
+    } catch (syncError) {
+      console.error('⚠️ Database sync error (continuing):', syncError.message);
+    }
 
-      // Create default admin user if no users exist
+    // Create default admin user if no users exist
+    try {
       const userCount = await db.User.count();
       if (userCount === 0) {
         await db.User.create({
@@ -445,17 +450,18 @@ const startServer = async () => {
         });
         console.log('✅ Default admin user created (email: admin@securityguard.com, password: Admin@123)');
       }
-
-      // Initialize default permissions if none exist
-      await initializeDefaultPermissions();
-      
-      // Start scheduler for automatic tasks (will be updated with io instance later)
-      // Note: io instance will be passed after server starts listening
-      startScheduler();
-      
-      // Initialize scheduled backup service
-      initScheduledBackupService();
+    } catch (adminError) {
+      console.log('ℹ️ Admin user check skipped:', adminError.message);
     }
+
+    // Initialize default permissions if none exist
+    await initializeDefaultPermissions();
+    
+    // Start scheduler for automatic tasks (will be updated with io instance later)
+    startScheduler();
+    
+    // Initialize scheduled backup service
+    initScheduledBackupService();
 
     // Start API server
     httpServer.listen(PORT, () => {

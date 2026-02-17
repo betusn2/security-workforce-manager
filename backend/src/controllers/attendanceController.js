@@ -639,6 +639,7 @@ exports.getAttendances = async (req, res) => {
       status,
       startDate,
       endDate,
+      date,
       sortBy = 'date',
       sortOrder = 'DESC'
     } = req.query;
@@ -655,8 +656,15 @@ exports.getAttendances = async (req, res) => {
     
     if (eventId) where.eventId = eventId;
     if (status) where.status = status;
-    if (startDate && endDate) {
+    // Support both single date and date range
+    if (date) {
+      where.date = date;
+    } else if (startDate && endDate) {
       where.date = { [Op.between]: [startDate, endDate] };
+    } else if (startDate) {
+      where.date = { [Op.gte]: startDate };
+    } else if (endDate) {
+      where.date = { [Op.lte]: endDate };
     }
 
     const { count, rows } = await Attendance.findAndCountAll({
@@ -678,25 +686,31 @@ exports.getAttendances = async (req, res) => {
       offset: (parseInt(page) - 1) * parseInt(limit)
     });
 
-    // Fetch zone assignments for each attendance
+    // Fetch zone assignments for each attendance (safe - errors don't break response)
     for (const attendance of rows) {
-      if (attendance.agentId && attendance.eventId) {
-        const assignment = await Assignment.findOne({
-          where: {
-            agentId: attendance.agentId,
-            eventId: attendance.eventId,
-            status: 'confirmed'
-          },
-          include: [{
-            model: Zone,
-            as: 'zone',
-            attributes: ['id', 'name', 'color', 'description']
-          }]
-        });
-        
-        if (assignment) {
-          attendance.dataValues.assignment = assignment;
+      try {
+        if (attendance.agentId && attendance.eventId) {
+          const assignment = await Assignment.findOne({
+            where: {
+              agentId: attendance.agentId,
+              eventId: attendance.eventId,
+              status: 'confirmed'
+            },
+            include: [{
+              model: Zone,
+              as: 'zone',
+              attributes: ['id', 'name', 'color', 'description'],
+              required: false
+            }]
+          });
+          
+          if (assignment) {
+            attendance.dataValues.assignment = assignment;
+          }
         }
+      } catch (zoneErr) {
+        // Zone lookup failed - continue without zone info
+        console.log('⚠️ Zone lookup skipped for attendance:', attendance.id);
       }
     }
 

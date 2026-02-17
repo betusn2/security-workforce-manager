@@ -211,8 +211,8 @@ router.get('/leaderboard', authenticate, async (req, res) => {
           sequelize.literal(`(
             SELECT COALESCE(SUM(b.points), 0)
             FROM user_badges ub
-            JOIN badges b ON ub.badgeId = b.id
-            WHERE ub.userId = User.id
+            JOIN badges b ON ub.badge_id = b.id
+            WHERE ub.user_id = \`User\`.\`id\`
           )`),
           'totalPoints'
         ],
@@ -220,7 +220,7 @@ router.get('/leaderboard', authenticate, async (req, res) => {
           sequelize.literal(`(
             SELECT COUNT(*)
             FROM user_badges ub
-            WHERE ub.userId = User.id
+            WHERE ub.user_id = \`User\`.\`id\`
           )`),
           'badgeCount'
         ]
