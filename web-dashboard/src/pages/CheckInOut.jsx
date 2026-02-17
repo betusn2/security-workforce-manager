@@ -610,11 +610,29 @@ const CheckInOut = () => {
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    context.drawImage(video, 0, 0);
+    // Limit resolution to reduce file size (fit in TEXT column max 64KB)
+    const maxSize = 640;
+    let width = video.videoWidth;
+    let height = video.videoHeight;
 
-    const photoData = canvas.toDataURL('image/jpeg', 0.9);
+    // Calculate scaled dimensions maintaining aspect ratio
+    if (width > height) {
+      if (width > maxSize) {
+        height = Math.round((height * maxSize) / width);
+        width = maxSize;
+      }
+    } else {
+      if (height > maxSize) {
+        width = Math.round((width * maxSize) / height);
+        height = maxSize;
+      }
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(video, 0, 0, width, height);
+
+    const photoData = canvas.toDataURL('image/jpeg', 0.5);
     setCapturedPhoto(photoData);
     stopCamera();
 

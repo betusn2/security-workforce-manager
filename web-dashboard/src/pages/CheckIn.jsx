@@ -1714,15 +1714,33 @@ const CheckIn = () => {
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
 
-      // Set canvas dimensions to match video
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      // Limit resolution to reduce file size (fit in TEXT column max 64KB)
+      const maxSize = 640;
+      let width = video.videoWidth;
+      let height = video.videoHeight;
 
-      // Draw video frame to canvas
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // Calculate scaled dimensions maintaining aspect ratio
+      if (width > height) {
+        if (width > maxSize) {
+          height = Math.round((height * maxSize) / width);
+          width = maxSize;
+        }
+      } else {
+        if (height > maxSize) {
+          width = Math.round((width * maxSize) / height);
+          height = maxSize;
+        }
+      }
 
-      // Convert to base64 JPEG with 90% quality
-      const photoData = canvas.toDataURL('image/jpeg', 0.9);
+      // Set canvas dimensions to scaled size
+      canvas.width = width;
+      canvas.height = height;
+
+      // Draw video frame to canvas with scaled dimensions
+      context.drawImage(video, 0, 0, width, height);
+
+      // Convert to base64 JPEG with reduced quality to fit in TEXT column
+      const photoData = canvas.toDataURL('image/jpeg', 0.5);
       console.log('📸 FACIAL PHOTO CAPTURED:', {
         dataLength: photoData.length,
         timestamp: new Date().toISOString()

@@ -326,10 +326,30 @@ const UserModal = ({ isOpen, onClose, user, onSave }) => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    context.drawImage(video, 0, 0);
-    const photoData = canvas.toDataURL('image/jpeg', 0.8);
+    
+    // Limiter la résolution pour réduire la taille
+    const maxSize = 640;
+    let width = video.videoWidth;
+    let height = video.videoHeight;
+    
+    if (width > height) {
+      if (width > maxSize) {
+        height = Math.round((height * maxSize) / width);
+        width = maxSize;
+      }
+    } else {
+      if (height > maxSize) {
+        width = Math.round((width * maxSize) / height);
+        height = maxSize;
+      }
+    }
+    
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(video, 0, 0, width, height);
+    
+    // Réduire la qualité JPEG pour une taille de fichier plus petite
+    const photoData = canvas.toDataURL('image/jpeg', 0.5);
     setProfilePhoto(photoData);
     stopCamera();
   };

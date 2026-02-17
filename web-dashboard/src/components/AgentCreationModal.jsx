@@ -469,10 +469,27 @@ const AgentCreationModal = ({ isOpen, onClose, supervisorId, onSuccess, currentE
       const canvas = canvasRef.current;
       const video = videoRef.current;
       
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      // Limiter la résolution pour réduire la taille
+      const maxSize = 640;
+      let width = video.videoWidth;
+      let height = video.videoHeight;
+      
+      if (width > height) {
+        if (width > maxSize) {
+          height = Math.round((height * maxSize) / width);
+          width = maxSize;
+        }
+      } else {
+        if (height > maxSize) {
+          width = Math.round((width * maxSize) / height);
+          height = maxSize;
+        }
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0);
+      ctx.drawImage(video, 0, 0, width, height);
 
       // Detect face and extract descriptor
       const detection = await faceapi
@@ -481,17 +498,17 @@ const AgentCreationModal = ({ isOpen, onClose, supervisorId, onSuccess, currentE
         .withFaceDescriptor();
 
       if (detection) {
-        // Convert canvas to blob
+        // Convert canvas to blob avec qualité réduite
         return new Promise((resolve, reject) => {
           canvas.toBlob((blob) => {
             const file = new File([blob], 'facial-photo.jpg', { type: 'image/jpeg' });
             setFacialPhoto(file);
-            setFacialPreview(canvas.toDataURL('image/jpeg'));
+            setFacialPreview(canvas.toDataURL('image/jpeg', 0.5));
             setFaceDescriptor(Array.from(detection.descriptor));
             toast.success('✅ Visage capturé avec succès');
             closeCamera();
             resolve();
-          }, 'image/jpeg', 0.95);
+          }, 'image/jpeg', 0.5);
         });
       } else {
         toast.error('Aucun visage détecté. Réessayez.');
