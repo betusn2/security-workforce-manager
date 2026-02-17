@@ -610,8 +610,8 @@ const CheckInOut = () => {
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
 
-    // Limit resolution to reduce file size (fit in TEXT column max 64KB)
-    const maxSize = 640;
+    // Limit resolution to reduce file size (AGRESSIVE pour TEXT 64KB)
+    const maxSize = 400;
     let width = video.videoWidth;
     let height = video.videoHeight;
 
@@ -632,7 +632,7 @@ const CheckInOut = () => {
     canvas.height = height;
     context.drawImage(video, 0, 0, width, height);
 
-    const photoData = canvas.toDataURL('image/jpeg', 0.5);
+    const photoData = canvas.toDataURL('image/jpeg', 0.3);
     setCapturedPhoto(photoData);
     stopCamera();
 

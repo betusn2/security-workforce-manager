@@ -1714,8 +1714,8 @@ const CheckIn = () => {
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
 
-      // Limit resolution to reduce file size (fit in TEXT column max 64KB)
-      const maxSize = 640;
+      // Limit resolution to reduce file size (AGRESSIVE pour TEXT 64KB)
+      const maxSize = 400;
       let width = video.videoWidth;
       let height = video.videoHeight;
 
@@ -1739,8 +1739,8 @@ const CheckIn = () => {
       // Draw video frame to canvas with scaled dimensions
       context.drawImage(video, 0, 0, width, height);
 
-      // Convert to base64 JPEG with reduced quality to fit in TEXT column
-      const photoData = canvas.toDataURL('image/jpeg', 0.5);
+      // Convert to base64 JPEG with AGGRESSIVE quality (0.3 = ~10KB max)
+      const photoData = canvas.toDataURL('image/jpeg', 0.3);
       console.log('📸 FACIAL PHOTO CAPTURED:', {
         dataLength: photoData.length,
         timestamp: new Date().toISOString()

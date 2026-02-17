@@ -327,8 +327,8 @@ const UserModal = ({ isOpen, onClose, user, onSave }) => {
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
     
-    // Limiter la résolution pour réduire la taille
-    const maxSize = 640;
+    // Limiter la résolution pour réduire la taille (AGRESSIVE pour TEXT 64KB)
+    const maxSize = 400;
     let width = video.videoWidth;
     let height = video.videoHeight;
     
@@ -348,8 +348,8 @@ const UserModal = ({ isOpen, onClose, user, onSave }) => {
     canvas.height = height;
     context.drawImage(video, 0, 0, width, height);
     
-    // Réduire la qualité JPEG pour une taille de fichier plus petite
-    const photoData = canvas.toDataURL('image/jpeg', 0.5);
+    // Réduire la qualité JPEG pour une taille de fichier plus petite (0.3 = ~10KB)
+    const photoData = canvas.toDataURL('image/jpeg', 0.3);
     setProfilePhoto(photoData);
     stopCamera();
 
@@ -369,7 +369,7 @@ const UserModal = ({ isOpen, onClose, user, onSave }) => {
   };
 
   // 🗜️ Fonction utilitaire pour compresser une image base64
-  const compressBase64Image = (base64Data, maxSize = 640, quality = 0.5) => {
+  const compressBase64Image = (base64Data, maxSize = 400, quality = 0.3) => {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -435,8 +435,8 @@ const UserModal = ({ isOpen, onClose, user, onSave }) => {
       reader.onload = async (e) => {
         const base64ImageRaw = e.target.result;
         
-        // 🗜️ COMPRESSER L'IMAGE UPLOADÉE
-        const base64Image = await compressBase64Image(base64ImageRaw, 640, 0.5);
+        // 🗜️ COMPRESSER L'IMAGE UPLOADÉE (AGRESSIVE: 400px, 0.3 quality)
+        const base64Image = await compressBase64Image(base64ImageRaw, 400, 0.3);
 
         try {
           // Extraire le descripteur facial

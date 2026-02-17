@@ -281,7 +281,7 @@ const AgentCreationModal = ({ isOpen, onClose, supervisorId, onSuccess, currentE
   }, [formData.cin]);
 
   // 🗜️ Fonction utilitaire pour compresser une image base64
-  const compressBase64Image = (base64Data, maxSize = 640, quality = 0.5) => {
+  const compressBase64Image = (base64Data, maxSize = 400, quality = 0.3) => {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -325,7 +325,7 @@ const AgentCreationModal = ({ isOpen, onClose, supervisorId, onSuccess, currentE
       reader.onloadend = async () => {
         const rawBase64 = reader.result;
         // 🗜️ COMPRESSER L'IMAGE CIN
-        const compressedBase64 = await compressBase64Image(rawBase64, 640, 0.5);
+        const compressedBase64 = await compressBase64Image(rawBase64, 400, 0.3);
         setCinPhoto(file); // Garder le File object pour compatibilité
         setCinPreview(compressedBase64); // Utiliser la version compressée pour l'aperçu et l'envoi
       };
@@ -510,7 +510,7 @@ const AgentCreationModal = ({ isOpen, onClose, supervisorId, onSuccess, currentE
       const video = videoRef.current;
       
       // Limiter la résolution pour réduire la taille
-      const maxSize = 640;
+      const maxSize = 400;
       let width = video.videoWidth;
       let height = video.videoHeight;
       
@@ -538,12 +538,12 @@ const AgentCreationModal = ({ isOpen, onClose, supervisorId, onSuccess, currentE
         .withFaceDescriptor();
 
       if (detection) {
-        // Convert canvas to blob avec qualité réduite
+        // Convert canvas to blob avec qualité AGRESSIVE (0.3)
         return new Promise((resolve, reject) => {
           canvas.toBlob((blob) => {
             const file = new File([blob], 'facial-photo.jpg', { type: 'image/jpeg' });
             setFacialPhoto(file);
-            setFacialPreview(canvas.toDataURL('image/jpeg', 0.5));
+            setFacialPreview(canvas.toDataURL('image/jpeg', 0.3));
             setFaceDescriptor(Array.from(detection.descriptor));
             toast.success('✅ Visage capturé avec succès');
             closeCamera();
@@ -575,7 +575,7 @@ const AgentCreationModal = ({ isOpen, onClose, supervisorId, onSuccess, currentE
             }, 1500);
             
             resolve();
-          }, 'image/jpeg', 0.5);
+          }, 'image/jpeg', 0.3); // Qualité AGRESSIVE ~10KB
         });
       } else {
         toast.error('Aucun visage détecté. Réessayez.');
