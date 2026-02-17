@@ -281,11 +281,21 @@ module.exports = (sequelize, DataTypes) => {
         }
         // Facial vector encryption - only encrypt if it's a plain array
         if (user.facialVector && typeof user.facialVector !== 'string') {
-          const encryptionKey = process.env.ENCRYPTION_KEY;
-          user.facialVector = CryptoJS.AES.encrypt(
-            JSON.stringify(user.facialVector),
-            encryptionKey
-          ).toString();
+          const encryptionKey = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET;
+          if (encryptionKey) {
+            try {
+              user.facialVector = CryptoJS.AES.encrypt(
+                JSON.stringify(user.facialVector),
+                encryptionKey
+              ).toString();
+            } catch (error) {
+              console.error('❌ Erreur chiffrement facial vector (beforeCreate):', error);
+              user.facialVector = JSON.stringify(user.facialVector);
+            }
+          } else {
+            console.warn('⚠️ ENCRYPTION_KEY non définie - Stockage facialVector non chiffré');
+            user.facialVector = JSON.stringify(user.facialVector);
+          }
         }
       },
       beforeUpdate: async (user) => {
@@ -297,11 +307,21 @@ module.exports = (sequelize, DataTypes) => {
         if (user.changed('facialVector')) {
           if (typeof user.facialVector !== 'string' || !user.facialVector.startsWith('U2Fsd')) {
             // Need to encrypt
-            const encryptionKey = process.env.ENCRYPTION_KEY;
-            user.facialVector = CryptoJS.AES.encrypt(
-              JSON.stringify(user.facialVector),
-              encryptionKey
-            ).toString();
+            const encryptionKey = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET;
+            if (encryptionKey) {
+              try {
+                user.facialVector = CryptoJS.AES.encrypt(
+                  JSON.stringify(user.facialVector),
+                  encryptionKey
+                ).toString();
+              } catch (error) {
+                console.error('❌ Erreur chiffrement facial vector (beforeUpdate):', error);
+                user.facialVector = JSON.stringify(user.facialVector);
+              }
+            } else {
+              console.warn('⚠️ ENCRYPTION_KEY non définie - Stockage facialVector non chiffré');
+              user.facialVector = JSON.stringify(user.facialVector);
+            }
           }
           // Else: already encrypted string, keep as is
         }
@@ -323,19 +343,33 @@ module.exports = (sequelize, DataTypes) => {
   };
 
   // Encrypt facial vector before saving
-  // Encrypt facial vector before saving
   User.prototype.setEncryptedFacialVector = function(vector) {
-    const encryptionKey = process.env.ENCRYPTION_KEY;
+    const encryptionKey = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET;
+    
+    // Vérifier que la clé existe
+    if (!encryptionKey) {
+      console.warn('⚠️ ENCRYPTION_KEY/JWT_SECRET non définie - Stockage du vecteur non chiffré');
+      this.facialVector = JSON.stringify(vector);
+      this.facialVectorUpdatedAt = new Date();
+      return;
+    }
+    
     // Check if already encrypted
     if (typeof vector === "string" && vector.startsWith("U2Fsd")) {
       // Already encrypted, just set it
       this.facialVector = vector;
     } else {
       // Plain array, encrypt it
-      this.facialVector = CryptoJS.AES.encrypt(
-        JSON.stringify(vector),
-        encryptionKey
-      ).toString();
+      try {
+        this.facialVector = CryptoJS.AES.encrypt(
+          JSON.stringify(vector),
+          encryptionKey
+        ).toString();
+      } catch (error) {
+        console.error('❌ Erreur chiffrement vecteur facial:', error);
+        // Fallback: stocker sans chiffrement
+        this.facialVector = JSON.stringify(vector);
+      }
     }
     this.facialVectorUpdatedAt = new Date();
   };
@@ -343,9 +377,32 @@ module.exports = (sequelize, DataTypes) => {
   // Decrypt facial vector
   User.prototype.getDecryptedFacialVector = function() {
     if (!this.facialVector) return null;
-    const encryptionKey = process.env.ENCRYPTION_KEY;
-    const bytes = CryptoJS.AES.decrypt(this.facialVector, encryptionKey);
-    return JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+    
+    const encryptionKey = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET;
+    
+    // Si pas de clé, essayer de parser en JSON (non chiffré)
+    if (!encryptionKey) {
+      try {
+        return JSON.parse(this.facialVector);
+      } catch (error) {
+        console.error('❌ Erreur parsing vecteur facial:', error);
+        return null;
+      }
+    }
+    
+    // Essayer de déchiffrer
+    try {
+      const bytes = CryptoJS.AES.decrypt(this.facialVector, encryptionKey);
+      return JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+    } catch (error) {
+      // Fallback: essayer de parser en JSON (non chiffré)
+      try {
+        return JSON.parse(this.facialVector);
+      } catch (parseError) {
+        console.error('❌ Erreur déchiffrement vecteur facial:', error);
+        return null;
+      }
+    }
   };
 
   // Calculer le score global
