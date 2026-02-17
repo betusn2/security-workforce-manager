@@ -368,6 +368,43 @@ const UserModal = ({ isOpen, onClose, user, onSave }) => {
     }, 1000);
   };
 
+  // 🗜️ Fonction utilitaire pour compresser une image base64
+  const compressBase64Image = (base64Data, maxSize = 640, quality = 0.5) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        let width = img.width;
+        let height = img.height;
+        
+        // Calculer les dimensions redimensionnées
+        if (width > height) {
+          if (width > maxSize) {
+            height = Math.round((height * maxSize) / width);
+            width = maxSize;
+          }
+        } else {
+          if (height > maxSize) {
+            width = Math.round((width * maxSize) / height);
+            height = maxSize;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Convertir en base64 compressé
+        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+        console.log(`🗜️ Image compressée: ${Math.round(base64Data.length / 1024)}KB → ${Math.round(compressedBase64.length / 1024)}KB`);
+        resolve(compressedBase64);
+      };
+      img.src = base64Data;
+    });
+  };
+
   // Fonction pour gérer l'upload de photo pour reconnaissance faciale
   const handleFacialPhotoUpload = async (event) => {
     const file = event.target.files?.[0];
@@ -396,7 +433,10 @@ const UserModal = ({ isOpen, onClose, user, onSave }) => {
       // Lire le fichier en base64
       const reader = new FileReader();
       reader.onload = async (e) => {
-        const base64Image = e.target.result;
+        const base64ImageRaw = e.target.result;
+        
+        // 🗜️ COMPRESSER L'IMAGE UPLOADÉE
+        const base64Image = await compressBase64Image(base64ImageRaw, 640, 0.5);
 
         try {
           // Extraire le descripteur facial

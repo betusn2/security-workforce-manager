@@ -280,14 +280,54 @@ const AgentCreationModal = ({ isOpen, onClose, supervisorId, onSuccess, currentE
     return () => clearTimeout(timeoutId);
   }, [formData.cin]);
 
+  // 🗜️ Fonction utilitaire pour compresser une image base64
+  const compressBase64Image = (base64Data, maxSize = 640, quality = 0.5) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        let width = img.width;
+        let height = img.height;
+        
+        // Calculer les dimensions redimensionnées
+        if (width > height) {
+          if (width > maxSize) {
+            height = Math.round((height * maxSize) / width);
+            width = maxSize;
+          }
+        } else {
+          if (height > maxSize) {
+            width = Math.round((width * maxSize) / height);
+            height = maxSize;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Convertir en base64 compressé
+        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+        console.log(`🗜️ Image compressée: ${Math.round(base64Data.length / 1024)}KB → ${Math.round(compressedBase64.length / 1024)}KB`);
+        resolve(compressedBase64);
+      };
+      img.src = base64Data;
+    });
+  };
+
   // Handle CIN photo upload
-  const handleCinUpload = (e) => {
+  const handleCinUpload = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      setCinPhoto(file);
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setCinPreview(reader.result);
+      reader.onloadend = async () => {
+        const rawBase64 = reader.result;
+        // 🗜️ COMPRESSER L'IMAGE CIN
+        const compressedBase64 = await compressBase64Image(rawBase64, 640, 0.5);
+        setCinPhoto(file); // Garder le File object pour compatibilité
+        setCinPreview(compressedBase64); // Utiliser la version compressée pour l'aperçu et l'envoi
       };
       reader.readAsDataURL(file);
     }
@@ -597,8 +637,9 @@ const AgentCreationModal = ({ isOpen, onClose, supervisorId, onSuccess, currentE
       formDataToSend.append('telephone', formData.telephone);
       formDataToSend.append('cin', formData.cin);
       formDataToSend.append('supervisorId', supervisorId);
-      formDataToSend.append('cinPhoto', cinPhoto);
-      formDataToSend.append('facialPhoto', facialPhoto);
+      // 🗜️ Utiliser les versions compressées (base64) au lieu des File objects bruts
+      formDataToSend.append('cinPhoto', cinPreview); // Version compressée
+      formDataToSend.append('facialPhoto', facialPhoto); // Déjà compressée lors de la capture
       formDataToSend.append('faceDescriptor', JSON.stringify(faceDescriptor));
       formDataToSend.append('selectedZones', JSON.stringify(selectedZones));
       formDataToSend.append('eventId', currentEvent?.id);
