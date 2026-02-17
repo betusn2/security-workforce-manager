@@ -150,10 +150,12 @@ exports.getEventById = async (req, res) => {
         {
           model: Assignment,
           as: 'assignments',
+          required: false,
           include: [
             {
               model: User,
               as: 'agent',
+              required: false,
               attributes: ['id', 'employeeId', 'firstName', 'lastName', 'phone', 'profilePhoto']
             }
           ]
@@ -161,10 +163,12 @@ exports.getEventById = async (req, res) => {
         {
           model: Attendance,
           as: 'attendances',
+          required: false,
           include: [
             {
               model: User,
               as: 'agent',
+              required: false,
               attributes: ['id', 'firstName', 'lastName']
             }
           ]
@@ -191,9 +195,11 @@ exports.getEventById = async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('❌ Get event by ID error:', error);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de la récupération de l\'événement'
+      message: 'Erreur lors de la récupération de l\'événement',
+      error: error.message
     });
   }
 };

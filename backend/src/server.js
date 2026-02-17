@@ -425,13 +425,22 @@ const startServer = async () => {
       console.error('⚠️ Photos LONGTEXT migration error (continuing):', error.message);
     }
 
-    // Sync database (create tables if they don't exist)
-    // sync({ alter: false }) is safe - only creates missing tables, never alters existing ones
+    // Sync database (create missing tables AND add missing columns to existing tables)
+    // sync({ alter: true }) adds missing columns, never removes existing ones
     try {
-      await db.sequelize.sync({ alter: false });
-      console.log('✅ Database synchronized (missing tables created).');
+      await db.sequelize.sync({ alter: true });
+      console.log('✅ Database synchronized (tables & columns updated).');
     } catch (syncError) {
       console.error('⚠️ Database sync error (continuing):', syncError.message);
+    }
+
+    // Run deleted_at migration AFTER sync (adds deleted_at column to tables created by SQL import)
+    // paranoid: true in global config requires deleted_at on every table
+    try {
+      const migrateAddDeletedAt = require('./migrations/migrate-add-deleted-at');
+      await migrateAddDeletedAt();
+    } catch (error) {
+      console.error('⚠️ deleted_at migration error (continuing):', error.message);
     }
 
     // Create default admin user if no users exist
