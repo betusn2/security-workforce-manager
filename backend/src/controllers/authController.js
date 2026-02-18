@@ -368,8 +368,15 @@ exports.loginByCin = async (req, res) => {
         timeStatus
       });
 
-      // L'événement est accessible si on peut faire le check-in (2h avant → fin)
-      if (timeStatus.canCheckIn) {
+      // L'événement est accessible si:
+      // 1. La fenêtre check-in est ouverte (2h avant → lateThreshold après début)
+      // 2. OU l'événement est en cours (entre checkInTime et checkOutTime)
+      // 3. OU on est dans la fenêtre check-out (jusqu'à lateCheckoutTolerance après la fin)
+      const isAccessible = timeStatus.canCheckIn ||
+        timeStatus.isDuringEvent ||
+        timeStatus.isInCheckOutWindow ||
+        timeStatus.isInPreWindow;
+      if (isAccessible) {
         validEvents.push({
           event,
           timeStatus

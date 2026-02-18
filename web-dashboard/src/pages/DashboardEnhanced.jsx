@@ -467,7 +467,7 @@ const DashboardEnhanced = () => {
                       <div className="flex items-center gap-3 text-xs text-gray-600">
                         <div className="flex items-center">
                           <FiClock className="mr-1" size={12} />
-                          {format(new Date(event.startDate), 'HH:mm', { locale: fr })} - {format(new Date(event.endDate), 'HH:mm', { locale: fr })}
+                          {event.checkInTime?.substring(0, 5) || '00:00'} - {event.checkOutTime?.substring(0, 5) || '00:00'}
                         </div>
                         {event.assignedAgents?.length > 0 && (
                           <div className="flex items-center">
