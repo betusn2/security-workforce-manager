@@ -181,6 +181,20 @@ async function migrateAddMissingColumns() {
     'BOOLEAN DEFAULT FALSE')) added++;
   if (await addColumnIfMissing('attendance', 'facial_verified_at', 
     'DATETIME NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('attendance', 'facial_match_score', 
+    'DECIMAL(5,4) NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('attendance', 'is_within_geofence', 
+    'BOOLEAN DEFAULT TRUE')) added++;
+  if (await addColumnIfMissing('attendance', 'distance_from_location', 
+    'INT NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('attendance', 'total_hours', 
+    'DECIMAL(5,2) NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('attendance', 'overtime_hours', 
+    'DECIMAL(5,2) DEFAULT 0')) added++;
+  if (await addColumnIfMissing('attendance', 'verified_by', 
+    'CHAR(36) NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('attendance', 'verified_at', 
+    'DATETIME NULL DEFAULT NULL')) added++;
 
   // =========================================
   // TABLE: users (34 missing columns)
