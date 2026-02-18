@@ -180,18 +180,36 @@ const RealTimeTracking = () => {
     });
 
     socket.on('tracking:position_update', (data) => {
-      // Mettre à jour agentLocations (comme EventDetails)
+      // Mettre à jour agentLocations avec TOUS les champs enrichis (comme EventDetails)
       const agentId = data.userId;
       setAgentLocations(prev => ({
         ...prev,
         [agentId]: {
-          lat: data.latitude,
-          lng: data.longitude,
-          latitude: data.latitude,
-          longitude: data.longitude,
-          battery: data.batteryLevel,
-          batteryLevel: data.batteryLevel,
+          lat: data.latitude, lng: data.longitude,
+          latitude: data.latitude, longitude: data.longitude,
+          accuracy: data.accuracy,
+          altitude: data.altitude,
+          speed: data.speed, speedKmh: data.speedKmh,
+          heading: data.heading,
           isMoving: data.isMoving,
+          battery: data.batteryLevel, batteryLevel: data.batteryLevel,
+          batteryCharging: data.batteryCharging,
+          batteryStatus: data.batteryStatus,
+          batteryEstimatedTime: data.batteryEstimatedTime,
+          networkType: data.networkType,
+          networkOnline: data.networkOnline,
+          networkStatus: data.networkStatus,
+          networkDownlink: data.networkDownlink,
+          networkRtt: data.networkRtt,
+          deviceOS: data.deviceOS,
+          deviceBrowser: data.deviceBrowser,
+          deviceType: data.deviceType,
+          deviceScreenOn: data.deviceScreenOn,
+          deviceMemory: data.deviceMemory,
+          deviceCPUCores: data.deviceCPUCores,
+          deviceScreenResolution: data.deviceScreenResolution,
+          stats: data.stats,
+          user: data.user,
           isOnline: true,
           timestamp: data.timestamp ? new Date(data.timestamp) : new Date(),
         }
@@ -202,11 +220,9 @@ const RealTimeTracking = () => {
         const updated = [...prev];
         const entry = {
           ...(idx >= 0 ? updated[idx] : { userId: agentId }),
-          latitude: data.latitude,
-          longitude: data.longitude,
+          latitude: data.latitude, longitude: data.longitude,
           batteryLevel: data.batteryLevel,
-          isMoving: data.isMoving,
-          isOnline: true,
+          isMoving: data.isMoving, isOnline: true,
           lastUpdate: new Date(),
         };
         if (idx >= 0) updated[idx] = entry;
