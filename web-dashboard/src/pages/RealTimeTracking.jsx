@@ -237,21 +237,22 @@ const RealTimeTracking = () => {
       
       // Filtrer pour garder seulement les événements en cours et futurs
       const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      // Garder tous les événements actifs/futurs + ceux des 30 derniers jours
       const relevantEvents = eventsArray.filter(event => {
         const endDate = new Date(event.endDate);
-        // Garder si événement pas encore terminé (endDate dans le futur)
-        return endDate > now;
+        return endDate > thirtyDaysAgo; // inclure les 30 derniers jours
       }).sort((a, b) => {
-        // Trier par date de début (événements en cours d'abord, puis futurs)
-        return new Date(a.startDate) - new Date(b.startDate);
+        // Trier: actifs d'abord, puis par date de début décroissante
+        if (a.status === 'active' && b.status !== 'active') return -1;
+        if (b.status === 'active' && a.status !== 'active') return 1;
+        return new Date(b.startDate) - new Date(a.startDate);
       });
-      
-      // Debug: Afficher événements EN COURS (status = 'active')
-      const inProgressEvents = eventsArray.filter(e => e.status === 'active');
+
       console.log('🗺️ Tracking - Tous les événements:', eventsArray.length);
-      console.log('🗺️ Tracking - Événements EN COURS (status=active):', inProgressEvents.length, inProgressEvents);
-      console.log('🗺️ Tracking - Événements affichés (futurs+en cours):', relevantEvents.length);
-      
+      console.log('🗺️ Tracking - Événements affichés (30 jours):', relevantEvents.length);
+
       setEvents(relevantEvents);
       
       // Sélectionner le premier événement par défaut
