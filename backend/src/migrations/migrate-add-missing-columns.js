@@ -67,8 +67,14 @@ async function addColumnIfMissing(tableName, columnName, columnDef) {
  * Used to fix columns created with wrong types by sync({ alter: true })
  */
 async function ensureColumnType(tableName, columnName, columnDef) {
-  if (!(await tableExists(tableName))) return false;
-  if (!(await columnExists(tableName, columnName))) return false;
+  if (!(await tableExists(tableName))) {
+    console.warn(`  ⚠️ Table ${tableName} introuvable, skip MODIFY ${columnName}`);
+    return false;
+  }
+  if (!(await columnExists(tableName, columnName))) {
+    console.warn(`  ⚠️ Colonne ${tableName}.${columnName} introuvable, skip MODIFY`);
+    return false;
+  }
   
   try {
     await db.sequelize.query(
@@ -77,11 +83,25 @@ async function ensureColumnType(tableName, columnName, columnDef) {
     console.log(`  🔧 ${tableName}.${columnName} type corrigé`);
     return true;
   } catch (err) {
-    // Ignore if already correct type
-    if (!err.message.includes('already exists')) {
-      console.error(`  ⚠️ Erreur MODIFY ${tableName}.${columnName}:`, err.message);
-    }
+    // Always log the error so we can diagnose
+    console.error(`  ⚠️ Erreur MODIFY ${tableName}.${columnName}:`, err.message);
     return false;
+  }
+}
+
+/**
+ * Force-fix ENUM columns regardless of current state
+ * More aggressive than ensureColumnType - always runs ALTER
+ */
+async function forceFixEnum(tableName, columnName, columnDef) {
+  if (!(await tableExists(tableName))) return;
+  try {
+    await db.sequelize.query(
+      `ALTER TABLE \`${tableName}\` MODIFY COLUMN \`${columnName}\` ${columnDef}`
+    );
+    console.log(`  ✅ ${tableName}.${columnName} ENUM forcée (OK)`);
+  } catch (err) {
+    console.error(`  ❌ ${tableName}.${columnName} ENUM force-fix échoué:`, err.message);
   }
 }
 
@@ -111,16 +131,28 @@ async function migrateAddMissingColumns() {
     'CHAR(36) NULL DEFAULT NULL')) added++;
 
   // Fix ENUM columns that may have been created with wrong type by sync({ alter: true })
+  // Use forceFixEnum to always run ALTER regardless of current state
   let fixed = 0;
+  console.log('  🔍 Vérification ENUMs events...');
   if (await ensureColumnType('events', 'priority', 
-    'ENUM(\'low\', \'medium\', \'high\', \'critical\') DEFAULT \'medium\'')) fixed++;
+    'ENUM(\'low\', \'medium\', \'high\', \'critical\') NOT NULL DEFAULT \'medium\'')) fixed++;
   if (await ensureColumnType('events', 'recurrence_type', 
-    'ENUM(\'none\', \'daily\', \'weekly\', \'biweekly\', \'monthly\') DEFAULT \'none\'')) fixed++;
+    'ENUM(\'none\', \'daily\', \'weekly\', \'biweekly\', \'monthly\') NOT NULL DEFAULT \'none\'')) fixed++;
   if (await ensureColumnType('events', 'status', 
-    'ENUM(\'draft\', \'scheduled\', \'active\', \'completed\', \'cancelled\') DEFAULT \'draft\'')) fixed++;
+    'ENUM(\'draft\', \'scheduled\', \'active\', \'completed\', \'cancelled\') NOT NULL DEFAULT \'draft\'')) fixed++;
   if (await ensureColumnType('events', 'type', 
-    'ENUM(\'regular\', \'special\', \'emergency\') DEFAULT \'regular\'')) fixed++;
+    'ENUM(\'regular\', \'special\', \'emergency\') NOT NULL DEFAULT \'regular\'')) fixed++;
   if (fixed > 0) console.log(`  🔧 ${fixed} colonne(s) ENUM corrigée(s) dans events`);
+  
+  // Force-fix: always run ENUM correction for events (in case ensureColumnType missed it)
+  await forceFixEnum('events', 'priority',
+    "ENUM('low', 'medium', 'high', 'critical') NOT NULL DEFAULT 'medium'");
+  await forceFixEnum('events', 'recurrence_type',
+    "ENUM('none', 'daily', 'weekly', 'biweekly', 'monthly') NOT NULL DEFAULT 'none'");
+  await forceFixEnum('events', 'status',
+    "ENUM('draft', 'scheduled', 'active', 'completed', 'cancelled') NOT NULL DEFAULT 'draft'");
+  await forceFixEnum('events', 'type',
+    "ENUM('regular', 'special', 'emergency') NOT NULL DEFAULT 'regular'");
 
   // =========================================
   // TABLE: assignments (1 missing column)
@@ -252,6 +284,24 @@ async function migrateAddMissingColumns() {
   if (await ensureColumnType('users', 'status', 
     'ENUM(\'active\', \'inactive\', \'suspended\') DEFAULT \'active\'')) fixedUsers++;
   if (fixedUsers > 0) console.log(`  🔧 ${fixedUsers} colonne(s) ENUM corrigée(s) dans users`);
+
+  // =========================================
+  // TABLE: scheduled_backups (fix missing/wrong columns)
+  // =========================================
+  if (await addColumnIfMissing('scheduled_backups', 'enabled',
+    'BOOLEAN NOT NULL DEFAULT TRUE')) added++;
+  if (await addColumnIfMissing('scheduled_backups', 'interval_days',
+    'INT NOT NULL DEFAULT 7')) added++;
+  if (await addColumnIfMissing('scheduled_backups', 'backup_type',
+    "ENUM('full', 'structure') NOT NULL DEFAULT 'full'")) added++;
+  if (await addColumnIfMissing('scheduled_backups', 'retention_count',
+    'INT NOT NULL DEFAULT 3')) added++;
+  if (await addColumnIfMissing('scheduled_backups', 'last_run_at',
+    'DATETIME NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('scheduled_backups', 'next_run_at',
+    'DATETIME NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('scheduled_backups', 'created_by',
+    'CHAR(36) NULL DEFAULT NULL')) added++;
 
   // =========================================
   // TABLE: activity_logs (needs updated_at column for safety)
