@@ -1,39 +1,31 @@
 /**
  * 🎣 HOOK useTracking
- * Gère le tracking GPS en continu + handler demande capture du dashboard
+ * Gère : capture caméra sur demande du dashboard
+ * (le GPS background est géré dans App.js via startBackgroundTracking)
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { Alert } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import socketService from '../services/socketService';
 import trackingService from '../services/trackingService';
 import useAuthStore from '../services/authStore';
 
 /**
  * À utiliser dans App.js quand l'utilisateur est connecté
- * @param {string|null} eventId - ID de l'événement courant (null si pas d'événement)
+ * Note: le GPS est géré par backgroundLocationTask.js (fonctionne écran éteint)
+ * Ce hook gère uniquement la capture caméra sur demande du dashboard.
  */
 const useTracking = (eventId = null) => {
   const { user, isAuthenticated } = useAuthStore();
-  const cameraRef = useRef(null);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
-  // ─── Démarrer/Arrêter le tracking selon l'auth ───────────────────
+  // ─── Tracking foreground (Socket.IO) quand app active ─────────────
   useEffect(() => {
     if (!isAuthenticated || !user?.id) {
       trackingService.stop();
       return;
     }
-
-    const startTracking = async () => {
-      await trackingService.start(user.id, eventId);
-    };
-    startTracking();
-
-    return () => {
-      trackingService.stop();
-    };
+    trackingService.start(user.id, eventId);
+    return () => trackingService.stop();
   }, [isAuthenticated, user?.id, eventId]);
 
   // ─── Écouter les demandes de capture du dashboard ────────────────
@@ -42,7 +34,7 @@ const useTracking = (eventId = null) => {
 
     Alert.alert(
       '📸 Demande de capture',
-      'Le responsable demande une photo de votre position. Acceptez-vous ?',
+      'Le responsable demande une photo de votre environnement. Acceptez-vous ?',
       [
         {
           text: 'Refuser',
@@ -53,26 +45,24 @@ const useTracking = (eventId = null) => {
           text: 'Accepter',
           onPress: async () => {
             try {
-              // Demander permission caméra si pas accordée
-              if (!cameraPermission?.granted) {
-                const result = await requestCameraPermission();
-                if (!result.granted) {
-                  socketService.sendScreenshotError(user.id, 'Permission caméra refusée');
-                  return;
-                }
+              // Utiliser ImagePicker (pas besoin de CameraRef)
+              const ImagePicker = require('expo-image-picker');
+              const { status } = await ImagePicker.requestCameraPermissionsAsync();
+              if (status !== 'granted') {
+                socketService.sendScreenshotError(user.id, 'Permission caméra refusée');
+                return;
               }
-
-              // Prendre la photo avec expo-camera ref
-              if (cameraRef.current) {
-                const photo = await cameraRef.current.takePictureAsync({
-                  quality: 0.5,
-                  base64: true,
-                  exif: false,
-                });
-                const imageBase64 = `data:image/jpeg;base64,${photo.base64}`;
+              const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                quality: 0.5,
+                base64: true,
+                allowsEditing: false,
+              });
+              if (!result.canceled && result.assets?.[0]?.base64) {
+                const imageBase64 = `data:image/jpeg;base64,${result.assets[0].base64}`;
                 socketService.sendScreenshotResponse(user.id, imageBase64);
               } else {
-                socketService.sendScreenshotError(user.id, 'Caméra non disponible');
+                socketService.sendScreenshotError(user.id, 'Capture annulée');
               }
             } catch (err) {
               console.error('❌ Erreur prise de photo:', err);
@@ -82,14 +72,14 @@ const useTracking = (eventId = null) => {
         },
       ]
     );
-  }, [user?.id, cameraPermission, requestCameraPermission]);
+  }, [user?.id]);
 
   useEffect(() => {
     socketService.on('screenshot_request', handleScreenshotRequest);
     return () => socketService.off('screenshot_request', handleScreenshotRequest);
   }, [handleScreenshotRequest]);
 
-  return { cameraRef };
+  return {};
 };
 
 export default useTracking;

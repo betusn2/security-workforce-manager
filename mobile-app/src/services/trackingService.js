@@ -1,24 +1,28 @@
 /**
- * 📍 SERVICE GPS TRACKING ENRICHI
- * Envoie toutes les données de position au serveur via Socket.IO
- * Batterie, réseau, appareil, vitesse, cap...
+ * 📍 SERVICE GPS TRACKING (Premier plan)
+ * ==========================================
+ * Utilisé quand l'app est ACTIVE au premier plan.
+ * Envoie via Socket.IO pour le temps réel.
+ *
+ * Quand l'écran est éteint ou l'app en arrière-plan :
+ * → backgroundLocationTask.js prend automatiquement le relais
+ *   et envoie via HTTP API (Socket.IO peut être suspendu).
  */
 
 import * as Location from 'expo-location';
 import * as Battery from 'expo-battery';
 import * as Network from 'expo-network';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import socketService from './socketService';
 
-const TRACKING_INTERVAL_MS = 10000; // 10 secondes
-const MIN_DISTANCE_METERS = 5;      // envoyer seulement si déplacé de 5m min
+const FOREGROUND_INTERVAL_MS = 8000; // 8s en premier plan (plus réactif)
+const MIN_DISTANCE_METERS = 3;
 
 class TrackingService {
   constructor() {
     this.isTracking = false;
     this.intervalId = null;
-    this.watchId = null;
     this.lastPosition = null;
     this.userId = null;
     this.eventId = null;
@@ -29,56 +33,52 @@ class TrackingService {
     this.maxSpeed = 0;
     this.speedSum = 0;
     this.speedCount = 0;
+    this.appStateSubscription = null;
   }
 
   /**
-   * Démarrer le tracking GPS
+   * Démarrer le tracking en premier plan
    */
   async start(userId, eventId) {
     if (this.isTracking) return;
 
-    // Demander permissions
     const { status: fg } = await Location.requestForegroundPermissionsAsync();
     if (fg !== 'granted') {
       console.error('❌ Permission GPS refusée');
       return false;
     }
-    // Permission arrière-plan (Android)
-    const { status: bg } = await Location.requestBackgroundPermissionsAsync();
-    console.log('📍 Permission arrière-plan:', bg);
 
     this.userId = userId;
     this.eventId = eventId;
     this.isTracking = true;
     this.startBattery = await this._getBatteryLevel();
-    this.positionsCount = 0;
-    this.totalDistance = 0;
 
-    console.log(`✅ TrackingService démarré pour user:${userId} event:${eventId}`);
+    console.log(`✅ TrackingService (foreground) démarré`);
 
-    // Envoyer la première position immédiatement
+    // Première position immédiate
     await this._sendPosition();
 
-    // Puis toutes les 10 secondes
-    this.intervalId = setInterval(() => this._sendPosition(), TRACKING_INTERVAL_MS);
+    // Interval en premier plan (Socket.IO temps réel)
+    this.intervalId = setInterval(() => {
+      if (AppState.currentState === 'active') {
+        this._sendPosition();
+      }
+      // Si app inactive -> background task prend le relais
+    }, FOREGROUND_INTERVAL_MS);
 
     return true;
   }
 
   /**
-   * Arrêter le tracking
+   * Arrêter le tracking premier plan
    */
   stop() {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
-    if (this.watchId) {
-      this.watchId.remove();
-      this.watchId = null;
-    }
     this.isTracking = false;
-    console.log('🛑 TrackingService arrêté');
+    console.log('🛑 TrackingService (foreground) arrêté');
   }
 
   /**

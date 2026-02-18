@@ -1,14 +1,38 @@
+/**
+ * ⚠️ CET IMPORT DOIT ÊTRE EN PREMIER
+ * expo-task-manager exige que la tâche soit définie avant tout autre code
+ */
+import './src/services/backgroundLocationTask';
+
 import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/native-tabs';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { View, ActivityIndicator, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, ActivityIndicator, Text, StyleSheet, TouchableOpacity, AppState } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import useAuthStore from './src/services/authStore';import socketService from './src/services/socketService';
-import useTracking from './src/services/useTracking';import LoginScreen from './src/screens/LoginScreen';
+import useAuthStore from './src/services/authStore';
+import socketService from './src/services/socketService';
+import useTracking from './src/services/useTracking';
+import {
+  startBackgroundTracking,
+  stopBackgroundTracking,
+  syncPendingPositions,
+} from './src/services/backgroundLocationTask';
+import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
+
+// Configuration des notifications (obligatoire Android pour le foreground service)
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: false,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
 
 // Profile Screen Placeholder
 const ProfileScreen = ({ navigation }) => {
@@ -185,7 +209,7 @@ export default function App() {
   const [initialRoute, setInitialRoute] = useState('Login');
   const [currentEventId, setCurrentEventId] = useState(null);
 
-  // 🔌 Connexion Socket.IO + GPS tracking (actifs dès login)
+  // 🔌 Connexion Socket.IO + capture caméra sur demande
   useTracking(currentEventId);
 
   useEffect(() => {
@@ -196,14 +220,42 @@ export default function App() {
     initAuth();
   }, []);
 
-  // Connecter/déconnecter Socket.IO selon l'auth
+  // Connecter Socket.IO + démarrer GPS background au login
   useEffect(() => {
     if (isAuthenticated && user?.id) {
       socketService.connect(user.id, user.role, currentEventId);
+
+      // Stocker le token pour la tâche background
+      const storeToken = async () => {
+        const token = await AsyncStorage.getItem('accessToken')
+          || await AsyncStorage.getItem('checkInToken');
+        if (token) {
+          // Synchroniser les positions offline
+          await syncPendingPositions(token);
+        }
+      };
+      storeToken();
+
+      // Démarrer le tracking GPS background (fonctionne écran éteint)
+      startBackgroundTracking(user.id, currentEventId);
+
     } else {
       socketService.disconnect();
+      stopBackgroundTracking();
     }
   }, [isAuthenticated, user?.id, currentEventId]);
+
+  // Synchroniser les positions offline quand l'app revient au premier plan
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (nextState) => {
+      if (nextState === 'active' && isAuthenticated) {
+        const token = await AsyncStorage.getItem('accessToken')
+          || await AsyncStorage.getItem('checkInToken');
+        if (token) syncPendingPositions(token);
+      }
+    });
+    return () => sub.remove();
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isLoading) {

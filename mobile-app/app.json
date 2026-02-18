@@ -20,7 +20,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Cette application utilise la caméra pour la reconnaissance faciale lors du pointage.",
         "NSLocationWhenInUseUsageDescription": "Cette application utilise votre position pour vérifier votre présence sur le lieu de travail.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Cette application utilise votre position pour vérifier votre présence sur le lieu de travail."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Cette application utilise votre position pour vérifier votre présence sur le lieu de travail.",
+        "UIBackgroundModes": ["location", "fetch"]
       }
     },
     "android": {
@@ -58,6 +59,7 @@
       "expo-battery",
       "expo-network",
       "expo-device",
+      "expo-task-manager",
       [
         "expo-notifications",
         {
