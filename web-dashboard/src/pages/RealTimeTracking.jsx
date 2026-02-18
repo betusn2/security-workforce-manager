@@ -198,26 +198,17 @@ const RealTimeTracking = () => {
     };
   }, [selectedEvent]);
 
-  // Charger les agents via REST API quand un événement est sélectionné + auto-refresh 30s
+  // Charger les agents + auto-refresh (10s si actif, 30s sinon)
   useEffect(() => {
-    if (refreshIntervalRef.current) {
-      clearInterval(refreshIntervalRef.current);
-    }
-    if (selectedEvent) {
+    if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
+    if (!selectedEvent) return;
+    loadAgentsForEvent(selectedEvent.id);
+    const interval = selectedEvent.status === 'active' ? 10000 : 30000;
+    refreshIntervalRef.current = setInterval(() => {
       loadAgentsForEvent(selectedEvent.id);
-      refreshIntervalRef.current = setInterval(() => {
-        loadAgentsForEvent(selectedEvent.id);
-      }, 30000);
-    }
-    return () => {
-      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
-    };
-  }, [selectedEvent]);
-
-  // Charger les événements
-  useEffect(() => {
-    loadEvents();
-  }, []);
+    }, interval);
+    return () => clearInterval(refreshIntervalRef.current);
+  }, [selectedEvent?.id, selectedEvent?.status]);
 
   const loadEvents = async () => {
     try {
@@ -318,12 +309,13 @@ const RealTimeTracking = () => {
           isOnline: agent.isOnline ?? true,
           isWithinGeofence: agent.isWithinGeofence,
           distance: agent.distance,
+          // Statut: seulement 'outside_geofence' si EXPLICITEMENT false ET event a un périmètre
           status: agent.isOnline === false ? 'completed'
-                 : agent.isWithinGeofence === false ? 'outside_geofence'
+                 : (agent.isWithinGeofence === false && agent.distance != null) ? 'outside_geofence'
                  : 'active',
           lastUpdate: agent.position?.updatedAt ? new Date(agent.position.updatedAt) : null,
-          checkInTime: att.checkInTime || att.check_in_time || null,
-          checkOutTime: att.checkOutTime || att.check_out_time || null,
+          checkInTime: att.checkInTime || att.checkIn || att.check_in_time || att.checkedInAt || null,
+          checkOutTime: att.checkOutTime || att.checkOut || att.check_out_time || att.checkedOutAt || null,
           zone: (typeof asgn.zone === 'object' ? asgn.zone?.name : asgn.zone)
              || asgn.position
              || selectedEvent?.location
@@ -352,7 +344,17 @@ const RealTimeTracking = () => {
         return [...allMapped, ...socketAgents];
       });
 
-      console.log(`✅ Tracking: ${withGPS.length} agent(s) avec GPS, ${allMapped.length} total pour l'événement`);
+      console.log(`✅ Tracking: ${withGPS.length} agent(s) avec GPS, ${allMapped.length} total`);
+      console.log('🕐 Attendance sample:', attendanceList[0]);
+      console.log('📋 Assignment sample:', assignmentsList[0]);
+
+      // Centrer la carte sur les agents si positions disponibles
+      if (withGPS.length > 0) {
+        const avgLat = withGPS.reduce((s, a) => s + a.latitude, 0) / withGPS.length;
+        const avgLng = withGPS.reduce((s, a) => s + a.longitude, 0) / withGPS.length;
+        setMapCenter([avgLat, avgLng]);
+        setMapZoom(15);
+      }
     } catch (error) {
       console.warn('⚠️ Impossible de charger les positions agents:', error?.message);
     } finally {
@@ -405,9 +407,18 @@ const RealTimeTracking = () => {
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <FiMapPin className="text-blue-600" />
               Suivi GPS en Temps Réel
+              {selectedEvent?.status === 'active' && (
+                <span className="flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-sm rounded-full font-medium animate-pulse">
+                  <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                  EN DIRECT
+                </span>
+              )}
             </h1>
             <p className="text-sm text-gray-500 mt-1">
               {loadingAgents ? '🔄 Chargement des positions...' : `${stats.total} agent${stats.total > 1 ? 's' : ''} en tracking`}
+              {selectedEvent?.status === 'active' && !loadingAgents && (
+                <span className="ml-2 text-green-600 font-medium">· Rafraîchissement auto toutes les 10s</span>
+              )}
             </p>
           </div>
 
