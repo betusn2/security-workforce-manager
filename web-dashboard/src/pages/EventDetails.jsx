@@ -48,6 +48,8 @@ const EventDetails = () => {
   
   // 🆕 État pour le panneau d'informations enrichies
   const [selectedAgent, setSelectedAgent] = useState(null);
+  const [screenshotData, setScreenshotData] = useState(null);   // { agentId, imageBase64, timestamp }
+  const [screenshotLoading, setScreenshotLoading] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -261,6 +263,22 @@ const EventDetails = () => {
       console.log('🔌 Socket.IO déconnecté:', reason);
       setSocketConnected(false);
       toast.warning('🔴 Suivi temps réel désactivé', { autoClose: 3000 });
+    });
+
+    // 📸 Réception capture d'écran/caméra depuis l'app mobile
+    socketRef.current.on('agent:screenshot_response', (data) => {
+      console.log('📸 Screenshot reçu:', data);
+      setScreenshotLoading(false);
+      if (data.imageBase64) {
+        setScreenshotData({ agentId: data.agentId, imageBase64: data.imageBase64, timestamp: new Date() });
+      } else {
+        toast.error('📵 L\'agent n\'a pas pu envoyer la capture');
+      }
+    });
+
+    socketRef.current.on('agent:screenshot_error', (data) => {
+      setScreenshotLoading(false);
+      toast.error(`📵 Capture impossible: ${data.message || 'l\'agent a refusé'}`);
     });
   };
 
@@ -952,7 +970,17 @@ const EventDetails = () => {
         <AgentInfoPanel
           agent={selectedAgent}
           stats={selectedAgent.stats}
-          onClose={() => setSelectedAgent(null)}
+          onClose={() => { setSelectedAgent(null); setScreenshotData(null); }}
+          onScreenshot={(agentId) => {
+            setScreenshotLoading(true);
+            setScreenshotData(null);
+            socketRef.current?.emit('agent:screenshot_request', { agentId, eventId: id });
+            toast.info('📸 Demande de capture envoyée à l\'agent...', { autoClose: 3000 });
+            // Timeout si pas de réponse
+            setTimeout(() => setScreenshotLoading(false), 15000);
+          }}
+          screenshotData={screenshotData}
+          screenshotLoading={screenshotLoading}
         />
       )}
     </div>

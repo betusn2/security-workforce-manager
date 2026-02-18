@@ -2,13 +2,13 @@
  * 📊 COMPOSANT D'INFORMATIONS ENRICHIES D'UN AGENT
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { MapContainer, TileLayer, Marker, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   FiBattery, FiActivity, FiMapPin, FiClock,
-  FiWifi, FiSmartphone, FiPhone, FiX, FiNavigation
+  FiWifi, FiSmartphone, FiPhone, FiX, FiNavigation, FiCamera
 } from 'react-icons/fi';
 import './AgentInfoPanel.css';
 
@@ -23,7 +23,7 @@ L.Icon.Default.mergeOptions({
 const val = (v, suffix = '', fallback = '—') =>
   v != null && v !== '' && v !== 'Unknown' && v !== 'unknown' ? `${v}${suffix}` : fallback;
 
-const AgentInfoPanel = ({ agent, stats, onClose, eventRadius }) => {
+const AgentInfoPanel = ({ agent, stats, onClose, eventRadius, onScreenshot, screenshotData, screenshotLoading }) => {
   if (!agent) return null;
 
   const lat = agent.lat || agent.latitude;
@@ -77,6 +77,25 @@ const AgentInfoPanel = ({ agent, stats, onClose, eventRadius }) => {
             }}>
               <FiPhone size={14} /> Pas de tél.
             </span>
+          )}
+          {/* Bouton Capture */}
+          {onScreenshot && (
+            <button
+              onClick={() => onScreenshot(agent.userId || agent.user?.id)}
+              disabled={screenshotLoading}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                background: screenshotLoading ? '#6B7280' : '#8B5CF6', color: 'white',
+                padding: '6px 12px', borderRadius: '8px',
+                fontSize: '13px', fontWeight: 600, border: 'none',
+                cursor: screenshotLoading ? 'not-allowed' : 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+              title="Demander une capture d'écran"
+            >
+              <FiCamera size={14} />
+              {screenshotLoading ? '⏳ Attente...' : 'Capture'}
+            </button>
           )}
           <button onClick={onClose} className="close-btn"><FiX /></button>
         </div>
@@ -272,6 +291,40 @@ const AgentInfoPanel = ({ agent, stats, onClose, eventRadius }) => {
                 <span className="value">{stats.batteryConsumed || '0'}%</span>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* 📸 CAPTURE D'ÉCRAN */}
+        {screenshotData && screenshotData.agentId === (agent.userId || agent.user?.id) && (
+          <div className="info-section">
+            <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span><FiCamera /> Capture reçue</span>
+              <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 400 }}>
+                {formatTime(screenshotData.timestamp)}
+              </span>
+            </div>
+            <div style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid #E2E8F0', cursor: 'pointer' }}
+              onClick={() => window.open(screenshotData.imageBase64, '_blank')}
+              title="Cliquer pour agrandir"
+            >
+              <img
+                src={screenshotData.imageBase64}
+                alt="Capture écran agent"
+                style={{ width: '100%', display: 'block' }}
+              />
+            </div>
+            <p style={{ fontSize: '11px', color: '#94A3B8', textAlign: 'center', marginTop: '4px' }}>
+              Cliquer pour agrandir
+            </p>
+          </div>
+        )}
+
+        {/* ⌛ EN ATTENTE DE CAPTURE */}
+        {screenshotLoading && (
+          <div className="info-section" style={{ textAlign: 'center', padding: '20px' }}>
+            <div style={{ fontSize: '32px' }}>📸</div>
+            <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '8px' }}>En attente de la capture...</p>
+            <p style={{ color: '#94A3B8', fontSize: '11px' }}>L'agent doit accepter sur son téléphone</p>
           </div>
         )}
 
