@@ -75,11 +75,13 @@ module.exports = (sequelize, DataTypes) => {
     checkInDeviceIP: {
       type: DataTypes.STRING(45),
       allowNull: true,
+      field: 'check_in_device_ip',
       comment: 'Adresse IP lors du check-in'
     },
     checkInDeviceMAC: {
       type: DataTypes.STRING(17),
       allowNull: true,
+      field: 'check_in_device_mac',
       comment: 'Adresse MAC lors du check-in'
     },
     checkedInBy: {
@@ -95,11 +97,13 @@ module.exports = (sequelize, DataTypes) => {
     checkOutDeviceIP: {
       type: DataTypes.STRING(45),
       allowNull: true,
+      field: 'check_out_device_ip',
       comment: 'Adresse IP lors du check-out'
     },
     checkOutDeviceMAC: {
       type: DataTypes.STRING(17),
       allowNull: true,
+      field: 'check_out_device_mac',
       comment: 'Adresse MAC lors du check-out'
     },
     facialMatchScore: {

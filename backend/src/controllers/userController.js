@@ -90,33 +90,58 @@ exports.getUsers = async (req, res) => {
 // Get single user by ID
 exports.getUserById = async (req, res) => {
   try {
-    const user = await User.findByPk(req.params.id, {
-      attributes: { exclude: ['password', 'refreshToken', 'facialVector'] },
-      include: [
-        {
-          model: Assignment,
-          as: 'assignments',
-          limit: 10,
-          order: [['createdAt', 'DESC']]
-        },
-        {
-          model: User,
-          as: 'supervisor',
-          attributes: ['id', 'firstName', 'lastName', 'employeeId', 'cin', 'profilePhoto', 'phone', 'email']
-        },
-        {
-          model: User,
-          as: 'supervisedAgents',
-          attributes: ['id', 'firstName', 'lastName', 'employeeId', 'profilePhoto', 'status']
-        },
-        {
-          model: UserDocument,
-          as: 'documents',
-          attributes: { exclude: ['fileContent'] }, // Exclure le contenu base64 pour performance
-          order: [['createdAt', 'DESC']]
-        }
-      ]
-    });
+    let user = null;
+
+    // Try full query with all includes
+    try {
+      user = await User.findByPk(req.params.id, {
+        attributes: { exclude: ['password', 'refreshToken', 'facialVector'] },
+        include: [
+          {
+            model: Assignment,
+            as: 'assignments',
+            limit: 10,
+            order: [['createdAt', 'DESC']]
+          },
+          {
+            model: User,
+            as: 'supervisor',
+            attributes: ['id', 'firstName', 'lastName', 'employeeId', 'cin', 'profilePhoto', 'phone', 'email']
+          },
+          {
+            model: User,
+            as: 'supervisedAgents',
+            attributes: ['id', 'firstName', 'lastName', 'employeeId', 'profilePhoto', 'status']
+          },
+          {
+            model: UserDocument,
+            as: 'documents',
+            attributes: { exclude: ['fileContent'] },
+            order: [['createdAt', 'DESC']]
+          }
+        ]
+      });
+    } catch (fullQueryError) {
+      // Fallback: query without documents if full query fails (e.g. missing user_documents table)
+      console.warn('⚠️ getUserById full query failed, retrying without documents:', fullQueryError.message);
+      user = await User.findByPk(req.params.id, {
+        attributes: { exclude: ['password', 'refreshToken', 'facialVector'] },
+        include: [
+          {
+            model: User,
+            as: 'supervisor',
+            attributes: ['id', 'firstName', 'lastName', 'employeeId', 'cin', 'profilePhoto', 'phone', 'email'],
+            required: false
+          },
+          {
+            model: User,
+            as: 'supervisedAgents',
+            attributes: ['id', 'firstName', 'lastName', 'employeeId', 'profilePhoto', 'status'],
+            required: false
+          }
+        ]
+      });
+    }
 
     if (!user) {
       return res.status(404).json({
@@ -130,6 +155,7 @@ exports.getUserById = async (req, res) => {
       data: user
     });
   } catch (error) {
+    console.error('❌ getUserById error:', error.message);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la récupération de l\'utilisateur'
