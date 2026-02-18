@@ -2,9 +2,12 @@
  * Utilitaires backend pour gérer les fenêtres temporelles des événements
  * 
  * Règles métier:
- * - Temps réel activé 2h avant le début jusqu'à la fin de l'événement
- * - Check-in autorisé 2h avant le début jusqu'à (début + tolérance retard)
- * - Check-out autorisé (fin - tolérance départ anticipé) jusqu'à (fin + tolérance départ tardif)
+ * - Temps réel activé depuis (checkInTime - agentCreationBuffer) jusqu'à (endDate + checkOutTime + 2h)
+ * - Check-in autorisé depuis (checkInTime - agentCreationBuffer) jusqu'à (checkInTime + lateThreshold)
+ * - Check-out autorisé depuis (checkOutTime - earlyTolerance) jusqu'à (checkOutTime + lateTolerance)
+ * 
+ * IMPORTANT: checkInTime et checkOutTime sont les vraies heures de pointage (ex: "08:00", "18:00")
+ * startDate et endDate contiennent seulement la DATE (heure souvent à minuit)
  * 
  * MODE TEST: Définir BYPASS_TIME_WINDOWS=true pour désactiver les validations temporelles
  */
@@ -17,8 +20,26 @@ if (BYPASS_TIME_WINDOWS) {
 }
 
 /**
+ * Combine une date (startDate/endDate) avec une heure (checkInTime/checkOutTime "HH:MM")
+ * Retourne un objet Date avec la date + l'heure exacte
+ */
+const combineDateAndTime = (dateStr, timeStr) => {
+  const date = new Date(dateStr);
+  if (!timeStr) return date;
+  
+  // Extraire HH et MM depuis "HH:MM" ou "HH:MM:SS"
+  const parts = String(timeStr).split(':');
+  const hours = parseInt(parts[0], 10) || 0;
+  const minutes = parseInt(parts[1], 10) || 0;
+  
+  const combined = new Date(date);
+  combined.setHours(hours, minutes, 0, 0);
+  return combined;
+};
+
+/**
  * Vérifie si le tracking GPS doit être actif pour un événement
- * @param {Object} event - L'événement avec startDate et endDate
+ * @param {Object} event - L'événement avec startDate, endDate, checkInTime, checkOutTime
  * @returns {boolean} True si le tracking doit être actif
  */
 const isTrackingAllowed = (event) => {
@@ -32,16 +53,24 @@ const isTrackingAllowed = (event) => {
   }
 
   const now = new Date();
-  const start = new Date(event.startDate);
-  const end = new Date(event.endDate);
-  
-  // 2 heures avant le début
-  const preWindowStart = new Date(start.getTime() - 2 * 60 * 60 * 1000);
-  
-  // Le tracking est autorisé de 2h avant le début jusqu'à la fin
-  const allowed = now >= preWindowStart && now <= end;
-  
-  return allowed;
+
+  // Utiliser checkInTime si disponible, sinon startDate directement
+  const checkInDateTime = event.checkInTime
+    ? combineDateAndTime(event.startDate, event.checkInTime)
+    : new Date(event.startDate);
+
+  // Utiliser checkOutTime si disponible, sinon endDate directement
+  const checkOutDateTime = event.checkOutTime
+    ? combineDateAndTime(event.endDate, event.checkOutTime)
+    : new Date(event.endDate);
+
+  const agentBuffer = event.agentCreationBuffer || 120;
+  // Tracking commence agentBuffer minutes avant le check-in
+  const trackingStart = new Date(checkInDateTime.getTime() - agentBuffer * 60 * 1000);
+  // Tracking se termine 2h après le check-out
+  const trackingEnd = new Date(checkOutDateTime.getTime() + 2 * 60 * 60 * 1000);
+
+  return now >= trackingStart && now <= trackingEnd;
 };
 
 /**
@@ -60,16 +89,20 @@ const isCheckInAllowed = (event) => {
   }
 
   const now = new Date();
-  const start = new Date(event.startDate);
-  
-  // 2 heures avant le début
-  const preWindowStart = new Date(start.getTime() - 2 * 60 * 60 * 1000);
-  
-  // Tolérance de retard (par défaut 15 minutes si non définie)
+
+  // Heure réelle de check-in (startDate + checkInTime)
+  const checkInDateTime = event.checkInTime
+    ? combineDateAndTime(event.startDate, event.checkInTime)
+    : new Date(event.startDate);
+
+  // Fenêtre ouvre agentCreationBuffer minutes avant le check-in (défaut 120min)
+  const agentBuffer = event.agentCreationBuffer || 120;
+  const preWindowStart = new Date(checkInDateTime.getTime() - agentBuffer * 60 * 1000);
+
+  // Fenêtre ferme lateThreshold minutes après l'heure de check-in (défaut 15min)
   const lateThreshold = event.lateThreshold || 15;
-  const checkInEnd = new Date(start.getTime() + lateThreshold * 60 * 1000);
-  
-  // Check-in autorisé de 2h avant le début jusqu'à (début + tolérance retard)
+  const checkInEnd = new Date(checkInDateTime.getTime() + lateThreshold * 60 * 1000);
+
   return now >= preWindowStart && now <= checkInEnd;
 };
 
@@ -89,17 +122,20 @@ const isCheckOutAllowed = (event) => {
   }
 
   const now = new Date();
-  const end = new Date(event.endDate);
-  
+
+  // Heure réelle de check-out (endDate + checkOutTime)
+  const checkOutDateTime = event.checkOutTime
+    ? combineDateAndTime(event.endDate, event.checkOutTime)
+    : new Date(event.endDate);
+
   // Tolérance départ anticipé (par défaut 30 minutes avant la fin)
   const earlyCheckoutTolerance = event.earlyCheckoutTolerance || 30;
-  const checkOutStart = new Date(end.getTime() - earlyCheckoutTolerance * 60 * 1000);
-  
-  // Tolérance départ tardif (par défaut 15 minutes après la fin)
-  const lateCheckoutTolerance = event.lateCheckoutTolerance || 15;
-  const checkOutEnd = new Date(end.getTime() + lateCheckoutTolerance * 60 * 1000);
-  
-  // Check-out autorisé de (fin - tolérance anticipé) jusqu'à (fin + tolérance tardif)
+  const checkOutStart = new Date(checkOutDateTime.getTime() - earlyCheckoutTolerance * 60 * 1000);
+
+  // Tolérance départ tardif (par défaut 2h après la fin pour flexibilité)
+  const lateCheckoutTolerance = event.lateCheckoutTolerance || 120;
+  const checkOutEnd = new Date(checkOutDateTime.getTime() + lateCheckoutTolerance * 60 * 1000);
+
   return now >= checkOutStart && now <= checkOutEnd;
 };
 
@@ -123,30 +159,36 @@ const getEventTimeStatus = (event) => {
   }
 
   const now = new Date();
-  const start = new Date(event.startDate);
-  const end = new Date(event.endDate);
-  
-  // 2 heures avant le début
-  const preWindowStart = new Date(start.getTime() - 2 * 60 * 60 * 1000);
-  
-  // Tolérance de retard check-in (par défaut 15 minutes si non définie)
+
+  // Combiner date + heure réelle de check-in / check-out
+  const checkInDateTime = event.checkInTime
+    ? combineDateAndTime(event.startDate, event.checkInTime)
+    : new Date(event.startDate);
+
+  const checkOutDateTime = event.checkOutTime
+    ? combineDateAndTime(event.endDate, event.checkOutTime)
+    : new Date(event.endDate);
+
+  // Fenêtre check-in
+  const agentBuffer = event.agentCreationBuffer || 120;
+  const preWindowStart = new Date(checkInDateTime.getTime() - agentBuffer * 60 * 1000);
   const lateThreshold = event.lateThreshold || 15;
-  const checkInEnd = new Date(start.getTime() + lateThreshold * 60 * 1000);
-  
-  // Tolérance check-out
+  const checkInEnd = new Date(checkInDateTime.getTime() + lateThreshold * 60 * 1000);
+
+  // Fenêtre check-out
   const earlyCheckoutTolerance = event.earlyCheckoutTolerance || 30;
-  const lateCheckoutTolerance = event.lateCheckoutTolerance || 15;
-  const checkOutStart = new Date(end.getTime() - earlyCheckoutTolerance * 60 * 1000);
-  const checkOutEnd = new Date(end.getTime() + lateCheckoutTolerance * 60 * 1000);
+  const lateCheckoutTolerance = event.lateCheckoutTolerance || 120;
+  const checkOutStart = new Date(checkOutDateTime.getTime() - earlyCheckoutTolerance * 60 * 1000);
+  const checkOutEnd = new Date(checkOutDateTime.getTime() + lateCheckoutTolerance * 60 * 1000);
 
   const isBeforeWindow = now < preWindowStart;
-  const isInPreWindow = now >= preWindowStart && now < start;
-  const isDuringEvent = now >= start && now <= end;
+  const isInPreWindow = now >= preWindowStart && now < checkInDateTime;
+  const isDuringEvent = now >= checkInDateTime && now <= checkOutDateTime;
   const isAfterCheckInWindow = now > checkInEnd;
   const isInCheckOutWindow = now >= checkOutStart && now <= checkOutEnd;
   const isAfterCheckOutWindow = now > checkOutEnd;
-  const isNearEnd = now >= checkOutStart && now <= end;
-  const isAfterEvent = now > end;
+  const isNearEnd = now >= checkOutStart && now <= checkOutDateTime;
+  const isAfterEvent = now > checkOutDateTime;
 
   return {
     isBeforeWindow,
