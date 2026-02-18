@@ -277,40 +277,79 @@ const RealTimeTracking = () => {
   const loadAgentsForEvent = async (eventId) => {
     setLoadingAgents(true);
     try {
-      const response = await trackingAPI.getEventLivePositions(eventId);
-      const data = response?.data?.data || response?.data || {};
+      // Charger positions GPS + données d'attendance (check-in/check-out) en parallèle
+      const [trackingResponse, attendanceResponse, assignmentsResponse] = await Promise.allSettled([
+        trackingAPI.getEventLivePositions(eventId),
+        api.get(`/attendance?eventId=${eventId}&limit=200`),
+        api.get(`/assignments?eventId=${eventId}&limit=200`)
+      ]);
+
+      const data = trackingResponse.value?.data?.data || trackingResponse.value?.data || {};
       const agentsList = data.agents || [];
 
+      // Indexer les données d'attendance par userId
+      const attendanceList = attendanceResponse.value?.data?.data?.attendances
+        || attendanceResponse.value?.data?.attendances || [];
+      const attendanceMap = {};
+      attendanceList.forEach(att => {
+        const uid = att.userId || att.agentId;
+        if (uid) attendanceMap[uid] = att;
+      });
+
+      // Indexer les assignments par userId pour la zone
+      const assignmentsList = assignmentsResponse.value?.data?.data?.assignments
+        || assignmentsResponse.value?.data?.assignments || [];
+      const assignmentMap = {};
+      assignmentsList.forEach(asgn => {
+        const uid = asgn.userId || asgn.agentId;
+        if (uid) assignmentMap[uid] = asgn;
+      });
+
       // Convertir le format API → format attendu par le composant
-      const mappedAgents = agentsList.map(agent => ({
-        userId: agent.id,
-        latitude: agent.position?.latitude || null,
-        longitude: agent.position?.longitude || null,
-        batteryLevel: agent.batteryLevel || 100,
-        isMoving: false,
-        status: !agent.isOnline ? 'completed'
-               : agent.isWithinGeofence === false ? 'outside_geofence'
-               : 'active',
-        lastUpdate: agent.position?.updatedAt ? new Date(agent.position.updatedAt) : null,
-        user: {
-          id: agent.id,
-          firstName: agent.name?.split(' ')[0] || '',
-          lastName: agent.name?.split(' ').slice(1).join(' ') || '',
-          employeeId: agent.employeeId,
-          cin: agent.cin,
-          profilePhoto: agent.photo,
-          role: 'agent'
-        }
-      })).filter(a => a.latitude && a.longitude); // Garder seulement ceux avec position GPS
+      const mappedAgents = agentsList.map(agent => {
+        const att = attendanceMap[agent.id] || {};
+        const asgn = assignmentMap[agent.id] || {};
+        return {
+          userId: agent.id,
+          latitude: agent.position?.latitude || null,
+          longitude: agent.position?.longitude || null,
+          batteryLevel: agent.batteryLevel || 100,
+          isMoving: false,
+          isOnline: agent.isOnline || false,
+          isWithinGeofence: agent.isWithinGeofence,
+          distance: agent.distance,
+          status: !agent.isOnline ? 'completed'
+                 : agent.isWithinGeofence === false ? 'outside_geofence'
+                 : 'active',
+          lastUpdate: agent.position?.updatedAt ? new Date(agent.position.updatedAt) : null,
+          checkInTime: att.checkInTime || att.check_in_time || null,
+          checkOutTime: att.checkOutTime || att.check_out_time || null,
+          zone: asgn.zone || asgn.position || selectedEvent?.location || '-',
+          assignmentStatus: asgn.status || '-',
+          user: {
+            id: agent.id,
+            firstName: agent.name?.split(' ')[0] || '',
+            lastName: agent.name?.split(' ').slice(1).join(' ') || '',
+            employeeId: agent.employeeId,
+            cin: agent.cin,
+            profilePhoto: agent.photo,
+            role: agent.role || 'agent'
+          }
+        };
+      });
+
+      // Agents sans GPS → inclure quand même dans le tableau (mais pas sur la carte)
+      const allMapped = mappedAgents;
+      const withGPS = mappedAgents.filter(a => a.latitude && a.longitude);
 
       // Mettre à jour les agents (Socket.IO peut aussi les mettre à jour)
       setAgents(prev => {
         // Fusionner avec les positions temps-réel reçues via Socket.IO
-        const socketAgents = prev.filter(p => !mappedAgents.find(m => m.userId === p.userId));
-        return [...mappedAgents, ...socketAgents];
+        const socketAgents = prev.filter(p => !allMapped.find(m => m.userId === p.userId));
+        return [...allMapped, ...socketAgents];
       });
 
-      console.log(`✅ Tracking: ${mappedAgents.length} agent(s) chargé(s) pour l'événement`);
+      console.log(`✅ Tracking: ${withGPS.length} agent(s) avec GPS, ${allMapped.length} total pour l'événement`);
     } catch (error) {
       console.warn('⚠️ Impossible de charger les positions agents:', error?.message);
     } finally {
@@ -701,7 +740,6 @@ const RealTimeTracking = () => {
                 <FiX />
               </button>
             </div>
-            
             <div className="divide-y divide-gray-100">
               {alerts.map((alert, index) => (
                 <div
@@ -717,14 +755,9 @@ const RealTimeTracking = () => {
                     {alert.type === 'geofence_exit' && <FiAlertTriangle className="text-red-600 mt-1" />}
                     {alert.type === 'geofence_return' && <FiCheckCircle className="text-green-600 mt-1" />}
                     {alert.type === 'low_battery' && <FiBattery className="text-orange-600 mt-1" />}
-                    
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900">
-                        {alert.message}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {new Date(alert.timestamp).toLocaleString('fr-FR')}
-                      </p>
+                      <p className="text-sm font-medium text-gray-900">{alert.message}</p>
+                      <p className="text-xs text-gray-500 mt-1">{new Date(alert.timestamp).toLocaleString('fr-FR')}</p>
                     </div>
                   </div>
                 </div>
@@ -733,6 +766,139 @@ const RealTimeTracking = () => {
           </div>
         )}
       </div>
+
+      {/* Tableau des agents */
+      {selectedEvent && agents.length > 0 && (
+        <div className="bg-white border-t mt-0">
+          <div className="p-4 border-b flex items-center justify-between">
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <FiUsers className="text-blue-600" />
+              Agents & Responsables — {selectedEvent.name}
+            </h2>
+            <span className="text-sm text-gray-500">{filteredAgents.length} affiché(s) / {agents.length} total</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b">
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600">Nom</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600">Rôle</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600">Zone</th>
+                  <th className="text-center px-4 py-3 font-semibold text-gray-600">En ligne</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600">Latitude</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600">Longitude</th>
+                  <th className="text-center px-4 py-3 font-semibold text-gray-600">Batterie</th>
+                  <th className="text-center px-4 py-3 font-semibold text-gray-600">Périmètre</th>
+                  <th className="text-center px-4 py-3 font-semibold text-gray-600">Statut</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600">Check-in</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600">Check-out</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredAgents.map(agent => (
+                  <tr key={agent.userId} className="hover:bg-gray-50 transition-colors">
+                    {/* Nom */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        {agent.user?.profilePhoto ? (
+                          <img src={agent.user.profilePhoto} alt="" className="w-8 h-8 rounded-full object-cover" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
+                            {(agent.user?.firstName?.[0] || '') + (agent.user?.lastName?.[0] || '')}
+                          </div>
+                        )}
+                        <div>
+                          <div className="font-medium text-gray-900">{agent.user?.firstName} {agent.user?.lastName}</div>
+                          <div className="text-xs text-gray-400">{agent.user?.employeeId}</div>
+                        </div>
+                      </div>
+                    </td>
+                    {/* Rôle */}
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        agent.user?.role === 'supervisor' ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'
+                      }`}>
+                        {agent.user?.role === 'supervisor' ? 'Responsable' : 'Agent'}
+                      </span>
+                    </td>
+                    {/* Zone */}
+                    <td className="px-4 py-3 text-gray-600">{agent.zone || '-'}</td>
+                    {/* En ligne */}
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                        agent.isOnline ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        <span className={`w-2 h-2 rounded-full ${
+                          agent.isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
+                        }`}></span>
+                        {agent.isOnline ? 'Oui' : 'Non'}
+                      </span>
+                    </td>
+                    {/* Latitude */}
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                      {agent.latitude ? agent.latitude.toFixed(6) : '—'}
+                    </td>
+                    {/* Longitude */}
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                      {agent.longitude ? agent.longitude.toFixed(6) : '—'}
+                    </td>
+                    {/* Batterie */}
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <FiBattery className={`${
+                          agent.batteryLevel < 20 ? 'text-red-500' :
+                          agent.batteryLevel < 50 ? 'text-orange-500' : 'text-green-500'
+                        }`} />
+                        <span className={`font-medium ${
+                          agent.batteryLevel < 20 ? 'text-red-600' :
+                          agent.batteryLevel < 50 ? 'text-orange-600' : 'text-green-600'
+                        }`}>{agent.batteryLevel}%</span>
+                      </div>
+                    </td>
+                    {/* Périmètre */}
+                    <td className="px-4 py-3 text-center">
+                      {agent.latitude ? (
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          agent.isWithinGeofence === false ? 'bg-red-100 text-red-700' :
+                          agent.isWithinGeofence === true ? 'bg-green-100 text-green-700' :
+                          'bg-gray-100 text-gray-500'
+                        }`}>
+                          {agent.isWithinGeofence === false ? '⚠ Dehors' :
+                           agent.isWithinGeofence === true ? '✓ Dedans' : '—'}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    {/* Statut */}
+                    <td className="px-4 py-3 text-center">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        agent.status === 'active' ? 'bg-green-100 text-green-700' :
+                        agent.status === 'outside_geofence' ? 'bg-red-100 text-red-700' :
+                        'bg-gray-100 text-gray-500'
+                      }`}>
+                        {agent.status === 'active' ? 'Actif' :
+                         agent.status === 'outside_geofence' ? 'Hors périmètre' : 'Terminé'}
+                      </span>
+                    </td>
+                    {/* Check-in */}
+                    <td className="px-4 py-3 text-gray-700">
+                      {agent.checkInTime
+                        ? new Date(agent.checkInTime).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
+                        : <span className="text-gray-400">—</span>}
+                    </td>
+                    {/* Check-out */}
+                    <td className="px-4 py-3 text-gray-700">
+                      {agent.checkOutTime
+                        ? new Date(agent.checkOutTime).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
+                        : <span className="text-gray-400">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
