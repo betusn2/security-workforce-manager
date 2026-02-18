@@ -137,18 +137,45 @@ const RealTimeTracking = () => {
 
   // Connexion Socket.IO
   useEffect(() => {
+    const token = localStorage.getItem('accessToken') || localStorage.getItem('token') || localStorage.getItem('checkInToken');
     const socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
-      auth: {
-        token: localStorage.getItem('token')
-      }
+      auth: { token }
     });
 
     socket.on('connect', () => {
       console.log('✅ Socket.IO connecté pour tracking');
-      if (selectedEvent) {
-        socket.emit('tracking:subscribe', { eventId: selectedEvent.id });
+      // Authentifier explicitement (comme EventDetails) avant de subscribe
+      if (user) {
+        socket.emit('auth', {
+          userId: user.id,
+          role: user.role,
+          eventId: selectedEvent?.id,
+          token
+        });
+      } else if (selectedEvent) {
+        // Fallback sans auth si user non dispo
         socket.emit('event:join', selectedEvent.id);
+        socket.emit('tracking:subscribe', { eventId: selectedEvent.id });
+      }
+    });
+
+    // Attendre auth:success avant de rejoindre les rooms (comme EventDetails)
+    socket.on('auth:success', () => {
+      console.log('✅ Auth Socket.IO réussie - tracking');
+      if (selectedEvent) {
+        socket.emit('event:join', selectedEvent.id);
+        socket.emit('tracking:subscribe', { eventId: selectedEvent.id });
+        socket.emit('tracking:subscribe', selectedEvent.id); // les deux formats
+      }
+    });
+
+    socket.on('auth:error', (err) => {
+      console.error('❌ Auth Socket.IO erreur:', err);
+      // Essayer quand même sans auth
+      if (selectedEvent) {
+        socket.emit('event:join', selectedEvent.id);
+        socket.emit('tracking:subscribe', { eventId: selectedEvent.id });
       }
     });
 
@@ -193,6 +220,19 @@ const RealTimeTracking = () => {
     });
     socket.on('agent-offline', (agentId) => {
       setAgentLocations(prev => ({ ...prev, [agentId]: { ...prev[agentId], isOnline: false } }));
+    });
+
+    // Ancien format (comme EventDetails)
+    socket.on('location-update', (data) => {
+      const agentId = data.userId;
+      setAgentLocations(prev => ({
+        ...prev,
+        [agentId]: {
+          lat: data.latitude, lng: data.longitude,
+          battery: data.batteryLevel, isOnline: true,
+          timestamp: new Date()
+        }
+      }));
     });
 
     socket.on('tracking:geofence_alert', (data) => {
