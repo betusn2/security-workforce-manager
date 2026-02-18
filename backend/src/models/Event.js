@@ -128,15 +128,23 @@ module.exports = (sequelize, DataTypes) => {
     hooks: {
       // Hook avant sauvegarde pour calculer automatiquement le statut
       beforeSave: async (event, options) => {
-        // Ne pas modifier les événements annulés ou terminés manuellement
-        if (!['cancelled', 'terminated'].includes(event.status)) {
-          const { computeEventStatus } = require('../utils/eventHelpers');
-          const computedStatus = computeEventStatus(event);
-          
-          // Mettre à jour le statut si différent
-          if (computedStatus !== event.status) {
-            event.status = computedStatus;
+        try {
+          // Ne pas modifier les événements annulés ou terminés manuellement
+          if (!['cancelled', 'terminated'].includes(event.status)) {
+            // Ne calculer que si les dates sont disponibles
+            if (event.startDate && event.endDate && event.checkInTime && event.checkOutTime) {
+              const { computeEventStatus } = require('../utils/eventHelpers');
+              const computedStatus = computeEventStatus(event);
+              
+              // Mettre à jour le statut si différent et valide
+              if (computedStatus && computedStatus !== event.status) {
+                event.status = computedStatus;
+              }
+            }
           }
+        } catch (hookError) {
+          // Ne pas faire planter la création/mise à jour si le hook échoue
+          console.warn('⚠️ beforeSave hook error (ignoré):', hookError.message);
         }
       }
     }

@@ -264,10 +264,14 @@ exports.createEvent = async (req, res) => {
     });
   } catch (error) {
     console.error('Create event error:', error);
+    console.error('Stack:', error.stack);
+    console.error('SQL:', error.sql || 'N/A');
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la création de l\'événement',
-      error: error.message
+      error: error.message,
+      detail: error.original?.message || error.parent?.message || null,
+      sql: error.sql || null
     });
   }
 };
