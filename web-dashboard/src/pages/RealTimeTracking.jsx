@@ -767,7 +767,7 @@ const RealTimeTracking = () => {
         )}
       </div>
 
-      {/* Tableau des agents */
+      {/* Tableau des agents */}
       {selectedEvent && agents.length > 0 && (
         <div className="bg-white border-t mt-0">
           <div className="p-4 border-b flex items-center justify-between">
