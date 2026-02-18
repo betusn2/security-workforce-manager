@@ -324,7 +324,10 @@ const RealTimeTracking = () => {
           lastUpdate: agent.position?.updatedAt ? new Date(agent.position.updatedAt) : null,
           checkInTime: att.checkInTime || att.check_in_time || null,
           checkOutTime: att.checkOutTime || att.check_out_time || null,
-          zone: asgn.zone || asgn.position || selectedEvent?.location || '-',
+          zone: (typeof asgn.zone === 'object' ? asgn.zone?.name : asgn.zone)
+             || asgn.position
+             || selectedEvent?.location
+             || '-',
           assignmentStatus: asgn.status || '-',
           user: {
             id: agent.id,
