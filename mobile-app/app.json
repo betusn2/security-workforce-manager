@@ -33,8 +33,14 @@
         "CAMERA",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION"
-      ]
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "READ_PHONE_STATE"
+      ],
+      "useNextNotificationsApi": true
     },
     "plugins": [
       [
@@ -47,6 +53,17 @@
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Autoriser l'accès à la position pour le pointage"
+        }
+      ],
+      "expo-battery",
+      "expo-network",
+      "expo-device",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#2563eb",
+          "sounds": []
         }
       ]
     ]

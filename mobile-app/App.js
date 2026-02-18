@@ -6,8 +6,8 @@ import { createBottomTabNavigator } from '@react-navigation/native-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { View, ActivityIndicator, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
-import useAuthStore from './src/services/authStore';
-import LoginScreen from './src/screens/LoginScreen';
+import useAuthStore from './src/services/authStore';import socketService from './src/services/socketService';
+import useTracking from './src/services/useTracking';import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 
 // Profile Screen Placeholder
@@ -180,9 +180,13 @@ const MainTabs = () => {
 
 // Main App Component
 export default function App() {
-  const { isAuthenticated, isCheckInMode, checkAuth } = useAuthStore();
+  const { isAuthenticated, isCheckInMode, checkAuth, user } = useAuthStore();
   const [isLoading, setIsLoading] = useState(true);
   const [initialRoute, setInitialRoute] = useState('Login');
+  const [currentEventId, setCurrentEventId] = useState(null);
+
+  // 🔌 Connexion Socket.IO + GPS tracking (actifs dès login)
+  useTracking(currentEventId);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -191,6 +195,15 @@ export default function App() {
     };
     initAuth();
   }, []);
+
+  // Connecter/déconnecter Socket.IO selon l'auth
+  useEffect(() => {
+    if (isAuthenticated && user?.id) {
+      socketService.connect(user.id, user.role, currentEventId);
+    } else {
+      socketService.disconnect();
+    }
+  }, [isAuthenticated, user?.id, currentEventId]);
 
   useEffect(() => {
     if (!isLoading) {

@@ -132,8 +132,19 @@ class SocketService {
         this._triggerHandler('assignment_new', data);
       });
 
+      // Affectations
+      this.socket.on('assignment:new', (data) => {
+        this._triggerHandler('assignment_new', data);
+      });
+
       this.socket.on('assignment:updated', (data) => {
         this._triggerHandler('assignment_updated', data);
+      });
+
+      // 📸 Demande de capture d'écran depuis le dashboard admin
+      this.socket.on('agent:screenshot_request', (data) => {
+        console.log('📸 Demande capture reçue du dashboard:', data);
+        this._triggerHandler('screenshot_request', data);
       });
 
     } catch (error) {
@@ -217,18 +228,36 @@ class SocketService {
    */
 
   /**
-   * 📍 ENVOYER POSITION GPS
-   * @param {number} latitude
-   * @param {number} longitude
-   * @param {number} accuracy
+   * 📍 ENVOYER POSITION GPS (version enrichie)
+   * @param {object} data - Toutes les données de position
    */
-  sendPosition(latitude, longitude, accuracy = 10) {
-    this.emit('tracking:position', {
-      latitude,
-      longitude,
-      accuracy,
-      timestamp: Date.now()
-    });
+  sendPosition(data) {
+    // Support ancien format (lat, lng, accuracy) et nouveau format enrichi (objet)
+    if (typeof data === 'number') {
+      // Ancien appel: sendPosition(lat, lng, accuracy)
+      const [latitude, longitude, accuracy] = arguments;
+      this.emit('tracking:position', { latitude, longitude, accuracy, timestamp: Date.now() });
+    } else {
+      this.emit('tracking:position', { timestamp: Date.now(), ...data });
+    }
+  }
+
+  /**
+   * 📸 ENVOYER RÉPONSE CAPTURE D'ÉCRAN
+   * @param {string} agentId
+   * @param {string} imageBase64 - data:image/jpeg;base64,...
+   */
+  sendScreenshotResponse(agentId, imageBase64) {
+    this.emit('agent:screenshot_response', { agentId, imageBase64, timestamp: Date.now() });
+  }
+
+  /**
+   * 📸 ENVOYER ERREUR CAPTURE
+   * @param {string} agentId
+   * @param {string} message
+   */
+  sendScreenshotError(agentId, message) {
+    this.emit('agent:screenshot_error', { agentId, message });
   }
 
   /**
