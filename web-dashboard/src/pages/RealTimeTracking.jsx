@@ -280,8 +280,8 @@ const RealTimeTracking = () => {
       // Charger positions GPS + données d'attendance (check-in/check-out) en parallèle
       const [trackingResponse, attendanceResponse, assignmentsResponse] = await Promise.allSettled([
         trackingAPI.getEventLivePositions(eventId),
-        api.get(`/attendance?eventId=${eventId}&limit=200`),
-        api.get(`/assignments?eventId=${eventId}&limit=200`)
+        api.get('/attendance', { params: { eventId, limit: 100 } }),
+        api.get('/assignments', { params: { eventId, limit: 100 } })
       ]);
 
       const data = trackingResponse.value?.data?.data || trackingResponse.value?.data || {};
@@ -315,10 +315,10 @@ const RealTimeTracking = () => {
           longitude: agent.position?.longitude || null,
           batteryLevel: agent.batteryLevel || 100,
           isMoving: false,
-          isOnline: agent.isOnline || false,
+          isOnline: agent.isOnline ?? true,
           isWithinGeofence: agent.isWithinGeofence,
           distance: agent.distance,
-          status: !agent.isOnline ? 'completed'
+          status: agent.isOnline === false ? 'completed'
                  : agent.isWithinGeofence === false ? 'outside_geofence'
                  : 'active',
           lastUpdate: agent.position?.updatedAt ? new Date(agent.position.updatedAt) : null,
