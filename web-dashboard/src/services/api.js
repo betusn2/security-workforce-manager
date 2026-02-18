@@ -308,6 +308,16 @@ export const badgesAPI = {
   seed: () => api.post('/badges/seed').catch(handleApiError),
 };
 
+// Tracking API
+export const trackingAPI = {
+  getEventLivePositions: (eventId) => api.get(`/tracking/event/${eventId}/live`).catch(handleApiError),
+  getAllLivePositions: () => api.get('/tracking/all/live').catch(handleApiError),
+  getRealtimePositions: (eventId) => api.get(`/tracking/realtime/${eventId}`).catch(handleApiError),
+  getUserHistory: (userId, eventId) => api.get(`/tracking/history/${userId}/${eventId}`).catch(handleApiError),
+  getAlerts: (params) => api.get('/tracking/alerts', { params }).catch(handleApiError),
+  recordLocation: (data) => api.post('/tracking/record', data).catch(handleApiError),
+};
+
 // Geofencing API
 export const geofencingAPI = {
   checkPosition: (data) => api.post('/geofencing/check', data).catch(handleApiError),

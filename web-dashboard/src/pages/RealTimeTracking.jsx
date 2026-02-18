@@ -10,6 +10,7 @@ import {
 import { toast } from 'react-toastify';
 import { io } from 'socket.io-client';
 import api from '../services/api';
+import { trackingAPI } from '../services/api';
 import useAuthStore from '../hooks/useAuth';
 
 // Socket.IO URL
@@ -117,7 +118,9 @@ const RealTimeTracking = () => {
   const [mapCenter, setMapCenter] = useState([33.5731, -7.5898]); // Casablanca par défaut
   const [mapZoom, setMapZoom] = useState(13);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [loadingAgents, setLoadingAgents] = useState(false);
   const socketRef = useRef(null);
+  const refreshIntervalRef = useRef(null);
 
   // Connexion Socket.IO
   useEffect(() => {
@@ -195,6 +198,22 @@ const RealTimeTracking = () => {
     };
   }, [selectedEvent]);
 
+  // Charger les agents via REST API quand un événement est sélectionné + auto-refresh 30s
+  useEffect(() => {
+    if (refreshIntervalRef.current) {
+      clearInterval(refreshIntervalRef.current);
+    }
+    if (selectedEvent) {
+      loadAgentsForEvent(selectedEvent.id);
+      refreshIntervalRef.current = setInterval(() => {
+        loadAgentsForEvent(selectedEvent.id);
+      }, 30000);
+    }
+    return () => {
+      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
+    };
+  }, [selectedEvent]);
+
   // Charger les événements
   useEffect(() => {
     loadEvents();
@@ -253,6 +272,51 @@ const RealTimeTracking = () => {
     }
   };
 
+  // Charger les agents depuis l'API REST pour un événement
+  const loadAgentsForEvent = async (eventId) => {
+    setLoadingAgents(true);
+    try {
+      const response = await trackingAPI.getEventLivePositions(eventId);
+      const data = response?.data?.data || response?.data || {};
+      const agentsList = data.agents || [];
+
+      // Convertir le format API → format attendu par le composant
+      const mappedAgents = agentsList.map(agent => ({
+        userId: agent.id,
+        latitude: agent.position?.latitude || null,
+        longitude: agent.position?.longitude || null,
+        batteryLevel: agent.batteryLevel || 100,
+        isMoving: false,
+        status: !agent.isOnline ? 'completed'
+               : agent.isWithinGeofence === false ? 'outside_geofence'
+               : 'active',
+        lastUpdate: agent.position?.updatedAt ? new Date(agent.position.updatedAt) : null,
+        user: {
+          id: agent.id,
+          firstName: agent.name?.split(' ')[0] || '',
+          lastName: agent.name?.split(' ').slice(1).join(' ') || '',
+          employeeId: agent.employeeId,
+          cin: agent.cin,
+          profilePhoto: agent.photo,
+          role: 'agent'
+        }
+      })).filter(a => a.latitude && a.longitude); // Garder seulement ceux avec position GPS
+
+      // Mettre à jour les agents (Socket.IO peut aussi les mettre à jour)
+      setAgents(prev => {
+        // Fusionner avec les positions temps-réel reçues via Socket.IO
+        const socketAgents = prev.filter(p => !mappedAgents.find(m => m.userId === p.userId));
+        return [...mappedAgents, ...socketAgents];
+      });
+
+      console.log(`✅ Tracking: ${mappedAgents.length} agent(s) chargé(s) pour l'événement`);
+    } catch (error) {
+      console.warn('⚠️ Impossible de charger les positions agents:', error?.message);
+    } finally {
+      setLoadingAgents(false);
+    }
+  };
+
   // Charger l'historique d'un agent
   const loadAgentHistory = async (userId, eventId) => {
     try {
@@ -300,7 +364,7 @@ const RealTimeTracking = () => {
               Suivi GPS en Temps Réel
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              {stats.total} agent{stats.total > 1 ? 's' : ''} en tracking
+              {loadingAgents ? '🔄 Chargement des positions...' : `${stats.total} agent${stats.total > 1 ? 's' : ''} en tracking`}
             </p>
           </div>
 
@@ -329,9 +393,13 @@ const RealTimeTracking = () => {
             </select>
 
             <button
-              onClick={() => loadEvents()}
-              className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-              title="Rafraîchir"
+              onClick={() => {
+                loadEvents();
+                if (selectedEvent) loadAgentsForEvent(selectedEvent.id);
+              }}
+              className={`p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors ${loadingAgents ? 'animate-spin' : ''}`}
+              title="Rafraîchir agents"
+              disabled={loadingAgents}
             >
               <FiRefreshCw />
             </button>

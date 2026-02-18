@@ -4,7 +4,8 @@ import {
   FiArrowLeft, FiMapPin, FiClock, FiUsers, FiCalendar, FiEdit2,
   FiTrash2, FiAlertTriangle, FiCheckCircle, FiUserCheck, FiUserX,
   FiActivity, FiShield, FiLayers, FiFlag, FiAlertCircle, FiInfo,
-  FiTrendingUp, FiCopy, FiRepeat, FiBatteryCharging, FiWifi, FiWifiOff, FiNavigation
+  FiTrendingUp, FiCopy, FiRepeat, FiBatteryCharging, FiWifi, FiWifiOff, FiNavigation,
+  FiRefreshCw
 } from 'react-icons/fi';
 import io from 'socket.io-client';
 import { eventsAPI, zonesAPI, assignmentsAPI, attendanceAPI } from '../services/api';
@@ -321,9 +322,9 @@ const EventDetails = () => {
         setZones([]);
       }
 
-      // Fetch assignments
+      // Fetch assignments (limit 100 to get all)
       try {
-        const assignRes = await assignmentsAPI.getAll({ eventId: id });
+        const assignRes = await assignmentsAPI.getAll({ eventId: id, limit: 100 });
         const assignmentData = assignRes?.data?.data?.assignments || assignRes?.data?.data || [];
         setAssignments(Array.isArray(assignmentData) ? assignmentData : []);
       } catch (err) {
@@ -331,9 +332,9 @@ const EventDetails = () => {
         setAssignments([]);
       }
 
-      // Fetch attendance
+      // Fetch attendance (limit 100 to get all)
       try {
-        const attRes = await attendanceAPI.getAll({ eventId: id });
+        const attRes = await attendanceAPI.getAll({ eventId: id, limit: 100 });
         const attendanceData = attRes?.data?.data?.attendances || attRes?.data?.data || [];
         setAttendance(Array.isArray(attendanceData) ? attendanceData : []);
       } catch (err) {
@@ -506,6 +507,14 @@ const EventDetails = () => {
         </button>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={fetchEventDetails}
+            className="btn-secondary flex items-center"
+            title="Rafraîchir les données"
+          >
+            <FiRefreshCw className="mr-2" size={16} />
+            Rafraîchir
+          </button>
           <button
             onClick={handleEdit}
             className="btn-secondary flex items-center"
