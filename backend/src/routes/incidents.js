@@ -187,18 +187,23 @@ router.post('/', authenticate, upload.array('media', 5), async (req, res) => {
     const incident = await Incident.create(incidentData);
 
     // Log activity
-    await ActivityLog.create({
-      userId: req.user.id,
-      action: 'INCIDENT_REPORTED',
-      resourceType: 'incident',
-      resourceId: incident.id,
-      details: {
-        type: incident.type,
-        severity: incident.severity,
-        title: incident.title,
-        mediaCount: mediaFiles.length
-      }
-    });
+    try {
+      await ActivityLog.create({
+        userId: req.user.id,
+        action: 'INCIDENT_REPORTED',
+        entityType: 'incident',
+        entityId: incident.id,
+        description: `Incident signalé: ${incident.title}`,
+        newValues: {
+          type: incident.type,
+          severity: incident.severity,
+          title: incident.title,
+          mediaCount: mediaFiles.length
+        }
+      });
+    } catch (logErr) {
+      console.warn('ActivityLog warning (non-blocking):', logErr.message);
+    }
 
     // Send real-time notification to admins and supervisors
     sendToRole('admin', 'incident:new', {

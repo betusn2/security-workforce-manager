@@ -61,16 +61,21 @@ const IncidentModal = ({ isOpen, onClose, onSave, events }) => {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
+  // Assign stream to video element after it renders
+  useEffect(() => {
+    if (cameraActive && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraActive]);
+
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' }
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      setCameraActive(true);
+      setCameraActive(true); // triggers useEffect to assign srcObject after render
     } catch (error) {
       toast.error('Impossible d\'accéder à la caméra');
     }
