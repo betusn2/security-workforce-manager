@@ -149,7 +149,7 @@ export default function TrackingHistory() {
         const eventObj = events.find(e => String(e.id) === String(selectedEvent));
         setSelectedEventInfo(eventObj || null);
 
-        const res = await assignmentsAPI.getAll({ eventId: selectedEvent, limit: 200 });
+        const res = await assignmentsAPI.getAll({ eventId: selectedEvent, limit: 100 });
         const assignments = res?.data?.data?.assignments || res?.data?.assignments || res?.data?.data || res?.data || [];
         const agentList = Array.isArray(assignments)
           ? assignments
