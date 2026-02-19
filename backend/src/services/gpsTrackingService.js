@@ -450,6 +450,7 @@ class GPSTrackingService {
         order: [['recordedAt', 'ASC']],
         include: [{
           model: db.User,
+          as: 'user',
           attributes: ['id', 'firstName', 'lastName', 'cin', 'employeeId']
         }]
       });
