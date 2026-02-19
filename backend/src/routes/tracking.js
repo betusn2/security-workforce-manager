@@ -120,19 +120,37 @@ router.get('/history/:userId/:eventId', async (req, res) => {
       });
     }
 
-    const history = await gpsTrackingService.getAgentTrackingHistory(
-      userId,
-      eventId,
-      startDate,
-      endDate
-    );
+    let history = [];
+    try {
+      history = await gpsTrackingService.getAgentTrackingHistory(
+        userId,
+        eventId,
+        startDate,
+        endDate
+      );
+    } catch (histErr) {
+      console.error('❌ getAgentTrackingHistory error:', histErr.message, histErr.stack);
+      // Fallback: query GeoTracking directly without include
+      const { GeoTracking } = require('../models');
+      const { Op } = require('sequelize');
+      const where = { userId, eventId };
+      if (startDate && endDate) {
+        where.recordedAt = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+      }
+      history = await GeoTracking.findAll({
+        where,
+        order: [['recordedAt', 'ASC']],
+        attributes: ['id', 'latitude', 'longitude', 'accuracy', 'speed', 'heading',
+          'batteryLevel', 'isWithinGeofence', 'distanceFromEvent', 'recordedAt', 'isMoving']
+      });
+    }
 
     res.json({
       success: true,
       data: history
     });
   } catch (error) {
-    console.error('❌ Erreur récupération historique:', error);
+    console.error('❌ Erreur récupération historique:', error.message, error.stack);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la récupération de l\'historique',
