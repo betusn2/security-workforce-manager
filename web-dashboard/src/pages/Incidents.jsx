@@ -645,7 +645,7 @@ const Incidents = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [incidentsRes, eventsRes] = await Promise.all([
+      const [incidentsResult, eventsResult] = await Promise.allSettled([
         incidentsAPI.getAll({
           status: filters.status || undefined,
           severity: filters.severity || undefined,
@@ -655,8 +655,19 @@ const Incidents = () => {
         eventsAPI.getAll({ limit: 100 })
       ]);
 
-      setIncidents(incidentsRes.data.data.incidents || []);
-      setEvents(eventsRes.data.data.events || []);
+      if (incidentsResult.status === 'fulfilled') {
+        const d = incidentsResult.value?.data;
+        setIncidents(d?.data?.incidents || d?.incidents || []);
+      } else {
+        console.error('Incidents load error:', incidentsResult.reason);
+      }
+
+      if (eventsResult.status === 'fulfilled') {
+        const d = eventsResult.value?.data;
+        setEvents(d?.data?.events || d?.events || []);
+      } else {
+        console.error('Events load error:', eventsResult.reason);
+      }
     } catch (error) {
       console.error('Error:', error);
     } finally {
