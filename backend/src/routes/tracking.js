@@ -112,45 +112,39 @@ router.get('/history/:userId/:eventId', async (req, res) => {
       });
     }
 
-    const gpsTrackingService = req.app.get('gpsTrackingService');
-    if (!gpsTrackingService) {
-      return res.status(500).json({
-        success: false,
-        message: 'Service de tracking GPS non disponible'
-      });
+    // Query GeoTracking directly - no dependency on gpsTrackingService
+    const { GeoTracking, User } = require('../models');
+    const { Op } = require('sequelize');
+
+    const where = { userId, eventId };
+    if (startDate && endDate) {
+      where.recordedAt = { [Op.between]: [new Date(startDate), new Date(endDate)] };
     }
 
-    let history = [];
-    try {
-      history = await gpsTrackingService.getAgentTrackingHistory(
-        userId,
-        eventId,
-        startDate,
-        endDate
-      );
-    } catch (histErr) {
-      console.error('❌ getAgentTrackingHistory error:', histErr.message, histErr.stack);
-      // Fallback: query GeoTracking directly without include
-      const { GeoTracking } = require('../models');
-      const { Op } = require('sequelize');
-      const where = { userId, eventId };
-      if (startDate && endDate) {
-        where.recordedAt = { [Op.between]: [new Date(startDate), new Date(endDate)] };
-      }
-      history = await GeoTracking.findAll({
-        where,
-        order: [['recordedAt', 'ASC']],
-        attributes: ['id', 'latitude', 'longitude', 'accuracy', 'speed', 'heading',
-          'batteryLevel', 'isWithinGeofence', 'distanceFromEvent', 'recordedAt', 'isMoving']
-      });
-    }
+    const history = await GeoTracking.findAll({
+      where,
+      order: [['recordedAt', 'ASC']],
+      attributes: [
+        'id', 'latitude', 'longitude', 'accuracy', 'speed', 'heading',
+        'batteryLevel', 'batteryStatus', 'isWithinGeofence', 'distanceFromEvent',
+        'recordedAt', 'isMoving', 'networkType', 'deviceType', 'isMockLocation'
+      ],
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'firstName', 'lastName', 'cin', 'employeeId'],
+        required: false
+      }]
+    });
+
+    console.log(`✅ Historique tracking: ${history.length} positions pour agent ${userId}`);
 
     res.json({
       success: true,
       data: history
     });
   } catch (error) {
-    console.error('❌ Erreur récupération historique:', error.message, error.stack);
+    console.error('❌ Erreur récupération historique:', error.message);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la récupération de l\'historique',
