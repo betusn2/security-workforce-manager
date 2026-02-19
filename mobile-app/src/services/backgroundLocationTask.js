@@ -153,6 +153,21 @@ export async function startBackgroundTracking(userId, eventId = null) {
       return true;
     }
 
+    // ─── DEMANDER LA PERMISSION FOREGROUND D'ABORD ────────────────────
+    const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+    if (fgStatus !== 'granted') {
+      console.error('❌ Permission GPS foreground refusée');
+      return false;
+    }
+
+    // ─── DEMANDER LA PERMISSION BACKGROUND (obligatoire Android 11+) ──
+    // Sans cette permission, startLocationUpdatesAsync échoue silencieusement
+    const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+    if (bgStatus !== 'granted') {
+      console.warn('⚠️ Permission GPS arrière-plan refusée - tracking limité au premier plan');
+      // Continuer quand même (iOS peut ne pas l'exiger)
+    }
+
     // Démarrer le tracking background avec foreground service
     await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
       accuracy: Location.Accuracy.BestForNavigation,
