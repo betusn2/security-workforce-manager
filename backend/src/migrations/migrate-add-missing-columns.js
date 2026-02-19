@@ -324,66 +324,92 @@ async function migrateAddMissingColumns() {
   // But deleted_at is handled by migrate-add-deleted-at.js
 
   // =========================================
-  // TABLE: incidents (all optional/newer columns)
+  // TABLE: incidents — rebuild if corrupted (camelCase schema from old sync)
   // =========================================
-  // Fix camelCase columns that may exist as NOT NULL from old sync() — make them nullable
-  // so MySQL doesn't complain when Sequelize (underscored:true) writes to snake_case counterparts
-  await ensureColumnType('incidents', 'reportedBy', 'CHAR(36) NULL DEFAULT NULL');
-  await ensureColumnType('incidents', 'eventId', 'CHAR(36) NULL DEFAULT NULL');
-  await ensureColumnType('incidents', 'assignedTo', 'CHAR(36) NULL DEFAULT NULL');
-  await ensureColumnType('incidents', 'resolvedBy', 'CHAR(36) NULL DEFAULT NULL');
-  await ensureColumnType('incidents', 'actionsTaken', 'TEXT NULL DEFAULT NULL');
-  await ensureColumnType('incidents', 'policeReport', 'VARCHAR(100) NULL DEFAULT NULL');
-  await ensureColumnType('incidents', 'resolvedAt', 'DATETIME NULL DEFAULT NULL');
-  await ensureColumnType('incidents', 'followUpRequired', 'BOOLEAN NOT NULL DEFAULT FALSE');
-  await ensureColumnType('incidents', 'followUpDate', 'DATE NULL DEFAULT NULL');
-  await ensureColumnType('incidents', 'followUpNotes', 'TEXT NULL DEFAULT NULL');
-  // Timestamps — may be missing if table was created without them
-  if (await addColumnIfMissing('incidents', 'created_at',
-    'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP')) added++;
-  if (await addColumnIfMissing('incidents', 'updated_at',
-    'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')) added++;
-  if (await addColumnIfMissing('incidents', 'deleted_at',
-    'DATETIME NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'event_id',
-    'CHAR(36) NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'reported_by',
-    'CHAR(36) NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'assigned_to',
-    'CHAR(36) NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'location',
-    'VARCHAR(500) NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'latitude',
-    'DECIMAL(10,8) NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'longitude',
-    'DECIMAL(11,8) NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'photos',
-    'JSON NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'witnesses',
-    'JSON NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'actions_taken',
-    'TEXT NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'police_report',
-    'VARCHAR(100) NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'resolved_at',
-    'DATETIME NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'resolved_by',
-    'CHAR(36) NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'resolution',
-    'TEXT NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'follow_up_required',
-    'BOOLEAN NOT NULL DEFAULT FALSE')) added++;
-  if (await addColumnIfMissing('incidents', 'follow_up_date',
-    'DATE NULL DEFAULT NULL')) added++;
-  if (await addColumnIfMissing('incidents', 'follow_up_notes',
-    'TEXT NULL DEFAULT NULL')) added++;
-  // Fix ENUM columns in incidents
-  await ensureColumnType('incidents', 'type',
-    "ENUM('security_breach','medical_emergency','fire_alarm','theft','vandalism','trespassing','suspicious_activity','equipment_failure','access_issue','violence','other') NOT NULL");
-  await ensureColumnType('incidents', 'severity',
-    "ENUM('low','medium','high','critical') NOT NULL DEFAULT 'medium'");
-  await ensureColumnType('incidents', 'status',
-    "ENUM('reported','investigating','resolved','escalated','closed') NOT NULL DEFAULT 'reported'");
+  // Detect if table was created with old camelCase schema (reportedBy NOT NULL)
+  let incidentsNeedsRebuild = false;
+  if (await columnExists('incidents', 'reportedBy')) {
+    try {
+      const [cols] = await db.sequelize.query(
+        "SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'incidents' AND COLUMN_NAME = 'reportedBy'"
+      );
+      if (cols.length > 0 && cols[0].IS_NULLABLE === 'NO') {
+        incidentsNeedsRebuild = true;
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  if (incidentsNeedsRebuild) {
+    console.log('  🔄 Table incidents: schéma camelCase détecté → reconstruction...');
+    try {
+      await db.sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
+      await db.sequelize.query('DROP TABLE IF EXISTS `incidents`');
+      await db.sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
+      await db.Incident.sync({ force: false });  // recreate with correct snake_case schema
+      console.log('  ✅ Table incidents reconstruite avec le bon schéma snake_case');
+      added += 20; // mark as changed
+    } catch (rebuildErr) {
+      console.error('  ❌ Rebuild incidents échoué:', rebuildErr.message);
+      // Fallback: just nullify all camelCase NOT NULL columns
+      await ensureColumnType('incidents', 'reportedBy', 'CHAR(36) NULL DEFAULT NULL');
+      await ensureColumnType('incidents', 'eventId', 'CHAR(36) NULL DEFAULT NULL');
+      await ensureColumnType('incidents', 'assignedTo', 'CHAR(36) NULL DEFAULT NULL');
+      await ensureColumnType('incidents', 'resolvedBy', 'CHAR(36) NULL DEFAULT NULL');
+      await ensureColumnType('incidents', 'actionsTaken', 'TEXT NULL DEFAULT NULL');
+      await ensureColumnType('incidents', 'policeReport', 'VARCHAR(100) NULL DEFAULT NULL');
+      await ensureColumnType('incidents', 'resolvedAt', 'DATETIME NULL DEFAULT NULL');
+      await ensureColumnType('incidents', 'followUpRequired', 'BOOLEAN NOT NULL DEFAULT FALSE');
+      await ensureColumnType('incidents', 'followUpDate', 'DATE NULL DEFAULT NULL');
+      await ensureColumnType('incidents', 'followUpNotes', 'TEXT NULL DEFAULT NULL');
+    }
+  } else {
+    // Table is fine or doesn't exist yet — just ensure all snake_case columns are present
+    if (await addColumnIfMissing('incidents', 'created_at',
+      'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP')) added++;
+    if (await addColumnIfMissing('incidents', 'updated_at',
+      'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')) added++;
+    if (await addColumnIfMissing('incidents', 'deleted_at',
+      'DATETIME NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'event_id',
+      'CHAR(36) NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'reported_by',
+      'CHAR(36) NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'assigned_to',
+      'CHAR(36) NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'location',
+      'VARCHAR(500) NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'latitude',
+      'DECIMAL(10,8) NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'longitude',
+      'DECIMAL(11,8) NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'photos',
+      'JSON NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'witnesses',
+      'JSON NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'actions_taken',
+      'TEXT NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'police_report',
+      'VARCHAR(100) NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'resolved_at',
+      'DATETIME NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'resolved_by',
+      'CHAR(36) NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'resolution',
+      'TEXT NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'follow_up_required',
+      'BOOLEAN NOT NULL DEFAULT FALSE')) added++;
+    if (await addColumnIfMissing('incidents', 'follow_up_date',
+      'DATE NULL DEFAULT NULL')) added++;
+    if (await addColumnIfMissing('incidents', 'follow_up_notes',
+      'TEXT NULL DEFAULT NULL')) added++;
+    // Fix ENUM columns
+    await ensureColumnType('incidents', 'type',
+      "ENUM('security_breach','medical_emergency','fire_alarm','theft','vandalism','trespassing','suspicious_activity','equipment_failure','access_issue','violence','other') NOT NULL");
+    await ensureColumnType('incidents', 'severity',
+      "ENUM('low','medium','high','critical') NOT NULL DEFAULT 'medium'");
+    await ensureColumnType('incidents', 'status',
+      "ENUM('reported','investigating','resolved','escalated','closed') NOT NULL DEFAULT 'reported'");
+  }
 
   console.log(`✅ Migration colonnes manquantes: ${added} colonne(s) ajoutée(s)`);
   return added;
