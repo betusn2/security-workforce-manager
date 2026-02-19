@@ -326,6 +326,18 @@ async function migrateAddMissingColumns() {
   // =========================================
   // TABLE: incidents (all optional/newer columns)
   // =========================================
+  // Fix camelCase columns that may exist as NOT NULL from old sync() — make them nullable
+  // so MySQL doesn't complain when Sequelize (underscored:true) writes to snake_case counterparts
+  await ensureColumnType('incidents', 'reportedBy', 'CHAR(36) NULL DEFAULT NULL');
+  await ensureColumnType('incidents', 'eventId', 'CHAR(36) NULL DEFAULT NULL');
+  await ensureColumnType('incidents', 'assignedTo', 'CHAR(36) NULL DEFAULT NULL');
+  await ensureColumnType('incidents', 'resolvedBy', 'CHAR(36) NULL DEFAULT NULL');
+  await ensureColumnType('incidents', 'actionsTaken', 'TEXT NULL DEFAULT NULL');
+  await ensureColumnType('incidents', 'policeReport', 'VARCHAR(100) NULL DEFAULT NULL');
+  await ensureColumnType('incidents', 'resolvedAt', 'DATETIME NULL DEFAULT NULL');
+  await ensureColumnType('incidents', 'followUpRequired', 'BOOLEAN NOT NULL DEFAULT FALSE');
+  await ensureColumnType('incidents', 'followUpDate', 'DATE NULL DEFAULT NULL');
+  await ensureColumnType('incidents', 'followUpNotes', 'TEXT NULL DEFAULT NULL');
   // Timestamps — may be missing if table was created without them
   if (await addColumnIfMissing('incidents', 'created_at',
     'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP')) added++;
