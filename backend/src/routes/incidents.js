@@ -176,8 +176,13 @@ router.post('/', authenticate, upload.array('media', 5), async (req, res) => {
     const incidentData = {
       ...req.body,
       reportedBy: req.user.id,
-      mediaFiles: mediaFiles.length > 0 ? JSON.stringify(mediaFiles) : null
+      // Store uploaded media in the 'photos' JSON column
+      photos: mediaFiles.length > 0
+        ? JSON.stringify(mediaFiles)
+        : (req.body.photos || null)
     };
+    // Remove fields not in the model to avoid Sequelize warnings
+    delete incidentData.mediaFiles;
 
     const incident = await Incident.create(incidentData);
 

@@ -323,6 +323,47 @@ async function migrateAddMissingColumns() {
   // Model has updatedAt: false, so no issue there.
   // But deleted_at is handled by migrate-add-deleted-at.js
 
+  // =========================================
+  // TABLE: incidents (all optional/newer columns)
+  // =========================================
+  if (await addColumnIfMissing('incidents', 'event_id',
+    'CHAR(36) NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'assigned_to',
+    'CHAR(36) NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'location',
+    'VARCHAR(500) NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'latitude',
+    'DECIMAL(10,8) NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'longitude',
+    'DECIMAL(11,8) NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'photos',
+    'JSON NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'witnesses',
+    'JSON NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'actions_taken',
+    'TEXT NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'police_report',
+    'VARCHAR(100) NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'resolved_at',
+    'DATETIME NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'resolved_by',
+    'CHAR(36) NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'resolution',
+    'TEXT NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'follow_up_required',
+    'BOOLEAN NOT NULL DEFAULT FALSE')) added++;
+  if (await addColumnIfMissing('incidents', 'follow_up_date',
+    'DATE NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'follow_up_notes',
+    'TEXT NULL DEFAULT NULL')) added++;
+  // Fix ENUM columns in incidents
+  await ensureColumnType('incidents', 'type',
+    "ENUM('security_breach','medical_emergency','fire_alarm','theft','vandalism','trespassing','suspicious_activity','equipment_failure','access_issue','violence','other') NOT NULL");
+  await ensureColumnType('incidents', 'severity',
+    "ENUM('low','medium','high','critical') NOT NULL DEFAULT 'medium'");
+  await ensureColumnType('incidents', 'status',
+    "ENUM('reported','investigating','resolved','escalated','closed') NOT NULL DEFAULT 'reported'");
+
   console.log(`✅ Migration colonnes manquantes: ${added} colonne(s) ajoutée(s)`);
   return added;
 }
