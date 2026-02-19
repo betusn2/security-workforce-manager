@@ -328,6 +328,8 @@ async function migrateAddMissingColumns() {
   // =========================================
   if (await addColumnIfMissing('incidents', 'event_id',
     'CHAR(36) NULL DEFAULT NULL')) added++;
+  if (await addColumnIfMissing('incidents', 'reported_by',
+    'CHAR(36) NULL DEFAULT NULL')) added++;
   if (await addColumnIfMissing('incidents', 'assigned_to',
     'CHAR(36) NULL DEFAULT NULL')) added++;
   if (await addColumnIfMissing('incidents', 'location',
