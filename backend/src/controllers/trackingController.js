@@ -133,6 +133,37 @@ exports.recordLocation = async (req, res) => {
       }
     }
 
+    // ─── DÉDUPLICATION : éviter les points redondants (agent immobile) ──────
+    // Si position < 10m de la dernière ET vitesse < 0.5 km/h ET dans la zone :
+    // → on broadcast socket mais on n'écrit PAS en DB (économie stockage ~60%)
+    const speedKmh = speed != null ? speed * 3.6 : 0;
+    if (isWithinGeofence) {
+      const recentPoint = await GeoTracking.findOne({
+        where: { userId, eventId: eventId || null },
+        order: [['recordedAt', 'DESC']],
+        attributes: ['latitude', 'longitude', 'recordedAt'],
+      });
+      if (recentPoint) {
+        const timeDiff = (Date.now() - new Date(recentPoint.recordedAt).getTime()) / 1000;
+        const dist = geoService.calculateDistance(
+          latitude, longitude,
+          parseFloat(recentPoint.latitude), parseFloat(recentPoint.longitude)
+        );
+        // Skip si même spot (< 10m), pas en mouvement, et dernier point < 60s
+        if (dist < 10 && speedKmh < 0.5 && timeDiff < 60) {
+          // Broadcast temps réel quand même (sans sauvegarder)
+          const io = req.app.get('io');
+          if (io) {
+            io.to('role:admin').to('role:supervisor').emit('agent:location', {
+              userId, eventId, latitude, longitude, accuracy, speed,
+              isWithinGeofence, distanceFromEvent, batteryLevel, timestamp: new Date()
+            });
+          }
+          return res.json({ success: true, message: 'Position inchangée (non sauvegardée)', deduplicated: true });
+        }
+      }
+    }
+
     // Enregistrer la position
     const tracking = await GeoTracking.create({
       userId,

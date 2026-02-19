@@ -16,7 +16,7 @@ import * as Device from 'expo-device';
 import { Platform, AppState } from 'react-native';
 import socketService from './socketService';
 
-const FOREGROUND_INTERVAL_MS = 8000; // 8s en premier plan (plus réactif)
+const FOREGROUND_INTERVAL_MS = 20000; // 20s en premier plan (équilibre réactivité/stockage)
 const MIN_DISTANCE_METERS = 3;
 
 class TrackingService {

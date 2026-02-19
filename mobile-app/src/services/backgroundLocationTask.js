@@ -104,7 +104,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
     };
 
     // Envoyer via HTTP API (Socket.IO peut être suspendu)
-    await axios.post(`${API_URL}/tracking/position`, payload, {
+    await axios.post(`${API_URL}/tracking/location`, payload, {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 8000,
     });
@@ -171,8 +171,8 @@ export async function startBackgroundTracking(userId, eventId = null) {
     // Démarrer le tracking background avec foreground service
     await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
       accuracy: Location.Accuracy.BestForNavigation,
-      timeInterval: 10000,          // toutes les 10 secondes
-      distanceInterval: 5,          // ou si déplacé de 5m
+      timeInterval: 30000,          // toutes les 30 secondes (économie stockage 3×)
+      distanceInterval: 15,         // ou si déplacé de 15m
       deferredUpdatesInterval: 5000,
       deferredUpdatesDistance: 10,
       showsBackgroundLocationIndicator: true, // indicateur GPS sur iOS

@@ -145,6 +145,22 @@ const startScheduler = (io = null) => {
     console.log('⏰ Scheduler démarré: vérification fenêtres de temps Socket.IO toutes les 10 minutes');
   }
 
+  // Purge automatique des données GPS > 60 jours (tous les jours à 3h du matin)
+  cron.schedule('0 3 * * *', async () => {
+    try {
+      const { GeoTracking } = require('./models');
+      const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+      const deleted = await GeoTracking.destroy({
+        where: { recordedAt: { [Op.lt]: cutoff } },
+        force: true // bypass paranoid
+      });
+      console.log(`🗑️ [CRON] Purge GPS: ${deleted} enregistrements supprimés (> 60 jours)`);
+    } catch (err) {
+      console.error('❌ [CRON] Erreur purge GPS:', err.message);
+    }
+  });
+  console.log('⏰ Scheduler démarré: purge GPS automatique (> 60 jours) tous les jours à 3h');
+
   // Exécution immédiate au démarrage du serveur
   updateEventStatuses();
 };

@@ -8,6 +8,8 @@ router.use(authenticate);
 
 // POST /api/tracking/location - Enregistrer une position
 router.post('/location', trackingController.recordLocation);
+// Alias /position utilisé par l'app mobile (background task)
+router.post('/position', trackingController.recordLocation);
 
 // POST /api/tracking/validate - Valider une position par rapport a un evenement
 router.post('/validate', trackingController.validatePosition);
