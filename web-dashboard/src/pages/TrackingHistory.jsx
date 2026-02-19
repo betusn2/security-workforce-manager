@@ -125,7 +125,7 @@ export default function TrackingHistory() {
     const loadEvents = async () => {
       try {
         const res = await eventsAPI.getAll({ limit: 100 });
-        const list = res?.data?.data || res?.data || [];
+        const list = res?.data?.data?.events || res?.data?.events || res?.data?.data || res?.data || [];
         setEvents(Array.isArray(list) ? list : []);
       } catch {
         toast.error('Erreur lors du chargement des événements');
@@ -150,11 +150,11 @@ export default function TrackingHistory() {
         setSelectedEventInfo(eventObj || null);
 
         const res = await assignmentsAPI.getAll({ eventId: selectedEvent, limit: 200 });
-        const assignments = res?.data?.data || res?.data || [];
+        const assignments = res?.data?.data?.assignments || res?.data?.assignments || res?.data?.data || res?.data || [];
         const agentList = Array.isArray(assignments)
           ? assignments
-              .filter(a => a.user || a.agent)
-              .map(a => ({ ...(a.user || a.agent), assignmentId: a.id }))
+              .filter(a => a.agent || a.user)
+              .map(a => ({ ...(a.agent || a.user), assignmentId: a.id }))
           : [];
         setAgents(agentList);
         setSelectedAgent('');
