@@ -22,6 +22,38 @@ const combineDateAndTime = (date, time) => {
 };
 
 /**
+ * Calcule la datetime de fin d'un événement en gérant les événements de nuit
+ * Si checkOutTime est 00:00 (minuit), c'est la fin du jour suivant
+ * Si checkOutTime < checkInTime (ex: 22:00 -> 00:30), c'est le lendemain
+ * @param {Date|string} endDate
+ * @param {string} checkOutTime - ex: "00:00", "18:00"
+ * @param {string} checkInTime - ex: "22:00", "08:00" (pour détecter les événements de nuit)
+ * @returns {Date}
+ */
+const getEventEndDateTime = (endDate, checkOutTime, checkInTime) => {
+  const checkOut = checkOutTime || '23:59';
+  const eventEnd = combineDateAndTime(endDate, checkOut);
+  
+  const [outH, outM] = checkOut.split(':').map(Number);
+  const [inH, inM] = (checkInTime || '00:00').split(':').map(Number);
+  
+  // Événement de nuit : si checkout <= 06:00 ou checkout < checkin
+  // Ex: checkin=22:00, checkout=00:00 → fin le lendemain
+  // Ex: checkin=22:00, checkout=02:30 → fin le lendemain
+  const outMins = outH * 60 + outM;
+  const inMins = inH * 60 + inM;
+  
+  const isOvernightByMidnight = outH === 0 && outM === 0; // minuit exact
+  const isOvernightByCrossing = checkInTime && outMins < inMins && outMins <= 360; // checkout avant checkin et avant 6h
+  
+  if (isOvernightByMidnight || isOvernightByCrossing) {
+    eventEnd.setDate(eventEnd.getDate() + 1);
+  }
+  
+  return eventEnd;
+};
+
+/**
  * Calcule l'heure de début de check-in autorisée
  * Les agents peuvent pointer dès l'ouverture de la fenêtre de création
  * (agentCreationBuffer minutes avant l'heure d'arrivée)
@@ -66,7 +98,7 @@ const computeEventStatus = (event) => {
     event.checkInTime, 
     event.agentCreationBuffer || 120
   );
-  const eventEnd = combineDateAndTime(event.endDate, event.checkOutTime || '23:59');
+  const eventEnd = getEventEndDateTime(event.endDate, event.checkOutTime, event.checkInTime);
   
   // Événement terminé (après l'heure de check-out)
   if (now > eventEnd) {
@@ -128,7 +160,7 @@ const shouldDisplayEvent = (event) => {
   }
   
   // Calculer l'heure de fin de l'événement + buffer de 2h
-  const eventEnd = combineDateAndTime(event.endDate, event.checkOutTime || '23:59');
+  const eventEnd = getEventEndDateTime(event.endDate, event.checkOutTime, event.checkInTime);
   const bufferEnd = new Date(eventEnd);
   bufferEnd.setHours(bufferEnd.getHours() + 2); // 2h de tolérance après la fin
   
@@ -160,6 +192,7 @@ const formatEventDateTime = (date, time) => {
 
 module.exports = {
   combineDateAndTime,
+  getEventEndDateTime,
   getCheckInStartTime,
   computeEventStatus,
   isEventActive,
