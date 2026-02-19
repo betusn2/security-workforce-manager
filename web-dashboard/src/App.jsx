@@ -38,6 +38,7 @@ import SupervisorAgents from './pages/SupervisorAgents';
 import CreationHistory from './pages/CreationHistory';
 import AgentTrackingMap from './pages/AgentTrackingMap';
 import RealTimeTracking from './pages/RealTimeTracking';
+import TrackingHistory from './pages/TrackingHistory';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import About from './pages/About';
 
@@ -210,6 +211,14 @@ function App() {
           element={
             <ProtectedRoute roles={['admin', 'supervisor', 'responsable']}>
               <AgentTrackingMap />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tracking/history"
+          element={
+            <ProtectedRoute roles={['admin', 'supervisor', 'responsable']}>
+              <TrackingHistory />
             </ProtectedRoute>
           }
         />

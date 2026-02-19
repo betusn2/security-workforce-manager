@@ -54,6 +54,7 @@ const menuStructure = [
     icon: FiAlertTriangle,
     items: [
       { path: '/tracking', icon: FiMapPin, label: 'Suivi GPS', roles: ['admin', 'supervisor'] },
+      { path: '/tracking/history', icon: FiActivity, label: 'Historique GPS', roles: ['admin', 'supervisor'] },
       { path: '/incidents', icon: FiAlertTriangle, label: 'Incidents' },
       { path: '/badges', icon: FiStar, label: 'Badges' },
       { path: '/rankings', icon: FiAward, label: 'Classement' },
