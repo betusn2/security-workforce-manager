@@ -326,6 +326,13 @@ async function migrateAddMissingColumns() {
   // =========================================
   // TABLE: incidents (all optional/newer columns)
   // =========================================
+  // Timestamps — may be missing if table was created without them
+  if (await addColumnIfMissing('incidents', 'created_at',
+    'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP')) added++;
+  if (await addColumnIfMissing('incidents', 'updated_at',
+    'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')) added++;
+  if (await addColumnIfMissing('incidents', 'deleted_at',
+    'DATETIME NULL DEFAULT NULL')) added++;
   if (await addColumnIfMissing('incidents', 'event_id',
     'CHAR(36) NULL DEFAULT NULL')) added++;
   if (await addColumnIfMissing('incidents', 'reported_by',
