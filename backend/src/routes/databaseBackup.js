@@ -517,27 +517,55 @@ router.delete('/delete/:filename', async (req, res) => {
 
 // Utilitaire : exécuter un script SQL via Sequelize (ligne par ligne)
 const executeSQLScript = async (sqlContent) => {
-  // Retirer les commentaires et diviser par ;
-  const statements = sqlContent
-    .split('\n')
-    .filter(line => !line.trim().startsWith('--') && !line.trim().startsWith('/*'))
-    .join('\n')
-    .split(';')
-    .map(s => s.trim())
-    .filter(s => s.length > 5);
+  const config = getDatabaseConfig();
+  // Utiliser mysql2 directement avec multipleStatements:true
+  // → évite le split naïf sur ';' qui coupe les valeurs avec des ';' intégrés
+  const mysql = require('mysql2/promise');
+  const conn = await mysql.createConnection({
+    host: config.host || process.env.DB_HOST,
+    port: parseInt(config.port || process.env.DB_PORT || 3306),
+    user: config.username || process.env.DB_USER,
+    password: config.password || process.env.DB_PASSWORD,
+    database: config.database || process.env.DB_NAME,
+    multipleStatements: true,  // ← clé: exécuter tout le script en une seule fois
+    ssl: false
+  });
 
   let executed = 0;
   let errors = [];
-  for (const stmt of statements) {
-    try {
-      await sequelize.query(stmt);
-      executed++;
-    } catch (err) {
-      // Continuer même si une instruction échoue
-      errors.push(err.message.substring(0, 100));
+  try {
+    // Exécuter le script complet en une seule requête → aucun risque de split incorrect
+    await conn.query('SET FOREIGN_KEY_CHECKS=0');
+    await conn.query(sqlContent);
+    await conn.query('SET FOREIGN_KEY_CHECKS=1');
+    // Compter le nombre d'instructions pour le reporting
+    executed = (sqlContent.match(/;\s*(\n|$)/g) || []).length;
+    console.log(`✅ Restauration complète: ~${executed} instructions exécutées`);
+  } catch (err) {
+    console.error('❌ Erreur exécution SQL:', err.message);
+    errors.push(err.message.substring(0, 200));
+    // Tenter instruction par instruction en fallback
+    console.log('🔄 Fallback: exécution instruction par instruction...');
+    await conn.query('SET FOREIGN_KEY_CHECKS=0').catch(() => {});
+    const stmts = sqlContent
+      .replace(/--[^\n]*/g, '')         // supprimer commentaires ligne
+      .replace(/\/\*[\s\S]*?\*\//g, '') // supprimer commentaires bloc
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 5);
+    for (const stmt of stmts) {
+      try {
+        await conn.query(stmt);
+        executed++;
+      } catch (e) {
+        errors.push(e.message.substring(0, 100));
+      }
     }
+    await conn.query('SET FOREIGN_KEY_CHECKS=1').catch(() => {});
+  } finally {
+    await conn.end().catch(() => {});
   }
-  return { executed, errors: errors.slice(0, 10), total: statements.length };
+  return { executed, errors: errors.slice(0, 10), total: executed + errors.length };
 };
 
 /**
