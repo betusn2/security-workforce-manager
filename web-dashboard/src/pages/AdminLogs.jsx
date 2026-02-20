@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
   FiActivity, FiTrash2, FiDownload, FiFilter, FiRefreshCw,
-  FiAlertCircle, FiCheckCircle, FiClock, FiUser, FiDatabase
+  FiAlertCircle, FiCheckCircle, FiClock, FiUser, FiDatabase,
+  FiPlus, FiEdit2, FiX, FiLogIn, FiLogOut, FiMapPin, FiShield,
+  FiChevronDown, FiChevronRight
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import api from '../services/api';
@@ -145,6 +147,9 @@ const AdminLogs = () => {
     }
   };
 
+  const [expandedRows, setExpandedRows] = useState({});
+  const toggleRow = (id) => setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
+
   const getStatusColor = (status) => {
     const colors = {
       success: 'bg-green-100 text-green-800',
@@ -161,6 +166,50 @@ const AdminLogs = () => {
       warning: <FiAlertCircle className="text-yellow-600" />
     };
     return icons[status] || <FiActivity />;
+  };
+
+  const getActionBadge = (action) => {
+    const cfg = {
+      CREATE:    { color: 'bg-green-100 text-green-800 border border-green-200',  icon: <FiPlus size={11}/>,    label: 'Création' },
+      UPDATE:    { color: 'bg-blue-100 text-blue-800 border border-blue-200',     icon: <FiEdit2 size={11}/>,   label: 'Modif.' },
+      DELETE:    { color: 'bg-red-100 text-red-800 border border-red-200',        icon: <FiX size={11}/>,       label: 'Suppression' },
+      LOGIN:     { color: 'bg-purple-100 text-purple-800 border border-purple-200', icon: <FiLogIn size={11}/>, label: 'Connexion' },
+      LOGOUT:    { color: 'bg-gray-100 text-gray-700 border border-gray-200',     icon: <FiLogOut size={11}/>,  label: 'Déco.' },
+      REGISTER:  { color: 'bg-teal-100 text-teal-800 border border-teal-200',     icon: <FiUser size={11}/>,    label: 'Inscription' },
+      CHECK_IN:  { color: 'bg-emerald-100 text-emerald-800 border border-emerald-200', icon: <FiCheckCircle size={11}/>, label: 'Check-in' },
+      CHECK_OUT: { color: 'bg-orange-100 text-orange-800 border border-orange-200', icon: <FiLogOut size={11}/>, label: 'Check-out' },
+      SOS_ALERT: { color: 'bg-red-200 text-red-900 border border-red-400 font-bold', icon: '🆘',                label: 'SOS' },
+      INCIDENT_REPORTED: { color: 'bg-yellow-100 text-yellow-800 border border-yellow-200', icon: '⚠️', label: 'Incident' },
+      INCIDENT_DELETED:  { color: 'bg-red-100 text-red-700 border border-red-200', icon: <FiTrash2 size={11}/>, label: 'Incident Suppr.' },
+    };
+    const c = cfg[action] || { color: 'bg-gray-100 text-gray-600 border border-gray-200', icon: <FiActivity size={11}/>, label: action };
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${c.color}`}>
+        {c.icon} {c.label}
+      </span>
+    );
+  };
+
+  const getEntityBadge = (entityType) => {
+    const cfg = {
+      user:         { color: 'bg-indigo-50 text-indigo-700', icon: '👤' },
+      event:        { color: 'bg-blue-50 text-blue-700',    icon: '📅' },
+      assignment:   { color: 'bg-cyan-50 text-cyan-700',    icon: '📋' },
+      attendance:   { color: 'bg-green-50 text-green-700',  icon: '✅' },
+      incident:     { color: 'bg-red-50 text-red-700',      icon: '🚨' },
+      zone:         { color: 'bg-yellow-50 text-yellow-700',icon: '📍' },
+      auth:         { color: 'bg-purple-50 text-purple-700',icon: '🔐' },
+      sos:          { color: 'bg-red-100 text-red-800',     icon: '🆘' },
+      badge:        { color: 'bg-amber-50 text-amber-700',  icon: '🏅' },
+      report:       { color: 'bg-gray-50 text-gray-700',    icon: '📊' },
+      tracking:     { color: 'bg-teal-50 text-teal-700',   icon: '📡' },
+    };
+    const c = cfg[entityType] || { color: 'bg-gray-50 text-gray-600', icon: '⚙️' };
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${c.color}`}>
+        {c.icon} {entityType}
+      </span>
+    );
   };
 
   return (
@@ -415,12 +464,10 @@ const AdminLogs = () => {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Utilisateur</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Entité</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Adresse IP</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">MAC</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Appareil</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">IP</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description / Détails</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -438,58 +485,61 @@ const AdminLogs = () => {
                     </tr>
                   ) : (
                     logs.map((log) => (
-                      <tr key={log.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <FiClock className="text-gray-400" />
-                            {new Date(log.createdAt).toLocaleString('fr-FR')}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">
-                          {log.user ? (
-                            <div>
-                              <div className="font-medium">
-                                {log.user.firstName} {log.user.lastName}
-                              </div>
-                              <div className="text-xs text-gray-500">{log.user.role}</div>
-                            </div>
-                          ) : (
-                            <span className="text-gray-500">Système</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                          {log.action}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {log.entityType}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(log.status)}`}>
-                            {getStatusIcon(log.status)}
-                            {log.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500 font-mono">
-                          {log.ipAddress || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500 font-mono">
-                          {log.deviceInfo?.macAddress || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">
-                          {log.deviceInfo ? (
-                            <div className="space-y-1">
-                              <div className="font-medium">{log.deviceInfo.type || 'unknown'}</div>
-                              <div className="text-xs text-gray-500">
-                                {log.deviceInfo.os && `${log.deviceInfo.os}`}
-                                {log.deviceInfo.browser && ` · ${log.deviceInfo.browser}`}
+                      <React.Fragment key={log.id}>
+                        <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => toggleRow(log.id)}>
+                          <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                            <div className="flex items-center gap-1">
+                              <FiClock className="text-gray-400" size={12} />
+                              <div>
+                                <div className="font-medium text-gray-800">{new Date(log.createdAt).toLocaleDateString('fr-FR')}</div>
+                                <div>{new Date(log.createdAt).toLocaleTimeString('fr-FR')}</div>
                               </div>
                             </div>
-                          ) : '-'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">
-                          {log.description || '-'}
-                        </td>
-                      </tr>
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            {log.user ? (
+                              <div>
+                                <div className="font-medium text-gray-900">{log.user.firstName} {log.user.lastName}</div>
+                                <div className="text-xs text-gray-400">{log.user.role}</div>
+                              </div>
+                            ) : <span className="text-gray-400 text-xs">Système</span>}
+                          </td>
+                          <td className="px-4 py-3">{getActionBadge(log.action)}</td>
+                          <td className="px-4 py-3">{getEntityBadge(log.entityType)}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(log.status)}`}>
+                              {getStatusIcon(log.status)}
+                              {log.status === 'success' ? 'OK' : log.status === 'failure' ? 'Échec' : log.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-gray-400 font-mono">{log.ipAddress || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            <div className="flex items-center gap-1">
+                              {log.newValues && (
+                                expandedRows[log.id] ? <FiChevronDown size={14} className="text-gray-400 flex-shrink-0" /> : <FiChevronRight size={14} className="text-gray-400 flex-shrink-0" />
+                              )}
+                              <span className="truncate max-w-xs">{log.description || '-'}</span>
+                            </div>
+                          </td>
+                        </tr>
+                        {expandedRows[log.id] && log.newValues && (
+                          <tr className="bg-blue-50">
+                            <td colSpan="7" className="px-8 py-3">
+                              <div className="text-xs font-medium text-blue-700 mb-2">Données modifiées :</div>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                {Object.entries(typeof log.newValues === 'string' ? JSON.parse(log.newValues) : log.newValues)
+                                  .filter(([k]) => !['password','token','refreshToken'].includes(k))
+                                  .map(([k, v]) => (
+                                    <div key={k} className="bg-white rounded p-2 border border-blue-100">
+                                      <div className="text-xs text-gray-400 uppercase">{k}</div>
+                                      <div className="text-xs text-gray-800 font-medium truncate">{String(v ?? '-')}</div>
+                                    </div>
+                                  ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     ))
                   )}
                 </tbody>

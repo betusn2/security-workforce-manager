@@ -354,6 +354,10 @@ app.use('/api/audit', auditRoutes);
 const databaseBackup = require('./routes/databaseBackup');
 app.use('/api/admin/database', databaseBackup);
 
+// Global auto-audit middleware — traces all POST/PUT/PATCH/DELETE automatically
+const autoAuditLogger = require('./middlewares/autoAuditLogger');
+app.use('/api', autoAuditLogger);
+
 // API routes
 app.use('/api', routes);
 
