@@ -182,7 +182,15 @@ const DEFAULT_PERMISSIONS = [
   // Audit Trail
   { code: 'audit_trail.view', name: 'Voir piste d\'audit', module: 'audit_trail', action: 'view' },
   { code: 'audit_trail.export', name: 'Exporter logs audit', module: 'audit_trail', action: 'export' },
-  { code: 'audit_trail.analyze', name: 'Analyser audit', module: 'audit_trail', action: 'view' }
+  { code: 'audit_trail.analyze', name: 'Analyser audit', module: 'audit_trail', action: 'view' },
+
+  // Module: Zones (gestion des zones d'événements)
+  { code: 'zones.view', name: 'Voir les zones', module: 'zones', action: 'view' },
+  { code: 'zones.create', name: 'Créer des zones', module: 'zones', action: 'create' },
+  { code: 'zones.update', name: 'Modifier des zones', module: 'zones', action: 'update' },
+  { code: 'zones.delete', name: 'Supprimer des zones', module: 'zones', action: 'delete' },
+  { code: 'zones.assign', name: 'Assigner agents aux zones', module: 'zones', action: 'create' },
+  { code: 'zones.manage', name: 'Gérer toutes les zones', module: 'zones', action: 'manage' }
 ];
 
 // Permissions par défaut pour chaque rôle
@@ -224,7 +232,9 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'gps_tracking.view', 'gps_tracking.monitor', 'gps_tracking.history',
     'classification.view', 'classification.update', 'classification.export',
     'advanced_notifications.view', 'advanced_notifications.create', 'advanced_notifications.manage',
-    'audit_trail.view', 'audit_trail.export', 'audit_trail.analyze'
+    'audit_trail.view', 'audit_trail.export', 'audit_trail.analyze',
+    // Zones
+    'zones.view', 'zones.create', 'zones.update', 'zones.delete', 'zones.assign', 'zones.manage'
   ],
   supervisor: [
     'dashboard.view', 'dashboard.stats',
@@ -259,7 +269,9 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'gps_tracking.view', 'gps_tracking.monitor', 'gps_tracking.history',
     'classification.view',
     'advanced_notifications.view', 'advanced_notifications.create',
-    'audit_trail.view'
+    'audit_trail.view',
+    // Zones
+    'zones.view', 'zones.create', 'zones.update', 'zones.assign'
   ],
   agent: [
     'dashboard.view',
@@ -284,7 +296,9 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'verification.view',
     'pointage.view',
     'gps_tracking.view',
-    'classification.view'
+    'classification.view',
+    // Zones
+    'zones.view'
   ],
   user: [
     // Utilisateur simple - permissions minimales par défaut
