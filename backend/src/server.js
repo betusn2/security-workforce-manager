@@ -149,21 +149,19 @@ const DEFAULT_ROLE_PERMISSIONS = {
 // Fonction d'initialisation des permissions
 const initializeDefaultPermissions = async () => {
   try {
-    // Vérifier si les permissions existent déjà
-    const permissionCount = await db.Permission.count();
-    if (permissionCount > 0) {
-      console.log('✅ Permissions already initialized.');
-      return;
-    }
+    // Toujours synchroniser toutes les permissions (findOrCreate = idempotent)
+    // Ne jamais skipper même si des permissions existent déjà
+    // → Garantit que les nouvelles permissions (ex: zones.*) sont ajoutées sur chaque déploiement
+    console.log('🔧 Synchronizing default permissions (findOrCreate)...');
 
-    console.log('🔧 Initializing default permissions...');
-
-    // Créer toutes les permissions
+    let added = 0;
+    // Créer / mettre à jour toutes les permissions
     for (const perm of DEFAULT_PERMISSIONS) {
-      await db.Permission.findOrCreate({
+      const [, created] = await db.Permission.findOrCreate({
         where: { code: perm.code },
         defaults: perm
       });
+      if (created) added++;
     }
 
     // Créer les permissions par rôle
@@ -183,7 +181,11 @@ const initializeDefaultPermissions = async () => {
       }
     }
 
-    console.log('✅ Default permissions initialized successfully.');
+    if (added > 0) {
+      console.log(`✅ ${added} nouvelles permissions ajoutées.`);
+    } else {
+      console.log('✅ Permissions already up to date.');
+    }
   } catch (error) {
     console.error('❌ Error initializing permissions:', error.message);
   }
