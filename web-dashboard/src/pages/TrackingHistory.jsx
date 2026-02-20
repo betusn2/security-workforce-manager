@@ -5,7 +5,8 @@ import 'leaflet/dist/leaflet.css';
 import {
   FiMapPin, FiClock, FiActivity, FiFilter, FiRefreshCw,
   FiUsers, FiBattery, FiNavigation, FiAlertTriangle,
-  FiCheckCircle, FiCalendar, FiSearch, FiDownload, FiList
+  FiCheckCircle, FiCalendar, FiSearch, FiDownload, FiList,
+  FiTrash2, FiAlertOctagon, FiX, FiShield
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { eventsAPI, trackingAPI, assignmentsAPI } from '../services/api';
@@ -86,6 +87,67 @@ export default function TrackingHistory() {
   const [activeTab, setActiveTab] = useState('map'); // 'map' | 'timeline'
   const [showFilters, setShowFilters] = useState(true);
   const [selectedEventInfo, setSelectedEventInfo] = useState(null);
+
+  // ── Purge state ───────────────────────────────────────────────────────────
+  const [showPurgeModal, setShowPurgeModal]   = useState(false);
+  const [purgeMode, setPurgeMode]             = useState('selection'); // 'selection' | 'older' | 'event'
+  const [purgeOlderDays, setPurgeOlderDays]   = useState(30);
+  const [purgePreview, setPurgePreview]       = useState(null); // { count, total }
+  const [purgeLoading, setPurgeLoading]       = useState(false);
+  const [purgeConfirmed, setPurgeConfirmed]   = useState(false);
+  const isAdmin = user?.role === 'admin';
+
+  const fetchPurgePreview = useCallback(async (params) => {
+    try {
+      const res = await trackingAPI.getPurgeCount(params);
+      const d = res?.data?.data;
+      setPurgePreview(d || null);
+    } catch { setPurgePreview(null); }
+  }, []);
+
+  useEffect(() => {
+    if (!showPurgeModal) { setPurgePreview(null); setPurgeConfirmed(false); return; }
+    const params = {};
+    if (purgeMode === 'selection') {
+      if (selectedEvent)  params.eventId = selectedEvent;
+      if (selectedAgent)  params.userId  = selectedAgent;
+      if (startDate)      params.startDate = startDate;
+      if (endDate)        params.endDate   = endDate;
+    } else if (purgeMode === 'older') {
+      params.olderThanDays = purgeOlderDays;
+    } else if (purgeMode === 'event') {
+      if (selectedEvent) params.eventId = selectedEvent;
+    }
+    fetchPurgePreview(params);
+  }, [showPurgeModal, purgeMode, purgeOlderDays, selectedEvent, selectedAgent, startDate, endDate, fetchPurgePreview]);
+
+  const handlePurge = async () => {
+    setPurgeLoading(true);
+    try {
+      const body = {};
+      if (purgeMode === 'selection') {
+        if (selectedEvent)  body.eventId  = selectedEvent;
+        if (selectedAgent)  body.userId   = selectedAgent;
+        if (startDate)      body.startDate = startDate;
+        if (endDate)        body.endDate   = endDate;
+      } else if (purgeMode === 'older') {
+        body.olderThanDays = purgeOlderDays;
+      } else if (purgeMode === 'event') {
+        body.eventId = selectedEvent;
+      }
+      const res = await trackingAPI.purgeHistory(body);
+      const deleted = res?.data?.data?.deleted ?? 0;
+      toast.success(`${deleted} enregistrement(s) GPS supprimé(s)`);
+      setHistoryData([]);
+      setShowPurgeModal(false);
+      setPurgeConfirmed(false);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Erreur lors de la purge');
+    } finally {
+      setPurgeLoading(false);
+    }
+  };
+  // ─────────────────────────────────────────────────────────────────────────
 
   // Computed stats
   const stats = React.useMemo(() => {
@@ -236,6 +298,114 @@ export default function TrackingHistory() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+
+      {/* ── Purge Modal ────────────────────────────────────────────────────── */}
+      {showPurgeModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <FiTrash2 className="text-red-600" size={20} />
+                </div>
+                <div>
+                  <h2 className="font-bold text-gray-900">Purge Historique GPS</h2>
+                  <p className="text-xs text-gray-500">Action irréversible — admin seulement</p>
+                </div>
+              </div>
+              <button onClick={() => setShowPurgeModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+                <FiX size={18} />
+              </button>
+            </div>
+
+            {/* Mode selector */}
+            <div className="px-6 pt-4">
+              <p className="text-sm font-semibold text-gray-700 mb-2">Mode de purge</p>
+              <div className="flex gap-2">
+                {[['selection', 'Sélection actuelle'], ['event', 'Événement entier'], ['older', 'Antérieurs à X jours']].map(([m, label]) => (
+                  <button key={m} onClick={() => { setPurgeMode(m); setPurgeConfirmed(false); }}
+                    className={`flex-1 py-2 text-xs font-medium rounded-lg border transition-colors ${
+                      purgeMode === m ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    }`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Mode-specific options */}
+            <div className="px-6 py-4 space-y-3">
+              {purgeMode === 'selection' && (
+                <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
+                  <div className="text-gray-600"><span className="font-medium">Événement :</span> {events.find(e => String(e.id) === String(selectedEvent))?.name || <span className="text-gray-400">Tous</span>}</div>
+                  <div className="text-gray-600"><span className="font-medium">Agent :</span> {agents.find(a => String(a.id) === String(selectedAgent)) ? `${agents.find(a => String(a.id) === String(selectedAgent))?.firstName} ${agents.find(a => String(a.id) === String(selectedAgent))?.lastName}` : <span className="text-gray-400">Tous</span>}</div>
+                  <div className="text-gray-600"><span className="font-medium">Période :</span> {startDate || endDate ? `${startDate || '...'} → ${endDate || '...'}` : <span className="text-gray-400">Toute période</span>}</div>
+                </div>
+              )}
+              {purgeMode === 'event' && (
+                <div className="bg-gray-50 rounded-lg p-3 text-sm">
+                  <span className="font-medium">Événement sélectionné :</span>{' '}
+                  {events.find(e => String(e.id) === String(selectedEvent))?.name || <span className="text-red-500">Aucun (sélectionnez un événement d'abord)</span>}
+                </div>
+              )}
+              {purgeMode === 'older' && (
+                <div className="flex items-center gap-3">
+                  <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Supprimer données de plus de</label>
+                  <input
+                    type="number" min="1" max="3650" value={purgeOlderDays}
+                    onChange={e => { setPurgeOlderDays(e.target.value); setPurgeConfirmed(false); }}
+                    className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                  />
+                  <span className="text-sm text-gray-600">jours</span>
+                </div>
+              )}
+
+              {/* Preview counter */}
+              <div className={`rounded-lg p-3 text-sm font-medium flex items-center gap-2 ${
+                purgePreview?.count > 0 ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-gray-50 text-gray-600'
+              }`}>
+                <FiAlertOctagon className={purgePreview?.count > 0 ? 'text-red-500' : 'text-gray-400'} />
+                {purgePreview === null
+                  ? 'Calcul en cours...'
+                  : purgePreview.count === 0
+                    ? 'Aucun enregistrement correspondant'
+                    : `${purgePreview.count.toLocaleString()} enregistrement(s) à supprimer sur ${purgePreview.total?.toLocaleString() ?? '?'} au total`
+                }
+              </div>
+
+              {/* Confirm checkbox */}
+              {purgePreview?.count > 0 && (
+                <label className="flex items-start gap-2 cursor-pointer select-none">
+                  <input type="checkbox" checked={purgeConfirmed} onChange={e => setPurgeConfirmed(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 text-red-600 rounded"
+                  />
+                  <span className="text-sm text-gray-700">
+                    Je confirme vouloir supprimer définitivement <strong>{purgePreview.count.toLocaleString()}</strong> enregistrement(s) GPS. Cette action est <strong>irréversible</strong>.
+                  </span>
+                </label>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="px-6 pb-5 flex justify-end gap-3">
+              <button onClick={() => { setShowPurgeModal(false); setPurgeConfirmed(false); }}
+                className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium">
+                Annuler
+              </button>
+              <button
+                onClick={handlePurge}
+                disabled={!purgeConfirmed || purgeLoading || (purgeMode === 'event' && !selectedEvent)}
+                className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {purgeLoading ? <FiRefreshCw className="animate-spin" /> : <FiTrash2 />}
+                {purgeLoading ? 'Suppression...' : 'Purger maintenant'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
@@ -263,6 +433,15 @@ export default function TrackingHistory() {
               >
                 <FiDownload />
                 Export CSV
+              </button>
+            )}
+            {isAdmin && (
+              <button
+                onClick={() => setShowPurgeModal(true)}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-red-700 bg-red-100 rounded-lg hover:bg-red-200 transition-colors font-medium"
+              >
+                <FiTrash2 />
+                Purge GPS
               </button>
             )}
           </div>

@@ -316,6 +316,8 @@ export const trackingAPI = {
   getUserHistory: (userId, eventId) => api.get(`/tracking/history/${userId}/${eventId}`).catch(handleApiError),
   getAlerts: (params) => api.get('/tracking/alerts', { params }).catch(handleApiError),
   recordLocation: (data) => api.post('/tracking/record', data).catch(handleApiError),
+  purgeHistory: (data) => api.delete('/tracking/purge', { data }).catch(handleApiError),
+  getPurgeCount: (params) => api.get('/tracking/purge/count', { params }).catch(handleApiError),
 };
 
 // Geofencing API

@@ -155,4 +155,110 @@ router.get('/history/:userId/:eventId', async (req, res) => {
   }
 });
 
+// DELETE /api/tracking/purge - Purger l'historique GPS (admin uniquement)
+router.delete('/purge', authorize('admin'), async (req, res) => {
+  try {
+    const { eventId, userId, startDate, endDate, olderThanDays } = req.body;
+    const { GeoTracking } = require('../models');
+    const { Op } = require('sequelize');
+
+    // Au moins un critère obligatoire
+    if (!eventId && !userId && !olderThanDays && !startDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Au moins un critère requis : eventId, userId, startDate, ou olderThanDays'
+      });
+    }
+
+    const where = {};
+    if (eventId)  where.eventId  = eventId;
+    if (userId)   where.userId   = userId;
+
+    if (olderThanDays) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - parseInt(olderThanDays));
+      where.recordedAt = { [Op.lt]: cutoff };
+    } else if (startDate && endDate) {
+      where.recordedAt = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+    } else if (startDate) {
+      where.recordedAt = { [Op.gte]: new Date(startDate) };
+    } else if (endDate) {
+      where.recordedAt = { [Op.lte]: new Date(endDate) };
+    }
+
+    // Compter avant suppression
+    const count = await GeoTracking.count({ where });
+
+    if (count === 0) {
+      return res.json({
+        success: true,
+        message: 'Aucun enregistrement trouvé avec ces critères',
+        data: { deleted: 0 }
+      });
+    }
+
+    await GeoTracking.destroy({ where });
+
+    // Audit log
+    try {
+      const { ActivityLog } = require('../models');
+      await ActivityLog.create({
+        userId: req.user.id,
+        action: 'DELETE',
+        entityType: 'tracking',
+        entityId: eventId || null,
+        description: `Purge historique GPS: ${count} entrées supprimées${eventId ? ` (événement #${eventId})` : ''}${userId ? ` (agent #${userId})` : ''}${olderThanDays ? ` (>  ${olderThanDays} jours)` : ''}`,
+        status: 'success',
+        ipAddress: req.ip,
+        newValues: JSON.stringify({ eventId, userId, olderThanDays, startDate, endDate, deleted: count })
+      });
+    } catch (_) {}
+
+    res.json({
+      success: true,
+      message: `${count} enregistrement(s) GPS supprimé(s) avec succès`,
+      data: { deleted: count }
+    });
+  } catch (error) {
+    console.error('❌ Erreur purge historique GPS:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la purge de l\'historique GPS',
+      error: error.message
+    });
+  }
+});
+
+// GET /api/tracking/purge/count - Prévisualiser le nombre à supprimer (admin)
+router.get('/purge/count', authorize('admin'), async (req, res) => {
+  try {
+    const { eventId, userId, startDate, endDate, olderThanDays } = req.query;
+    const { GeoTracking } = require('../models');
+    const { Op } = require('sequelize');
+
+    const where = {};
+    if (eventId)  where.eventId  = eventId;
+    if (userId)   where.userId   = userId;
+
+    if (olderThanDays) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - parseInt(olderThanDays));
+      where.recordedAt = { [Op.lt]: cutoff };
+    } else if (startDate && endDate) {
+      where.recordedAt = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+    } else if (startDate) {
+      where.recordedAt = { [Op.gte]: new Date(startDate) };
+    } else if (endDate) {
+      where.recordedAt = { [Op.lte]: new Date(endDate) };
+    }
+
+    const count = await GeoTracking.count({ where });
+    const total = await GeoTracking.count();
+
+    res.json({ success: true, data: { count, total } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;
