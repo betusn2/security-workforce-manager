@@ -2,16 +2,24 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs').promises;
 const path = require('path');
-const { exec, spawn } = require('child_process');
-const util = require('util');
-const execAsync = util.promisify(exec);
+const os = require('os');
 const multer = require('multer');
 const { sequelize, ActivityLog, ScheduledBackup } = require('../models');
 
-// Configuration multer pour upload de fichiers
+// Cache mémoire pour les backups (système de fichiers éphémère sur Render)
+const backupCache = new Map(); // filename → { sql, createdAt, size, type }
+const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 heures
+
+// Répertoire de sauvegarde : /tmp en production (Render), local en développement
+const BACKUP_DIR = process.env.NODE_ENV === 'production'
+  ? path.join(os.tmpdir(), 'security-guard-backups')
+  : path.join(__dirname, '../../backups');
+const UPLOADS_DIR = path.join(BACKUP_DIR, 'uploads');
+
+// Multer config
 const upload = multer({
-  dest: path.join(__dirname, '../../backups/uploads/'),
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB max
+  dest: os.tmpdir(),
+  limits: { fileSize: 500 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/sql' || file.originalname.endsWith('.sql')) {
       cb(null, true);
@@ -21,24 +29,15 @@ const upload = multer({
   }
 });
 
-// Répertoires de sauvegarde
-const BACKUP_DIR = path.join(__dirname, '../../backups');
-const UPLOADS_DIR = path.join(BACKUP_DIR, 'uploads');
-
-// Créer les répertoires si ils n'existent pas
 const ensureDirectories = async () => {
   try {
     await fs.mkdir(BACKUP_DIR, { recursive: true });
     await fs.mkdir(UPLOADS_DIR, { recursive: true });
-  } catch (error) {
-    console.log('Répertoires de sauvegarde déjà existants');
-  }
+  } catch (_) {}
 };
 
-// Utilitaires
 const formatDate = () => {
-  const now = new Date();
-  return now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 };
 
 const getDatabaseConfig = () => {
@@ -47,46 +46,10 @@ const getDatabaseConfig = () => {
   return config[env];
 };
 
-// Utilitaire pour trouver les outils MySQL de Laragon
-const getMySQLPath = () => {
-  const laragonPath = 'C:\\laragon\\bin\\mysql';
-  const possiblePaths = [
-    `${laragonPath}\\mysql-8.4.3-winx64\\bin`,
-    `${laragonPath}\\mysql-8.0.30-winx64\\bin`,
-    `${laragonPath}\\mysql-8.1.0-winx64\\bin`,
-    `${laragonPath}\\mysql-5.7.44-winx64\\bin`,
-    `${laragonPath}\\mysql-8.0.28-winx64\\bin`,
-    `${laragonPath}\\mysql-8.0.32-winx64\\bin`
-  ];
-  
-  // En développement, essayer de trouver un chemin qui existe
-  const fs_sync = require('fs');
-  for (const mysqlPath of possiblePaths) {
-    try {
-      if (fs_sync.existsSync(`${mysqlPath}\\mysqldump.exe`)) {
-        console.log(`✅ MySQL trouvé dans: ${mysqlPath}`);
-        return mysqlPath;
-      }
-    } catch (error) {
-      // Continue vers le chemin suivant
-    }
-  }
-  
-  console.log('⚠️ MySQL non trouvé dans Laragon, utilisation du PATH système');
-  // Fallback vers PATH système (peut fonctionner si MySQL est dans PATH)
-  return '';
-};
-
 const getFileSize = async (filePath) => {
-  try {
-    const stats = await fs.stat(filePath);
-    return stats.size;
-  } catch (error) {
-    return 0;
-  }
+  try { return (await fs.stat(filePath)).size; } catch { return 0; }
 };
 
-// Fonction pour enregistrer les logs d'activité
 const logActivity = async (req, action, description, status = 'success', metadata = {}) => {
   try {
     await ActivityLog.create({
@@ -96,59 +59,123 @@ const logActivity = async (req, action, description, status = 'success', metadat
       entityType: 'database',
       entityId: null,
       status,
-      ipAddress: req.ip || req.connection.remoteAddress,
+      ipAddress: req.ip || req.connection?.remoteAddress,
       userAgent: req.get('User-Agent'),
-      metadata: JSON.stringify(metadata)
+      newValues: JSON.stringify(metadata)
     });
   } catch (error) {
-    console.error('Erreur lors de l\'enregistrement du log:', error);
+    console.error('Erreur log activité:', error.message);
   }
 };
 
-// Fonction pour nettoyer les anciennes sauvegardes (garder seulement les N plus récentes)
+// Auto-sync ScheduledBackup table si elle n'existe pas
+const ensureScheduledBackupTable = async () => {
+  try {
+    await ScheduledBackup.sync({ force: false });
+  } catch (err) {
+    console.error('Erreur sync ScheduledBackup:', err.message);
+  }
+};
+
+// Génération SQL pure JS - remplace mysqldump (fonctionne sur tout environnement)
+const generateSQLContent = async (type) => {
+  const dbConfig = getDatabaseConfig();
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+  let sql = `-- ============================================================\n`;
+  sql += `-- Security Guard Manager - Database Backup\n`;
+  sql += `-- Generated : ${now}\n`;
+  sql += `-- Type      : ${type}\n`;
+  sql += `-- Database  : ${dbConfig.database}\n`;
+  sql += `-- ============================================================\n\n`;
+  sql += `SET FOREIGN_KEY_CHECKS=0;\n`;
+  sql += `SET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n`;
+  sql += `SET NAMES utf8mb4;\n\n`;
+
+  // Liste des tables
+  const [tablesRaw] = await sequelize.query('SHOW TABLES');
+  const tableKey = `Tables_in_${dbConfig.database}`;
+  const tables = tablesRaw.map(t => t[tableKey] || Object.values(t)[0]);
+  console.log(`📋 Génération SQL pour ${tables.length} tables (type: ${type})`);
+
+  for (const tableName of tables) {
+    try {
+      sql += `\n-- ----------------------------\n`;
+      sql += `-- Table: \`${tableName}\`\n`;
+      sql += `-- ----------------------------\n`;
+      sql += `DROP TABLE IF EXISTS \`${tableName}\`;\n`;
+
+      // Schéma
+      const [[createResult]] = await sequelize.query(`SHOW CREATE TABLE \`${tableName}\``);
+      sql += (createResult['Create Table'] || createResult[`Create Table`]) + ';\n';
+
+      if (type === 'full') {
+        const [rows] = await sequelize.query(`SELECT * FROM \`${tableName}\``);
+        if (rows.length > 0) {
+          const cols = Object.keys(rows[0]).map(c => `\`${c}\``).join(', ');
+          sql += `\nLOCK TABLES \`${tableName}\` WRITE;\n`;
+
+          const batchSize = 200;
+          for (let i = 0; i < rows.length; i += batchSize) {
+            const batch = rows.slice(i, i + batchSize);
+            const valuesStr = batch.map(row => {
+              const vals = Object.values(row).map(v => {
+                if (v === null || v === undefined) return 'NULL';
+                if (typeof v === 'boolean')  return v ? 1 : 0;
+                if (typeof v === 'number')   return v;
+                if (v instanceof Date)       return `'${v.toISOString().slice(0,19).replace('T',' ')}'`;
+                const s = String(v)
+                  .replace(/\\/g, '\\\\')
+                  .replace(/'/g, "\\'")  
+                  .replace(/\n/g, '\\n')
+                  .replace(/\r/g, '\\r')
+                  .replace(/\0/g, '\\0');
+                return `'${s}'`;
+              }).join(', ');
+              return `(${vals})`;
+            }).join(',\n');
+            sql += `INSERT INTO \`${tableName}\` (${cols}) VALUES\n${valuesStr};\n`;
+          }
+          sql += `UNLOCK TABLES;\n`;
+        }
+      }
+    } catch (tableErr) {
+      console.warn(`⚠️ Table ${tableName} ignorée: ${tableErr.message}`);
+      sql += `-- ERREUR table ${tableName}: ${tableErr.message}\n`;
+    }
+  }
+
+  sql += `\nSET FOREIGN_KEY_CHECKS=1;\n`;
+  sql += `\n-- Backup terminé : ${new Date().toISOString()}\n`;
+  return sql;
+};
+
+// Nettoyage cache expiré
+const cleanExpiredCache = () => {
+  const now = Date.now();
+  for (const [key, val] of backupCache.entries()) {
+    if (now - val.createdAt > CACHE_TTL) backupCache.delete(key);
+  }
+};
+
 const cleanupOldBackups = async (retentionCount = 3) => {
   try {
     await ensureDirectories();
     const files = await fs.readdir(BACKUP_DIR);
-    const sqlFiles = files.filter(file => file.endsWith('.sql'));
-    
-    if (sqlFiles.length <= retentionCount) {
-      console.log(`📁 ${sqlFiles.length} sauvegardes trouvées (limite: ${retentionCount}). Aucun nettoyage nécessaire.`);
-      return { deleted: 0, kept: sqlFiles.length };
-    }
-    
-    // Obtenir les infos de tous les fichiers
-    const backupsWithStats = await Promise.all(
-      sqlFiles.map(async (filename) => {
-        const filePath = path.join(BACKUP_DIR, filename);
-        const stats = await fs.stat(filePath);
-        return {
-          filename,
-          filePath,
-          created_at: stats.mtime
-        };
-      })
-    );
-    
-    // Trier par date (plus récent en premier)
-    backupsWithStats.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    
-    // Garder seulement les N plus récents, supprimer les autres
-    const toKeep = backupsWithStats.slice(0, retentionCount);
-    const toDelete = backupsWithStats.slice(retentionCount);
-    
-    console.log(`🗑️ Nettoyage: Garder ${toKeep.length} sauvegardes, supprimer ${toDelete.length}`);
-    
-    // Supprimer les anciennes
-    for (const backup of toDelete) {
-      await fs.unlink(backup.filePath);
-      console.log(`  ❌ Supprimé: ${backup.filename}`);
-    }
-    
-    return { deleted: toDelete.length, kept: toKeep.length };
-  } catch (error) {
-    console.error('❌ Erreur nettoyage sauvegardes:', error);
-    throw error;
+    const sqlFiles = files.filter(f => f.endsWith('.sql'));
+    if (sqlFiles.length <= retentionCount) return { deleted: 0, kept: sqlFiles.length };
+    const withStats = await Promise.all(sqlFiles.map(async filename => {
+      const fp = path.join(BACKUP_DIR, filename);
+      const stats = await fs.stat(fp);
+      return { filename, filePath: fp, mtime: stats.mtime };
+    }));
+    withStats.sort((a, b) => b.mtime - a.mtime);
+    const toDelete = withStats.slice(retentionCount);
+    for (const f of toDelete) await fs.unlink(f.filePath).catch(() => {});
+    return { deleted: toDelete.length, kept: retentionCount };
+  } catch (err) {
+    console.error('Erreur cleanupOldBackups:', err);
+    return { deleted: 0, kept: 0 };
   }
 };
 
@@ -253,131 +280,54 @@ router.post('/validate', async (req, res) => {
 
 /**
  * POST /admin/database/backup
- * Créer une sauvegarde
+ * Créer une sauvegarde (pure JS - pas de mysqldump requis)
  */
 router.post('/backup', async (req, res) => {
   await ensureDirectories();
-  
+  const { type = 'full' } = req.body;
+
   try {
-    const { type = 'full' } = req.body;
     const dbConfig = getDatabaseConfig();
     const timestamp = formatDate();
     const filename = `backup_${dbConfig.database}_${timestamp}_${type}.sql`;
     const filePath = path.join(BACKUP_DIR, filename);
 
-    let command;
+    console.log(`🔧 Démarrage sauvegarde pure JS (type: ${type})`);
 
-    if (dbConfig.dialect === 'mysql') {
-      const mysqlPath = getMySQLPath();
-      const mysqldumpPath = mysqlPath ? path.join(mysqlPath, 'mysqldump.exe') : 'mysqldump';
-      
-      const args = [
-        `-h${dbConfig.host}`,
-        `-P${dbConfig.port}`,
-        `-u${dbConfig.username}`
-      ];
-      
-      if (dbConfig.password) {
-        args.push(`-p${dbConfig.password}`);
-      }
-      
-      // Options selon le type
-      if (type === 'full') {
-        args.push('--single-transaction', '--routines', '--triggers');
-      } else {
-        args.push('--no-data', '--routines');
-      }
-      
-      args.push(dbConfig.database);
-      
-      console.log(`🔧 Exécution sauvegarde: ${mysqldumpPath} ${args.join(' ').replace(/-p\w+/, '-p***')}`);
-      
-      // Utiliser spawn au lieu d'exec pour mieux contrôler les streams
-      await new Promise((resolve, reject) => {
-        const mysqldump = spawn(mysqldumpPath, args, {
-          stdio: ['ignore', 'pipe', 'pipe']
-        });
-        
-        const writeStream = require('fs').createWriteStream(filePath);
-        mysqldump.stdout.pipe(writeStream);
-        
-        let stderr = '';
-        mysqldump.stderr.on('data', (data) => {
-          stderr += data.toString();
-        });
-        
-        mysqldump.on('close', (code) => {
-          writeStream.end();
-          if (code !== 0) {
-            console.error(`❌ mysqldump exit code: ${code}`);
-            console.error(`❌ stderr: ${stderr}`);
-            reject(new Error(`mysqldump failed with exit code ${code}: ${stderr}`));
-          } else {
-            console.log(`✅ mysqldump completed successfully`);
-            if (stderr && !stderr.includes('Warning') && !stderr.includes('Using a password on the command line')) {
-              console.log(`📝 stderr (warnings): ${stderr}`);
-            }
-            resolve();
-          }
-        });
-        
-        mysqldump.on('error', (error) => {
-          console.error(`❌ mysqldump spawn error:`, error);
-          reject(new Error(`Failed to start mysqldump: ${error.message}`));
-        });
-      });
-      
-    } else if (dbConfig.dialect === 'postgres') {
-      const options = type === 'full' ? '' : '--schema-only';
-      const pgPassword = dbConfig.password ? `PGPASSWORD=${dbConfig.password} ` : '';
-      
-      command = `${pgPassword}pg_dump -h ${dbConfig.host} -p ${dbConfig.port} -U ${dbConfig.username} ${options} ${dbConfig.database} > "${filePath}"`;
-    } else {
-      throw new Error(`Type de base non supporté: ${dbConfig.dialect}`);
+    // Générer le SQL en mémoire
+    const sqlContent = await generateSQLContent(type);
+    const size = Buffer.byteLength(sqlContent, 'utf8');
+
+    // Stocker en cache mémoire (toujours disponible)
+    cleanExpiredCache();
+    backupCache.set(filename, { sql: sqlContent, createdAt: Date.now(), size, type });
+    console.log(`💾 Cache: ${filename} ajouté (${size} octets)`);
+
+    // Essayer aussi d'écrire sur disque
+    try {
+      await fs.writeFile(filePath, sqlContent, 'utf8');
+      console.log(`💾 Disque: ${filename} écrit (${size} octets)`);
+    } catch (fsErr) {
+      console.warn(`⚠️ Impossible d'écrire sur disque (normal sur Render): ${fsErr.message}`);
     }
 
-    // Vérifier que le fichier a été créé
-    const fileSize = await getFileSize(filePath);
-    console.log(`📁 Taille fichier créé: ${fileSize} octets`);
-    
-    if (fileSize === 0) {
-      // Essayer de lire le fichier pour voir s'il contient quelque chose
-      try {
-        const content = await fs.readFile(filePath, 'utf8');
-        console.log(`📄 Contenu fichier (100 premiers caractères): ${content.substring(0, 100)}`);
-        await logActivity(req, 'backup_failed', `Échec sauvegarde ${type}: fichier vide`, 'error', { filename, type, fileSize });
-        throw new Error(`Fichier de sauvegarde vide. Contenu: ${content.length} caractères`);
-      } catch (readError) {
-        await logActivity(req, 'backup_failed', `Échec sauvegarde ${type}: fichier vide et illisible`, 'error', { filename, type, error: readError.message });
-        throw new Error(`Fichier de sauvegarde vide et illisible: ${readError.message}`);
-      }
-    }
-
-    // Enregistrer le succès dans les logs
     await logActivity(req, 'database_backup_created', `Sauvegarde ${type} créée: ${filename}`, 'success', {
-      filename,
-      type,
-      fileSize,
-      database: dbConfig.database
+      filename, type, size, database: dbConfig.database
     });
 
     res.json({
       success: true,
       filename,
-      size: fileSize,
+      size,
       type,
-      message: `Sauvegarde ${type} créée avec succès`
+      message: `Sauvegarde ${type} créée avec succès (${(size / 1024).toFixed(1)} KB)`
     });
 
   } catch (error) {
-    console.error('Erreur sauvegarde:', error);
-    
-    // Enregistrer l'échec dans les logs
-    await logActivity(req, 'database_backup_failed', `Échec création sauvegarde: ${error.message}`, 'error', {
-      error: error.message,
-      type: req.body.type || 'full'
+    console.error('❌ Erreur sauvegarde:', error);
+    await logActivity(req, 'database_backup_failed', `Échec sauvegarde: ${error.message}`, 'error', {
+      error: error.message, type
     });
-    
     res.status(500).json({
       success: false,
       message: `Erreur lors de la sauvegarde: ${error.message}`
@@ -387,245 +337,191 @@ router.post('/backup', async (req, res) => {
 
 /**
  * GET /admin/database/verify/:filename
- * Vérifier l'intégrité d'un fichier de sauvegarde
  */
 router.get('/verify/:filename', async (req, res) => {
+  const { filename } = req.params;
   try {
-    const { filename } = req.params;
+    // Vérifier d'abord dans le cache mémoire
+    const cached = backupCache.get(filename);
+    if (cached) {
+      return res.json({
+        valid: cached.size > 100,
+        size: cached.size,
+        source: 'cache',
+        checks: { has_content: cached.size > 100 }
+      });
+    }
+    // Puis sur disque
     const filePath = path.join(BACKUP_DIR, filename);
-    
-    console.log(`🔍 Vérification simple de ${filename}`);
-    
-    // Vérification basique d'existence et taille
     await fs.access(filePath);
     const stats = await fs.stat(filePath);
-    
-    console.log(`📊 Fichier trouvé: ${stats.size} octets`);
-    
-    const isValid = stats.size > 100; // Si plus de 100 octets, considéré comme valide
-    
-    res.json({
-      valid: isValid,
-      size: stats.size,
-      checks: {
-        has_content: isValid
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Erreur vérification simple:', error.message);
-    res.status(404).json({ 
-      valid: false, 
-      message: `Fichier non trouvé: ${error.message}` 
-    });
+    res.json({ valid: stats.size > 100, size: stats.size, source: 'disk', checks: { has_content: stats.size > 100 } });
+  } catch {
+    res.status(404).json({ valid: false, message: 'Fichier non trouvé' });
   }
 });
 
 /**
  * GET /admin/database/backups
- * Lister les sauvegardes disponibles
+ * Lister les sauvegardes (disque + cache mémoire)
  */
 router.get('/backups', async (req, res) => {
   await ensureDirectories();
-  
   try {
-    const files = await fs.readdir(BACKUP_DIR);
-    const sqlFiles = files.filter(file => file.endsWith('.sql'));
-    
-    const backups = await Promise.all(
-      sqlFiles.map(async (filename) => {
-        const filePath = path.join(BACKUP_DIR, filename);
-        const stats = await fs.stat(filePath);
-        
-        // Extraire type depuis le nom de fichier
-        const type = filename.includes('_full') ? 'full' : 'structure';
-        
-        return {
+    const backups = [];
+
+    // Fichiers sur disque
+    try {
+      const files = (await fs.readdir(BACKUP_DIR)).filter(f => f.endsWith('.sql'));
+      for (const filename of files) {
+        const fp = path.join(BACKUP_DIR, filename);
+        const stats = await fs.stat(fp);
+        backups.push({
           filename,
           size: stats.size,
           created_at: stats.mtime,
-          type
-        };
-      })
-    );
+          type: filename.includes('_full') ? 'full' : 'structure',
+          source: 'disk'
+        });
+      }
+    } catch (_) {}
 
-    // Trier par date (plus récent en premier)
+    // Cache mémoire (ajout si absent du disque)
+    cleanExpiredCache();
+    for (const [filename, cached] of backupCache.entries()) {
+      if (!backups.find(b => b.filename === filename)) {
+        backups.push({
+          filename,
+          size: cached.size,
+          created_at: new Date(cached.createdAt),
+          type: cached.type || 'full',
+          source: 'cache'
+        });
+      }
+    }
+
     backups.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
     res.json({ success: true, backups });
   } catch (error) {
-    console.error('Erreur liste sauvegardes:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Erreur lors de la récupération des sauvegardes' 
-    });
+    res.status(500).json({ success: false, message: 'Erreur récupération sauvegardes' });
   }
 });
 
 /**
  * GET /admin/database/download/:filename
- * Télécharger une sauvegarde
+ * Télécharger une sauvegarde (cache d'abord, puis disque)
  */
 router.get('/download/:filename', async (req, res) => {
+  const { filename } = req.params;
+  if (!filename.endsWith('.sql') || filename.includes('..')) {
+    return res.status(400).json({ message: 'Nom de fichier invalide' });
+  }
   try {
-    const { filename } = req.params;
-    const filePath = path.join(BACKUP_DIR, filename);
-    
-    // Vérifier sécurité: seulement fichiers .sql
-    if (!filename.endsWith('.sql') || filename.includes('..')) {
-      return res.status(400).json({ message: 'Nom de fichier invalide' });
+    // 1) Cache mémoire
+    const cached = backupCache.get(filename);
+    if (cached) {
+      await logActivity(req, 'database_backup_downloaded', `Téléchargement (cache): ${filename}`, 'success', { filename, size: cached.size });
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Type', 'application/sql');
+      return res.send(cached.sql);
     }
-    
+    // 2) Disque
+    const filePath = path.join(BACKUP_DIR, filename);
     await fs.access(filePath);
-    
-    // Enregistrer le téléchargement dans les logs
     const stats = await fs.stat(filePath);
-    await logActivity(req, 'database_backup_downloaded', `Sauvegarde téléchargée: ${filename}`, 'success', {
-      filename,
-      fileSize: stats.size
-    });
-    
+    await logActivity(req, 'database_backup_downloaded', `Téléchargement (disque): ${filename}`, 'success', { filename, fileSize: stats.size });
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', 'application/sql');
     res.sendFile(filePath);
-    
-  } catch (error) {
-    res.status(404).json({ message: 'Fichier non trouvé' });
+  } catch {
+    res.status(404).json({ message: 'Fichier non trouvé (cache expiré ou serveur redémarré - créez un nouveau backup)' });
   }
 });
 
 /**
  * DELETE /admin/database/delete/:filename
- * Supprimer une sauvegarde
  */
 router.delete('/delete/:filename', async (req, res) => {
+  const { filename } = req.params;
+  if (!filename.endsWith('.sql') || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    return res.status(400).json({ success: false, message: 'Nom de fichier invalide' });
+  }
   try {
-    const { filename } = req.params;
+    let deleted = false;
+    // Supprimer du cache
+    if (backupCache.has(filename)) { backupCache.delete(filename); deleted = true; }
+    // Supprimer du disque
     const filePath = path.join(BACKUP_DIR, filename);
-    
-    console.log(`🗑️ Tentative de suppression: ${filename}`);
-    
-    // Vérifier sécurité: seulement fichiers .sql et pas de path traversal
-    if (!filename.endsWith('.sql') || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Nom de fichier invalide ou dangereux' 
-      });
-    }
-    
-    // Vérifier que le fichier existe
-    await fs.access(filePath);
-    
-    // Obtenir les informations du fichier avant suppression
-    const stats = await fs.stat(filePath);
-    const fileSize = stats.size;
-    
-    // Supprimer le fichier
-    await fs.unlink(filePath);
-    
-    console.log(`✅ Fichier supprimé: ${filename} (${fileSize} octets)`);
-    
-    // Enregistrer l'action dans les logs
-    await logActivity(req, 'database_backup_deleted', `Sauvegarde supprimée: ${filename}`, 'success', {
-      filename,
-      fileSize,
-      path: filePath
-    });
-    
-    res.json({ 
-      success: true, 
-      message: `Sauvegarde "${filename}" supprimée avec succès`,
-      deleted_file: filename,
-      deleted_size: fileSize
-    });
-    
+    try {
+      const stats = await fs.stat(filePath);
+      await fs.unlink(filePath);
+      deleted = true;
+      await logActivity(req, 'database_backup_deleted', `Sauvegarde supprimée: ${filename}`, 'success', { filename, fileSize: stats.size });
+    } catch (_) {}
+    if (!deleted) return res.status(404).json({ success: false, message: 'Sauvegarde non trouvée' });
+    res.json({ success: true, message: `Sauvegarde "${filename}" supprimée` });
   } catch (error) {
-    console.error('❌ Erreur suppression sauvegarde:', error);
-    
-    if (error.code === 'ENOENT') {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Fichier de sauvegarde non trouvé' 
-      });
-    }
-    
-    res.status(500).json({ 
-      success: false, 
-      message: `Erreur lors de la suppression: ${error.message}` 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
+// Utilitaire : exécuter un script SQL via Sequelize (ligne par ligne)
+const executeSQLScript = async (sqlContent) => {
+  // Retirer les commentaires et diviser par ;
+  const statements = sqlContent
+    .split('\n')
+    .filter(line => !line.trim().startsWith('--') && !line.trim().startsWith('/*'))
+    .join('\n')
+    .split(';')
+    .map(s => s.trim())
+    .filter(s => s.length > 5);
+
+  let executed = 0;
+  let errors = [];
+  for (const stmt of statements) {
+    try {
+      await sequelize.query(stmt);
+      executed++;
+    } catch (err) {
+      // Continuer même si une instruction échoue
+      errors.push(err.message.substring(0, 100));
+    }
+  }
+  return { executed, errors: errors.slice(0, 10), total: statements.length };
+};
+
 /**
  * POST /admin/database/restore
- * Restaurer depuis sauvegarde locale
+ * Restaurer depuis sauvegarde locale (cache ou disque)
  */
 router.post('/restore', async (req, res) => {
+  const { filename } = req.body;
   try {
-    const { filename } = req.body;
-    const filePath = path.join(BACKUP_DIR, filename);
-    
-    // Vérifier que le fichier existe
-    await fs.access(filePath);
-    
-    const dbConfig = getDatabaseConfig();
-    let command;
-
-    if (dbConfig.dialect === 'mysql') {
-      // Utiliser le chemin complet vers mysql.exe
-      const mysqlPath = getMySQLPath();
-      if (!mysqlPath) {
-        throw new Error('MySQL non trouvé dans le système');
-      }
-      
-      const mysqlExe = path.join(mysqlPath, 'mysql.exe');
-      const baseCmd = `"${mysqlExe}" -h${dbConfig.host} -P${dbConfig.port} -u${dbConfig.username}`;
-      const passwordPart = dbConfig.password ? ` -p${dbConfig.password}` : '';
-      command = `${baseCmd}${passwordPart} ${dbConfig.database} < "${filePath}"`;
-      
-    } else if (dbConfig.dialect === 'postgres') {
-      const pgPassword = dbConfig.password ? `PGPASSWORD=${dbConfig.password} ` : '';
-      command = `${pgPassword}psql -h ${dbConfig.host} -p ${dbConfig.port} -U ${dbConfig.username} -d ${dbConfig.database} -f "${filePath}"`;
-    } else {
-      throw new Error(`Type de base non supporté: ${dbConfig.dialect}`);
+    let sqlContent = null;
+    // 1) Cache mémoire
+    const cached = backupCache.get(filename);
+    if (cached) sqlContent = cached.sql;
+    // 2) Disque
+    if (!sqlContent) {
+      const filePath = path.join(BACKUP_DIR, filename);
+      await fs.access(filePath);
+      sqlContent = await fs.readFile(filePath, 'utf8');
     }
+    if (!sqlContent) throw new Error('Fichier non trouvé (cache expiré - recréez un backup)');
 
-    console.log(`🔄 Restauration: ${command.replace(/-p\w+/, '-p***')}`);
-    
-    const { stdout, stderr } = await execAsync(command);
-    
-    if (stderr && stderr.toLowerCase().includes('error')) {
-      throw new Error(`Erreur restauration: ${stderr}`);
-    }
+    console.log(`🔄 Restauration via Sequelize: ${filename}`);
+    const result = await executeSQLScript(sqlContent);
+    console.log(`✅ Restauration: ${result.executed}/${result.total} instructions exécutées`);
 
-    console.log(`✅ Restauration réussie depuis: ${filename}`);
-
-    // Enregistrer le succès dans les logs
-    await logActivity(req, 'database_restored', `Base de données restaurée depuis: ${filename}`, 'success', {
-      filename,
-      database: dbConfig.database,
-      restored_at: new Date().toISOString()
-    });
-
+    await logActivity(req, 'database_restored', `BD restaurée depuis: ${filename}`, 'success', { filename, ...result });
     res.json({
       success: true,
-      message: 'Base de données restaurée avec succès',
-      restored_from: filename
+      message: `Base restaurée avec succès: ${result.executed} instructions exécutées`,
+      restored_from: filename, ...result
     });
-
   } catch (error) {
-    console.error('❌ Erreur restauration:', error.message);
-    
-    // Enregistrer l'échec dans les logs
-    await logActivity(req, 'database_restore_failed', `Échec restauration: ${error.message}`, 'error', {
-      filename: req.body.filename,
-      error: error.message
-    });
-    
-    res.status(500).json({
-      success: false,
-      message: `Erreur lors de la restauration: ${error.message}`
-    });
+    await logActivity(req, 'database_restore_failed', `Échec restauration: ${error.message}`, 'error', { filename });
+    res.status(500).json({ success: false, message: `Erreur restauration: ${error.message}` });
   }
 });
 
@@ -634,156 +530,77 @@ router.post('/restore', async (req, res) => {
  * Restaurer depuis fichier uploadé
  */
 router.post('/restore/upload', upload.single('backup'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'Aucun fichier fourni' });
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'Aucun fichier de sauvegarde fourni' });
-    }
+    const sqlContent = await fs.readFile(req.file.path, 'utf8');
+    await fs.unlink(req.file.path).catch(() => {});
 
-    const uploadedPath = req.file.path;
-    const dbConfig = getDatabaseConfig();
-    let command;
+    console.log(`🔄 Restauration upload via Sequelize: ${req.file.originalname}`);
+    const result = await executeSQLScript(sqlContent);
 
-    if (dbConfig.dialect === 'mysql') {
-      const baseCmd = `mysql -h${dbConfig.host} -P${dbConfig.port} -u${dbConfig.username}`;
-      const passwordPart = dbConfig.password ? ` -p${dbConfig.password}` : '';
-      command = `${baseCmd}${passwordPart} ${dbConfig.database} < "${uploadedPath}"`;
-      
-    } else if (dbConfig.dialect === 'postgres') {
-      const pgPassword = dbConfig.password ? `PGPASSWORD=${dbConfig.password} ` : '';
-      command = `${pgPassword}psql -h ${dbConfig.host} -p ${dbConfig.port} -U ${dbConfig.username} -d ${dbConfig.database} -f "${uploadedPath}"`;
-    } else {
-      throw new Error(`Type de base non supporté: ${dbConfig.dialect}`);
-    }
-
-    console.log(`Restauration upload: ${command.replace(/-p\w+/, '-p***')}`);
-    
-    const { stdout, stderr } = await execAsync(command);
-    
-    // Nettoyer le fichier temporaire
-    await fs.unlink(uploadedPath).catch(() => {});
-    
-    if (stderr && stderr.toLowerCase().includes('error')) {
-      throw new Error(`Erreur restauration: ${stderr}`);
-    }
-
-    // Enregistrer le succès dans les logs
-    await logActivity(req, 'database_restored_upload', `Base de données restaurée depuis fichier uploadé: ${req.file.originalname}`, 'success', {
-      originalName: req.file.originalname,
-      fileSize: req.file.size,
-      database: dbConfig.database,
-      restored_at: new Date().toISOString()
+    await logActivity(req, 'database_restored_upload', `BD restaurée depuis upload: ${req.file.originalname}`, 'success', {
+      originalName: req.file.originalname, fileSize: req.file.size, ...result
     });
-
     res.json({
       success: true,
-      message: 'Base de données restaurée avec succès depuis fichier externe',
-      restored_from: req.file.originalname
+      message: `Base restaurée avec succès: ${result.executed} instructions exécutées`,
+      restored_from: req.file.originalname, ...result
     });
-
   } catch (error) {
-    // Nettoyer le fichier temporaire en cas d'erreur
-    if (req.file) {
-      await fs.unlink(req.file.path).catch(() => {});
-    }
-    
-    console.error('Erreur restauration upload:', error);
-    
-    // Enregistrer l'échec dans les logs
-    await logActivity(req, 'database_restore_upload_failed', `Échec restauration fichier uploadé: ${error.message}`, 'error', {
-      originalName: req.file?.originalname,
-      fileSize: req.file?.size,
-      error: error.message
-    });
-    
-    res.status(500).json({
-      success: false,
-      message: `Erreur lors de la restauration: ${error.message}`
-    });
+    if (req.file) await fs.unlink(req.file.path).catch(() => {});
+    await logActivity(req, 'database_restore_upload_failed', `Échec restauration upload: ${error.message}`, 'error', { originalName: req.file?.originalname });
+    res.status(500).json({ success: false, message: `Erreur restauration: ${error.message}` });
   }
 });
 
 /**
  * GET /admin/database/scheduled
- * Obtenir la configuration de sauvegarde planifiée
  */
 router.get('/scheduled', async (req, res) => {
   try {
-    const config = await ScheduledBackup.findOne({
-      order: [['createdAt', 'DESC']]
-    });
-    
+    await ensureScheduledBackupTable();
+    const config = await ScheduledBackup.findOne({ order: [['createdAt', 'DESC']] });
     if (!config) {
-      // Retourner une configuration par défaut
       return res.json({
         success: true,
-        config: {
-          enabled: false,
-          intervalDays: 7,
-          backupType: 'full',
-          retentionCount: 3,
-          lastRunAt: null,
-          nextRunAt: null
-        }
+        config: { enabled: false, intervalDays: 7, backupType: 'full', retentionCount: 3, lastRunAt: null, nextRunAt: null }
       });
     }
-    
     res.json({
       success: true,
       config: {
-        id: config.id,
-        enabled: config.enabled,
-        intervalDays: config.intervalDays,
-        backupType: config.backupType,
-        retentionCount: config.retentionCount,
-        lastRunAt: config.lastRunAt,
-        nextRunAt: config.nextRunAt,
-        createdAt: config.createdAt,
-        updatedAt: config.updatedAt
+        id: config.id, enabled: config.enabled, intervalDays: config.intervalDays,
+        backupType: config.backupType, retentionCount: config.retentionCount,
+        lastRunAt: config.lastRunAt, nextRunAt: config.nextRunAt,
+        createdAt: config.createdAt, updatedAt: config.updatedAt
       }
     });
   } catch (error) {
-    console.error('Erreur récupération config:', error);
-    res.status(500).json({
-      success: false,
-      message: `Erreur lors de la récupération de la configuration: ${error.message}`
+    console.error('Erreur récupération config scheduled:', error.message);
+    // Retourner config par défaut plutôt qu'un 500
+    res.json({
+      success: true,
+      config: { enabled: false, intervalDays: 7, backupType: 'full', retentionCount: 3, lastRunAt: null, nextRunAt: null },
+      warning: 'Table de configuration non disponible, valeurs par défaut utilisées'
     });
   }
 });
 
 /**
  * POST /admin/database/scheduled
- * Créer ou mettre à jour la configuration de sauvegarde planifiée
  */
 router.post('/scheduled', async (req, res) => {
   try {
+    await ensureScheduledBackupTable();
     const { enabled, intervalDays, backupType, retentionCount } = req.body;
-    
-    // Validation
     if (intervalDays && (intervalDays < 1 || intervalDays > 365)) {
-      return res.status(400).json({
-        success: false,
-        message: 'L\'intervalle doit être entre 1 et 365 jours'
-      });
+      return res.status(400).json({ success: false, message: 'L\'intervalle doit être entre 1 et 365 jours' });
     }
-    
-    if (retentionCount && (retentionCount < 1 || retentionCount > 100)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Le nombre de sauvegardes à garder doit être entre 1 et 100'
-      });
-    }
-    
-    // Vérifier si une configuration existe déjà
-    let config = await ScheduledBackup.findOne({
-      order: [['createdAt', 'DESC']]
-    });
-    
+    let config = await ScheduledBackup.findOne({ order: [['createdAt', 'DESC']] });
     const now = new Date();
     const daysInterval = intervalDays || config?.intervalDays || 7;
     const nextRun = new Date(now.getTime() + daysInterval * 24 * 60 * 60 * 1000);
-    
     if (config) {
-      // Mettre à jour la configuration existante
       await config.update({
         enabled: enabled !== undefined ? enabled : config.enabled,
         intervalDays: intervalDays || config.intervalDays,
@@ -792,7 +609,6 @@ router.post('/scheduled', async (req, res) => {
         nextRunAt: enabled === false ? null : nextRun
       });
     } else {
-      // Créer une nouvelle configuration
       config = await ScheduledBackup.create({
         enabled: enabled !== undefined ? enabled : true,
         intervalDays: intervalDays || 7,
@@ -802,36 +618,17 @@ router.post('/scheduled', async (req, res) => {
         createdBy: req.user?.id || null
       });
     }
-    
-    await logActivity(req, 'scheduled_backup_configured', 
-      `Configuration sauvegarde planifiée: ${enabled ? 'activée' : 'désactivée'}`, 
-      'success', 
-      {
-        intervalDays: config.intervalDays,
-        backupType: config.backupType,
-        retentionCount: config.retentionCount
-      }
-    );
-    
+    await logActivity(req, 'scheduled_backup_configured', `Config planifiée: ${enabled ? 'activée' : 'désactivée'}`, 'success', {
+      intervalDays: config.intervalDays, backupType: config.backupType, retentionCount: config.retentionCount
+    });
     res.json({
       success: true,
-      message: 'Configuration de sauvegarde planifiée enregistrée',
-      config: {
-        id: config.id,
-        enabled: config.enabled,
-        intervalDays: config.intervalDays,
-        backupType: config.backupType,
-        retentionCount: config.retentionCount,
-        lastRunAt: config.lastRunAt,
-        nextRunAt: config.nextRunAt
-      }
+      message: 'Configuration enregistrée',
+      config: { id: config.id, enabled: config.enabled, intervalDays: config.intervalDays, backupType: config.backupType, retentionCount: config.retentionCount, lastRunAt: config.lastRunAt, nextRunAt: config.nextRunAt }
     });
   } catch (error) {
     console.error('Erreur config scheduled backup:', error);
-    res.status(500).json({
-      success: false,
-      message: `Erreur lors de la configuration: ${error.message}`
-    });
+    res.status(500).json({ success: false, message: `Erreur: ${error.message}` });
   }
 });
 
