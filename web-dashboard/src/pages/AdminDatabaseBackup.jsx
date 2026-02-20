@@ -90,28 +90,32 @@ const AdminDatabaseBackup = () => {
           size
         });
 
-        // Étape 3: Téléchargement automatique local + vérification
-        setTimeout(async () => {
+        // Étape 3: Téléchargement automatique local depuis le contenu de la réponse (pas de 2ème requête)
+        setTimeout(() => {
           try {
-            // Téléchargement automatique
             setExportProgress(prev => ({ ...prev, message: '📥 Téléchargement local en cours...' }));
-            const dlRes = await api.get(`/admin/database/download/${filename}`, { responseType: 'blob' });
-            const url = window.URL.createObjectURL(new Blob([dlRes.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', filename);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(url);
-            toast.success(`✅ Sauvegarde créée et téléchargée localement: ${filename}`);
+            const sqlContent = response.data.content;
+            if (sqlContent) {
+              const blob = new Blob([sqlContent], { type: 'application/sql' });
+              const url = window.URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = url;
+              link.setAttribute('download', filename);
+              document.body.appendChild(link);
+              link.click();
+              link.remove();
+              window.URL.revokeObjectURL(url);
+              toast.success(`✅ Sauvegarde créée et téléchargée localement: ${filename}`);
+            } else {
+              toast.success(`✅ Sauvegarde créée: ${filename}`);
+            }
             fetchBackups();
           } catch (error) {
             toast.warning(`⚠️ Sauvegarde créée mais téléchargement auto échoué: ${error.message}`);
             fetchBackups();
           }
           setExportProgress(null);
-        }, 1000);
+        }, 500);
       } else {
         throw new Error(response.data.message || 'Erreur lors de la sauvegarde');
       }

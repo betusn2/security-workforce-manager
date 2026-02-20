@@ -320,6 +320,7 @@ router.post('/backup', async (req, res) => {
       filename,
       size,
       type,
+      content: sqlContent,
       message: `Sauvegarde ${type} créée avec succès (${(size / 1024).toFixed(1)} KB)`
     });
 
