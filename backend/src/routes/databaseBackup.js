@@ -4,11 +4,42 @@ const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
 const multer = require('multer');
+const bcrypt = require('bcryptjs');
 const { sequelize, ActivityLog, ScheduledBackup } = require('../models');
 
 // Cache mémoire pour les backups (système de fichiers éphémère sur Render)
 const backupCache = new Map(); // filename → { sql, createdAt, size, type }
 const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 heures
+
+/**
+ * Après chaque restauration: recréer l'admin si absent
+ * (la restauration peut écraser la table users)
+ */
+const ensureAdminUser = async () => {
+  try {
+    const [users] = await sequelize.query(
+      `SELECT id FROM users WHERE email = 'admin@security.com' AND deleted_at IS NULL LIMIT 1`
+    );
+    if (users.length > 0) {
+      console.log('✅ Admin user already exists after restore');
+      return;
+    }
+    // Admin absent → le recréer
+    const hashedPassword = await bcrypt.hash('Admin123!', 12);
+    const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+    await sequelize.query(`
+      INSERT INTO users (id, employee_id, first_name, last_name, email, password, phone, role, status, created_at, updated_at)
+      VALUES (?, 'ADMIN001', 'Administrateur', 'Principal', 'admin@security.com', ?, '+33600000000', 'admin', 'active', NOW(), NOW())
+      ON DUPLICATE KEY UPDATE email = 'admin@security.com', password = ?, role = 'admin', status = 'active', updated_at = NOW()
+    `, { replacements: [uuid, hashedPassword, hashedPassword] });
+    console.log('✅ Admin user recréé après restauration (admin@security.com / Admin123!)');
+  } catch (err) {
+    console.error('⚠️ ensureAdminUser error:', err.message);
+  }
+};
 
 // Répertoire de sauvegarde : /tmp en production (Render), local en développement
 const BACKUP_DIR = process.env.NODE_ENV === 'production'
@@ -533,6 +564,8 @@ router.post('/restore', async (req, res) => {
     console.log(`✅ Restauration: ${result.executed}/${result.total} instructions exécutées`);
 
     await logActivity(req, 'database_restored', `BD restaurée depuis: ${filename}`, 'success', { filename, ...result });
+    // Recréer admin si la restauration a écrasé la table users
+    await ensureAdminUser();
     res.json({
       success: true,
       message: `Base restaurée avec succès: ${result.executed} instructions exécutées`,
@@ -560,6 +593,8 @@ router.post('/restore/upload', upload.single('backup'), async (req, res) => {
     await logActivity(req, 'database_restored_upload', `BD restaurée depuis upload: ${req.file.originalname}`, 'success', {
       originalName: req.file.originalname, fileSize: req.file.size, ...result
     });
+    // Recréer admin si la restauration a écrasé la table users
+    await ensureAdminUser();
     res.json({
       success: true,
       message: `Base restaurée avec succès: ${result.executed} instructions exécutées`,
