@@ -417,6 +417,37 @@ router.put('/:id', authenticate, authorize(['admin', 'supervisor', 'responsable'
   }
 });
 
+// Delete incident
+router.delete('/:id', authenticate, authorize(['admin', 'supervisor']), async (req, res) => {
+  try {
+    const { Incident, ActivityLog } = require('../models');
+    const incident = await Incident.findByPk(req.params.id);
+
+    if (!incident) {
+      return res.status(404).json({ success: false, message: 'Incident non trouvé' });
+    }
+
+    await incident.destroy(); // soft-delete (paranoid: true)
+
+    try {
+      await ActivityLog.create({
+        userId: req.user.id,
+        action: 'INCIDENT_DELETED',
+        entityType: 'incident',
+        entityId: req.params.id,
+        description: `Incident supprimé: ${incident.title}`
+      });
+    } catch (logErr) {
+      console.warn('ActivityLog warning:', logErr.message);
+    }
+
+    res.json({ success: true, message: 'Incident supprimé' });
+  } catch (error) {
+    console.error('Error deleting incident:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
 // Get incident statistics
 router.get('/stats/summary', authenticate, authorize(['admin', 'supervisor']), async (req, res) => {
   try {

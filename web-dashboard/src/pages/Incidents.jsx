@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   FiAlertTriangle, FiPlus, FiSearch, FiFilter, FiEye,
   FiEdit2, FiCamera, FiMapPin, FiClock, FiUser,
-  FiX, FiCheck, FiAlertCircle, FiShield, FiPhone
+  FiX, FiCheck, FiAlertCircle, FiShield, FiPhone, FiTrash2
 } from 'react-icons/fi';
 import { incidentsAPI, eventsAPI } from '../services/api';
 import { toast } from 'react-toastify';
@@ -680,6 +680,18 @@ const Incidents = () => {
     }
   };
 
+  const handleDelete = async (e, incidentId) => {
+    e.stopPropagation();
+    if (!window.confirm('Supprimer cet incident ? Cette action est irréversible.')) return;
+    try {
+      await incidentsAPI.delete(incidentId);
+      setIncidents(prev => prev.filter(i => i.id !== incidentId));
+      toast.success('Incident supprimé');
+    } catch (err) {
+      toast.error('Erreur lors de la suppression');
+    }
+  };
+
   const filteredIncidents = incidents.filter(incident => {
     if (!filters.search) return true;
     const search = filters.search.toLowerCase();
@@ -892,16 +904,26 @@ const Incidents = () => {
                             </div>
                           </div>
                         </div>
-                        <button
-                          className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedIncident(incident);
-                            setDetailModalOpen(true);
-                          }}
-                        >
-                          <FiEye />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg"
+                            title="Voir les détails"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedIncident(incident);
+                              setDetailModalOpen(true);
+                            }}
+                          >
+                            <FiEye />
+                          </button>
+                          <button
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                            title="Supprimer l'incident"
+                            onClick={(e) => handleDelete(e, incident.id)}
+                          >
+                            <FiTrash2 size={16} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
