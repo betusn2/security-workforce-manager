@@ -173,13 +173,9 @@ const generateSQLContent = async (type) => {
                 if (typeof v === 'boolean')  return v ? 1 : 0;
                 if (typeof v === 'number')   return v;
                 if (v instanceof Date)       return `'${v.toISOString().slice(0,19).replace('T',' ')}'`;
-                const s = String(v)
-                  .replace(/\\/g, '\\\\')
-                  .replace(/'/g, "\\'")  
-                  .replace(/\n/g, '\\n')
-                  .replace(/\r/g, '\\r')
-                  .replace(/\0/g, '\\0');
-                return `'${s}'`;
+                if (v instanceof Buffer)     return `X'${v.toString('hex')}'`;
+                const hex = Buffer.from(String(v), 'utf8').toString('hex');
+                return hex.length > 0 ? `X'${hex}'` : "''";
               }).join(', ');
               return `(${vals})`;
             }).join(',\n');
