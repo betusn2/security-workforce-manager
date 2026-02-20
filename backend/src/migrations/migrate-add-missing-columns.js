@@ -411,6 +411,18 @@ async function migrateAddMissingColumns() {
       "ENUM('reported','investigating','resolved','escalated','closed') NOT NULL DEFAULT 'reported'");
   }
 
+  // Fix role_permissions.role: ENUM trop courte → VARCHAR(20)
+  if (await tableExists('role_permissions')) {
+    await ensureColumnType('role_permissions', 'role', "VARCHAR(20) NOT NULL");
+  }
+
+  // Fix scheduled_backups timestamps manquants
+  if (await tableExists('scheduled_backups')) {
+    await addColumnIfMissing('scheduled_backups', 'created_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP');
+    await addColumnIfMissing('scheduled_backups', 'updated_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
+    await addColumnIfMissing('scheduled_backups', 'deleted_at', 'DATETIME NULL DEFAULT NULL');
+  }
+
   console.log(`✅ Migration colonnes manquantes: ${added} colonne(s) ajoutée(s)`);
   return added;
 }

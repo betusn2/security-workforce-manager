@@ -6,7 +6,7 @@ module.exports = (sequelize, DataTypes) => {
       primaryKey: true
     },
     role: {
-      type: DataTypes.ENUM('agent', 'supervisor', 'admin', 'user'),
+      type: DataTypes.STRING(20),
       allowNull: false,
       comment: 'Rôle auquel la permission est attribuée'
     },
