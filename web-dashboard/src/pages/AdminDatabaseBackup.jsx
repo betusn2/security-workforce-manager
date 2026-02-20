@@ -82,28 +82,36 @@ const AdminDatabaseBackup = () => {
       });
       
       if (response.data.success) {
-        setExportProgress({ 
-          step: 'success', 
-          message: `Sauvegarde créée: ${response.data.filename}`,
-          filename: response.data.filename,
-          size: response.data.size
+        const { filename, size } = response.data;
+        setExportProgress({
+          step: 'success',
+          message: `Sauvegarde créée: ${filename}`,
+          filename,
+          size
         });
-        
-        // Étape 3: Vérification du fichier
+
+        // Étape 3: Téléchargement automatique local + vérification
         setTimeout(async () => {
           try {
-            const verifyResponse = await api.get(`/admin/database/verify/${response.data.filename}`);
-            if (verifyResponse.data.valid) {
-              toast.success(`✅ Sauvegarde créée et vérifiée: ${response.data.filename}`);
-              fetchBackups();
-            } else {
-              toast.error('❌ Erreur: Fichier de sauvegarde corrompu');
-            }
+            // Téléchargement automatique
+            setExportProgress(prev => ({ ...prev, message: '📥 Téléchargement local en cours...' }));
+            const dlRes = await api.get(`/admin/database/download/${filename}`, { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([dlRes.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success(`✅ Sauvegarde créée et téléchargée localement: ${filename}`);
+            fetchBackups();
           } catch (error) {
-            toast.error('❌ Erreur lors de la vérification du fichier');
+            toast.warning(`⚠️ Sauvegarde créée mais téléchargement auto échoué: ${error.message}`);
+            fetchBackups();
           }
           setExportProgress(null);
-        }, 2000);
+        }, 1000);
       } else {
         throw new Error(response.data.message || 'Erreur lors de la sauvegarde');
       }
