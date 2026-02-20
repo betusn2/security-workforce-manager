@@ -54,6 +54,8 @@ module.exports = (sequelize) => {
   }, {
     tableName: 'scheduled_backups',
     timestamps: true,
+    underscored: true,
+    paranoid: true,
     indexes: [
       {
         fields: ['enabled']

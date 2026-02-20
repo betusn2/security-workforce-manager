@@ -72,6 +72,24 @@ const logActivity = async (req, action, description, status = 'success', metadat
 const ensureScheduledBackupTable = async () => {
   try {
     await ScheduledBackup.sync({ force: false });
+    // Ajouter les colonnes timestamps si manquantes (table créée sans underscored)
+    const cols = [
+      ['created_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP'],
+      ['updated_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'],
+      ['deleted_at', 'DATETIME NULL DEFAULT NULL']
+    ];
+    for (const [col, def] of cols) {
+      try {
+        const [rows] = await sequelize.query(
+          `SELECT COUNT(*) as cnt FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'scheduled_backups' AND COLUMN_NAME = ?`,
+          { replacements: [col] }
+        );
+        if (rows[0].cnt === 0) {
+          await sequelize.query(`ALTER TABLE \`scheduled_backups\` ADD COLUMN \`${col}\` ${def}`);
+          console.log(`📝 scheduled_backups.${col} ajoutée`);
+        }
+      } catch (_) {}
+    }
   } catch (err) {
     console.error('Erreur sync ScheduledBackup:', err.message);
   }
