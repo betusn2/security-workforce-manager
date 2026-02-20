@@ -88,6 +88,7 @@ router.use('/api-docs', apiDocumentationRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/face-recognition', faceRecognitionRoutes);
 router.use('/database-backup', databaseBackupRoutes);
+router.use('/admin/database', databaseBackupRoutes); // alias utilisé par le frontend
 router.use('/admin-notifications', adminNotificationsRoutes);
 router.use('/audit', auditRoutes);
 router.use('/map', mapRoutes);
