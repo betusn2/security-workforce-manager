@@ -12,6 +12,7 @@ const AdminDatabaseBackup = () => {
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [restoreProgress, setRestoreProgress] = useState(null); // { percent, step, timeLeft }
   const [dbInfo, setDbInfo] = useState(null);
   const [exportProgress, setExportProgress] = useState(null);
   const [scheduledConfig, setScheduledConfig] = useState(null);
@@ -176,50 +177,74 @@ const AdminDatabaseBackup = () => {
     if (!confirmRestore) return;
 
     setRestoring(true);
-    
+    setRestoreProgress({ percent: 0, step: 'Préparation...', timeLeft: null });
+    const startTime = Date.now();
+
+    // Simuler progression réaliste par étapes
+    const steps = uploadedFile
+      ? [
+          { percent: 10, step: '📤 Upload du fichier...', delay: 300 },
+          { percent: 25, step: '📋 Analyse du fichier SQL...', delay: 800 },
+          { percent: 40, step: '🗑️ Nettoyage des tables existantes...', delay: 1200 },
+          { percent: 60, step: '⚙️ Exécution des requêtes SQL...', delay: 2000 },
+          { percent: 80, step: '🔗 Restauration des relations...', delay: 2800 },
+          { percent: 92, step: '✅ Vérification de l\'intégrité...', delay: 3200 },
+        ]
+      : [
+          { percent: 15, step: '📋 Chargement du backup...', delay: 300 },
+          { percent: 35, step: '🗑️ Nettoyage des tables existantes...', delay: 900 },
+          { percent: 60, step: '⚙️ Exécution des requêtes SQL...', delay: 1800 },
+          { percent: 80, step: '🔗 Restauration des relations...', delay: 2500 },
+          { percent: 92, step: '✅ Vérification de l\'intégrité...', delay: 3000 },
+        ];
+
+    // Lancer les mises à jour de progression en parallèle
+    steps.forEach(({ percent, step, delay }) => {
+      setTimeout(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const speed = percent / elapsed;
+        const remaining = speed > 0 ? Math.round((100 - percent) / speed) : null;
+        setRestoreProgress({ percent, step, timeLeft: remaining });
+      }, delay);
+    });
+
     try {
       let response;
       
       if (uploadedFile) {
-        // Restauration depuis fichier uploadé
         const formData = new FormData();
         formData.append('backup', uploadedFile);
-        
-        toast.info('📤 Upload du fichier de restauration...');
         response = await api.post('/admin/database/restore/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
       } else {
-        // Restauration depuis fichier local
-        toast.info('🔄 Restauration en cours...');
         response = await api.post('/admin/database/restore', { filename });
       }
       
       if (response.data.success) {
+        setRestoreProgress({ percent: 100, step: '🎉 Restauration terminée !', timeLeft: 0 });
         toast.success(`✅ Base de données restaurée avec succès!`);
-        toast.info('🔄 Actualisation des données...');
-        
-        // Attendre un peu puis recharger les infos
         setTimeout(() => {
           fetchDatabaseInfo();
           fetchBackups();
-        }, 3000);
-        
-        // Suggestion de redémarrage
+        }, 2000);
         setTimeout(() => {
           if (window.confirm('🔄 Redémarrage recommandé pour appliquer tous les changements.\nRedémarrer maintenant?')) {
             window.location.reload();
           }
-        }, 5000);
-        
+        }, 4000);
       } else {
         throw new Error(response.data.message || 'Erreur lors de la restauration');
       }
     } catch (error) {
+      setRestoreProgress({ percent: 0, step: '❌ Erreur', timeLeft: null });
       toast.error(`❌ Erreur restauration: ${error.response?.data?.message || error.message}`);
     } finally {
-      setRestoring(false);
-      setSelectedFile(null);
+      setTimeout(() => {
+        setRestoring(false);
+        setRestoreProgress(null);
+        setSelectedFile(null);
+      }, 3000);
     }
   };
 
@@ -551,6 +576,42 @@ const AdminDatabaseBackup = () => {
                   </>
                 )}
               </button>
+
+              {/* Barre de progression restauration */}
+              {restoreProgress && (
+                <div className="mt-3 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-orange-800">{restoreProgress.step}</span>
+                    <span className="text-sm font-bold text-orange-700">{restoreProgress.percent}%</span>
+                  </div>
+                  <div className="w-full bg-orange-200 rounded-full h-4 overflow-hidden">
+                    <div
+                      className="h-4 rounded-full transition-all duration-700 ease-out"
+                      style={{
+                        width: `${restoreProgress.percent}%`,
+                        background: restoreProgress.percent === 100
+                          ? 'linear-gradient(90deg, #22c55e, #16a34a)'
+                          : 'linear-gradient(90deg, #f97316, #ea580c)'
+                      }}
+                    />
+                  </div>
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-xs text-orange-600">
+                      {restoreProgress.percent < 100 ? '⏳ En cours...' : '✅ Terminé'}
+                    </span>
+                    {restoreProgress.timeLeft !== null && restoreProgress.timeLeft > 0 && (
+                      <span className="text-xs text-orange-600">
+                        ⏱️ Temps restant estimé : {restoreProgress.timeLeft}s
+                      </span>
+                    )}
+                    {restoreProgress.timeLeft === 0 && (
+                      <span className="text-xs text-green-600 font-medium">
+                        ✅ Terminé avec succès
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="text-xs text-red-600 bg-red-50 p-3 rounded border border-red-200">
                 <FiAlertTriangle className="inline mr-1" />
