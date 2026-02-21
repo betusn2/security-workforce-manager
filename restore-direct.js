@@ -388,6 +388,20 @@ async function restore() {
   }
   if (!anyChange) console.log('  (aucun changement — données déjà à jour)');
 
+  // Fix soft-deletes: le backup peut contenir deleted_at non null
+  // → restaurer tous les enregistrements pour qu'ils soient visibles dans l'API
+  console.log('\n🔓 Restauration des enregistrements soft-deleted...');
+  const softDeleteTables = ['users','events','incidents','zones','assignments','notifications','badges','activity_logs'];
+  for (const t of softDeleteTables) {
+    try {
+      const [[{ c }]] = await conn.query(`SELECT COUNT(*) as c FROM ${t} WHERE deleted_at IS NOT NULL`);
+      if (c > 0) {
+        await conn.query(`UPDATE ${t} SET deleted_at=NULL WHERE deleted_at IS NOT NULL`);
+        console.log(`  ✅ ${t}: ${c} enregistrement(s) restauré(s)`);
+      }
+    } catch(e) { /* table sans deleted_at, ignorer */ }
+  }
+
   const [[adminCheck]] = await conn.query(
     `SELECT COUNT(*) as c FROM users WHERE email='admin@security.com'`
   );
