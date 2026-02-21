@@ -15,10 +15,10 @@ const path = require('path');
 
 // ─── Config Railway ────────────────────────────────────────
 const RAILWAY = {
-  host: 'mainline.proxy.rlwy.net',
-  port: 20601,
+  host: 'nozomi.proxy.rlwy.net',
+  port: 23833,
   user: 'root',
-  password: 'lZSPaiVeXVPgcVbHQVehucJSdUuahlHS',
+  password: 'uRpoqGKauYDRIYymcsApwnBblZJDnykx',
   database: 'railway',
   multipleStatements: false,
   connectTimeout: 60000,
