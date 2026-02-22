@@ -886,4 +886,94 @@ router.post('/run-scheduled', async (req, res) => {
   }
 });
 
+/**
+ * POST /admin/database/reset
+ * Remet à zéro toutes les tables SAUF users
+ * Requiert un admin confirmé (mot de passe re-vérifié côté client via confirmation textuelle)
+ */
+router.post('/reset', async (req, res) => {
+  try {
+    const { confirmation } = req.body;
+
+    // Mot de passe de confirmation obligatoire
+    if (confirmation !== 'RESET') {
+      return res.status(400).json({
+        success: false,
+        message: 'Confirmation invalide. Tapez exactement "RESET" pour confirmer.'
+      });
+    }
+
+    // Tables à vider (toutes sauf users)
+    const tablesToReset = [
+      'activity_logs',
+      'assignments',
+      'attendances',
+      'badges',
+      'conversations',
+      'events',
+      'fraud_attempts',
+      'geo_trackings',
+      'gps_trackings',
+      'incidents',
+      'liveness_logs',
+      'messages',
+      'notifications',
+      'permissions',
+      'role_permissions',
+      'sos_alerts',
+      'tracking_alerts',
+      'tracking_locations',
+      'user_badges',
+      'user_documents',
+      'user_permissions',
+      'zones'
+    ];
+
+    const results = [];
+
+    // Désactiver les vérifications de clés étrangères pour permettre le TRUNCATE
+    await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
+
+    for (const table of tablesToReset) {
+      try {
+        await sequelize.query(`TRUNCATE TABLE \`${table}\``);
+        results.push({ table, status: 'ok' });
+        console.log(`🗑️ Table réinitialisée : ${table}`);
+      } catch (err) {
+        // La table n'existe peut-être pas, on continue
+        results.push({ table, status: 'skipped', reason: err.message });
+        console.warn(`⚠️ Table ignorée : ${table} — ${err.message}`);
+      }
+    }
+
+    // Réactiver les vérifications de clés étrangères
+    await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
+
+    const resetCount = results.filter(r => r.status === 'ok').length;
+
+    await logActivity(req, 'database_reset', 
+      `Réinitialisation base de données : ${resetCount} tables vidées (users préservés)`,
+      'warning'
+    );
+
+    res.json({
+      success: true,
+      message: `✅ Base de données réinitialisée : ${resetCount} tables vidées. Les utilisateurs sont préservés.`,
+      data: {
+        resetCount,
+        skippedCount: results.filter(r => r.status === 'skipped').length,
+        results
+      }
+    });
+  } catch (error) {
+    // S'assurer de réactiver FK checks même en cas d'erreur
+    try { await sequelize.query('SET FOREIGN_KEY_CHECKS = 1'); } catch (_) {}
+    console.error('Erreur reset base de données:', error);
+    res.status(500).json({
+      success: false,
+      message: `Erreur lors de la réinitialisation : ${error.message}`
+    });
+  }
+});
+
 module.exports = router;

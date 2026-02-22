@@ -17,6 +17,9 @@ const AdminDatabaseBackup = () => {
   const [exportProgress, setExportProgress] = useState(null);
   const [scheduledConfig, setScheduledConfig] = useState(null);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState('');
   const [scheduleForm, setScheduleForm] = useState({
     enabled: false,
     intervalDays: 7,
@@ -296,6 +299,29 @@ const AdminDatabaseBackup = () => {
       toast.error(`Erreur: ${error.response?.data?.message || error.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResetData = async () => {
+    if (resetConfirmText !== 'RESET') {
+      toast.error('Tapez exactement RESET pour confirmer');
+      return;
+    }
+    setResetting(true);
+    try {
+      const response = await api.post('/admin/database/reset', { confirmation: 'RESET' });
+      if (response.data.success) {
+        toast.success(response.data.message);
+        setShowResetModal(false);
+        setResetConfirmText('');
+        fetchDatabaseInfo();
+      } else {
+        toast.error(response.data.message);
+      }
+    } catch (error) {
+      toast.error(`❌ Erreur : ${error.response?.data?.message || error.message}`);
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -717,6 +743,26 @@ const AdminDatabaseBackup = () => {
         </div>
 
         {/* Modal Configuration Planifiée */}
+        {/* Section Zone Danger — Réinitialiser les données */}
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border-2 border-red-200">
+          <h2 className="text-xl font-bold text-red-700 mb-2 flex items-center gap-2">
+            <FiAlertTriangle className="text-red-500" />
+            Zone Danger — Réinitialiser les données
+          </h2>
+          <p className="text-gray-600 text-sm mb-4">
+            Vide toutes les tables (présences, affectations, événements, incidents, logs, etc.) 
+            <strong className="text-red-600"> en conservant les utilisateurs et administrateurs</strong>. 
+            Cette action est <strong>irréversible</strong>.
+          </p>
+          <button
+            onClick={() => { setShowResetModal(true); setResetConfirmText(''); }}
+            className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors shadow"
+          >
+            <FiTrash2 />
+            Réinitialiser les données
+          </button>
+        </div>
+
         {showScheduleModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4">
@@ -826,6 +872,68 @@ const AdminDatabaseBackup = () => {
                     Enregistrer
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modale de confirmation Reset */}
+        {showResetModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-red-100 rounded-full">
+                  <FiAlertTriangle className="text-red-600 text-2xl" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-red-700">Réinitialiser les données</h3>
+                  <p className="text-sm text-gray-500">Action irréversible</p>
+                </div>
+              </div>
+
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <p className="text-sm text-red-800 font-medium mb-2">Seront vidées :</p>
+                <p className="text-xs text-red-700">
+                  Présences, affectations, événements, incidents, zones, notifications, 
+                  badges, logs, tracking GPS, SOS, messages, documents, permissions
+                </p>
+                <p className="text-sm text-green-700 font-semibold mt-3">
+                  ✅ Préservés : tous les utilisateurs et administrateurs
+                </p>
+              </div>
+
+              <div className="mb-5">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tapez <strong className="text-red-600">RESET</strong> pour confirmer :
+                </label>
+                <input
+                  type="text"
+                  value={resetConfirmText}
+                  onChange={(e) => setResetConfirmText(e.target.value)}
+                  placeholder="RESET"
+                  className="w-full px-3 py-2 border-2 border-red-300 rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent text-center font-mono text-lg tracking-widest"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setShowResetModal(false); setResetConfirmText(''); }}
+                  className="flex-1 px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleResetData}
+                  disabled={resetConfirmText !== 'RESET' || resetting}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white rounded-lg font-semibold transition-colors"
+                >
+                  {resetting ? (
+                    <><FiRefreshCw className="animate-spin" /> Réinitialisation...</>
+                  ) : (
+                    <><FiTrash2 /> Confirmer le reset</>
+                  )}
+                </button>
               </div>
             </div>
           </div>
