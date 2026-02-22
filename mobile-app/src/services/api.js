@@ -8,8 +8,15 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000,
+  timeout: 60000, // 60s pour le cold start Render (free tier peut prendre 30-60s)
 });
+
+// Réveille le serveur si besoin (cold start Render)
+export const wakeUpServer = async () => {
+  try {
+    await axios.get(`${API_URL}/health`, { timeout: 90000 });
+  } catch (_) { /* ignore */ }
+};
 
 // Request interceptor
 api.interceptors.request.use(

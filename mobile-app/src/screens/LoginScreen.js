@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import useAuthStore from '../services/authStore';
+import { wakeUpServer } from '../services/api';
 
 const LoginScreen = ({ navigation }) => {
   const [loginMode, setLoginMode] = useState('agent'); // 'agent', 'supervisor', ou 'admin'
@@ -20,7 +21,22 @@ const LoginScreen = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [cin, setCin] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [serverStatus, setServerStatus] = useState('checking'); // 'checking' | 'ready' | 'waking'
   const { login, loginByCin, isLoading, error, clearError } = useAuthStore();
+
+  // Réveiller le serveur au montage
+  useEffect(() => {
+    const wake = async () => {
+      try {
+        const r = await fetch(`https://security-guard-backend-w3qv.onrender.com/api/health`, { signal: AbortSignal.timeout(5000) });
+        if (r.ok) { setServerStatus('ready'); return; }
+      } catch (_) {}
+      setServerStatus('waking');
+      await wakeUpServer();
+      setServerStatus('ready');
+    };
+    wake();
+  }, []);
 
   const handleEmailLogin = async () => {
     if (!email || !password) {
@@ -29,12 +45,12 @@ const LoginScreen = ({ navigation }) => {
     }
 
     clearError();
-    const result = await login(email, password);
+    const result = await login(email.trim(), password);
 
     if (result.success) {
-      navigation.replace('Home');
+      navigation.replace('Main');
     } else {
-      Alert.alert('Erreur', result.error);
+      Alert.alert('Erreur de connexion', result.error || 'Email ou mot de passe incorrect');
     }
   };
 
@@ -70,6 +86,18 @@ const LoginScreen = ({ navigation }) => {
             <Text style={styles.title}>Security Guard Mobile</Text>
             <Text style={styles.subtitle}>Connectez-vous à votre compte</Text>
           </View>
+
+          {/* Indicateur statut serveur */}
+          {serverStatus !== 'ready' && (
+            <View style={styles.serverStatus}>
+              <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.serverStatusText}>
+                {serverStatus === 'waking'
+                  ? '⏳ Démarrage du serveur (~30s)...'
+                  : '🔄 Vérification de la connexion...'}
+              </Text>
+            </View>
+          )}
 
           {/* Mode de connexion toggle - 3 options */}
           <View style={styles.modeToggle}>
@@ -281,6 +309,19 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: 'rgba(255,255,255,0.8)',
+  },
+  serverStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
+  },
+  serverStatusText: {
+    color: '#fff',
+    fontSize: 13,
+    fontStyle: 'italic',
   },
   modeToggle: {
     flexDirection: 'row',
