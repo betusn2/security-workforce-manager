@@ -41,6 +41,20 @@ const ensureAdminUser = async () => {
   }
 };
 
+/**
+ * Après chaque restauration: remettre deleted_at=NULL pour tous les enregistrements
+ * (le backup peut contenir des soft-deletes qui cachent les données dans l'API)
+ */
+const fixSoftDeletes = async () => {
+  const tables = ['users','events','incidents','zones','assignments','notifications','badges','activity_logs','permissions'];
+  for (const t of tables) {
+    try {
+      const [r] = await sequelize.query(`UPDATE \`${t}\` SET deleted_at=NULL WHERE deleted_at IS NOT NULL`);
+      if (r.affectedRows > 0) console.log(`🔓 ${t}: ${r.affectedRows} enregistrement(s) restauré(s)`);
+    } catch (_) { /* table sans deleted_at, ignorer */ }
+  }
+};
+
 // Répertoire de sauvegarde : /tmp en production (Render), local en développement
 const BACKUP_DIR = process.env.NODE_ENV === 'production'
   ? path.join(os.tmpdir(), 'security-guard-backups')
@@ -588,7 +602,8 @@ router.post('/restore', async (req, res) => {
     console.log(`✅ Restauration: ${result.executed}/${result.total} instructions exécutées`);
 
     await logActivity(req, 'database_restored', `BD restaurée depuis: ${filename}`, 'success', { filename, ...result });
-    // Recréer admin si la restauration a écrasé la table users
+    // Fix soft-deletes + recréer admin
+    await fixSoftDeletes();
     await ensureAdminUser();
     res.json({
       success: true,
@@ -617,7 +632,8 @@ router.post('/restore/upload', upload.single('backup'), async (req, res) => {
     await logActivity(req, 'database_restored_upload', `BD restaurée depuis upload: ${req.file.originalname}`, 'success', {
       originalName: req.file.originalname, fileSize: req.file.size, ...result
     });
-    // Recréer admin si la restauration a écrasé la table users
+    // Fix soft-deletes + recréer admin
+    await fixSoftDeletes();
     await ensureAdminUser();
     res.json({
       success: true,
