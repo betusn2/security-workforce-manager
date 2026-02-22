@@ -174,9 +174,9 @@ const LoginScreen = ({ navigation }) => {
                 </TouchableOpacity>
 
                 <View style={styles.demoInfo}>
-                  <Text style={styles.demoTitle}>Compte de démonstration:</Text>
-                  <Text style={styles.demoText}>admin@securityguard.com</Text>
-                  <Text style={styles.demoText}>Admin@123</Text>
+                  <Text style={styles.demoTitle}>Compte administrateur:</Text>
+                  <Text style={styles.demoText}>admin@security.com</Text>
+                  <Text style={styles.demoText}>Admin123!</Text>
                 </View>
               </>
             ) : (
