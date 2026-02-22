@@ -64,8 +64,11 @@ exports.checkIn = async (req, res) => {
   try {
     const {
       eventId,
-      latitude,
-      longitude,
+      latitude: _latitude,
+      longitude: _longitude,
+      // Fallback: mobile may send checkInLatitude/checkInLongitude
+      checkInLatitude,
+      checkInLongitude,
       checkInPhoto,
       checkInMethod = 'facial',
       facialMatchScore,
@@ -449,12 +452,20 @@ exports.checkIn = async (req, res) => {
 exports.checkOut = async (req, res) => {
   try {
     const {
-      latitude,
-      longitude,
+      latitude: _latitude,
+      longitude: _longitude,
+      // Fallback: mobile may send checkOutLatitude/checkOutLongitude
+      checkOutLatitude,
+      checkOutLongitude,
       checkOutPhoto,
       checkOutMethod = 'facial',
       notes
     } = req.body;
+
+    // Support both field name formats
+    const latitude = _latitude ?? checkOutLatitude;
+    const longitude = _longitude ?? checkOutLongitude;
+
     const { isCheckOutAllowed, getEventTimeStatus } = require('../utils/eventTimeWindows');
 
     const agentId = req.user.id;

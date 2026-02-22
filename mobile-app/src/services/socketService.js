@@ -5,7 +5,7 @@
 
 import { io } from 'socket.io-client';
 
-const SOCKET_URL = 'https://security-guard-backend.onrender.com'; // Production Render
+const SOCKET_URL = 'https://security-guard-backend-w3qv.onrender.com'; // Production Render
 
 class SocketService {
   constructor() {

@@ -24,7 +24,7 @@ import axios from 'axios';
 import { Platform } from 'react-native';
 
 export const BACKGROUND_LOCATION_TASK = 'SECURITY_GUARD_BACKGROUND_LOCATION';
-const API_URL = 'https://security-guard-backend.onrender.com/api';
+const API_URL = 'https://security-guard-backend-w3qv.onrender.com/api';
 
 // ─── Définition de la tâche ────────────────────────────────────────────────
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {

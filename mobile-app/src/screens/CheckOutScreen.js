@@ -172,8 +172,8 @@ const CheckOutScreen = ({ route, navigation }) => {
         attendanceId: attendance?.id,
         eventId: event?.id,
         assignmentId: assignment?.id,
-        checkOutLatitude: location.latitude,
-        checkOutLongitude: location.longitude,
+        latitude: location.latitude,
+        longitude: location.longitude,
         checkOutPhoto: `data:image/jpeg;base64,${capturedPhoto.base64}`,
         checkOutMethod: 'facial',
         isWithinGeofence: isWithinGeofence,
@@ -185,7 +185,7 @@ const CheckOutScreen = ({ route, navigation }) => {
         }
       };
 
-      const response = await api.post('/attendance/check-out', checkOutData);
+      const response = await api.post(`/attendance/check-out/${attendance?.id}`, checkOutData);
 
       if (response.data.success) {
         setWorkSummary(prev => ({

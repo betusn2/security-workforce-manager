@@ -141,8 +141,8 @@ const CheckInScreen = ({ route, navigation }) => {
       const checkInData = {
         eventId: event?.id,
         assignmentId: assignment?.id,
-        checkInLatitude: location.latitude,
-        checkInLongitude: location.longitude,
+        latitude: location.latitude,
+        longitude: location.longitude,
         checkInPhoto: `data:image/jpeg;base64,${capturedPhoto.base64}`,
         checkInMethod: 'facial',
         isWithinGeofence: isWithinGeofence,
