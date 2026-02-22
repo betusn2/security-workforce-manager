@@ -602,8 +602,7 @@ router.post('/restore', async (req, res) => {
     console.log(`✅ Restauration: ${result.executed}/${result.total} instructions exécutées`);
 
     await logActivity(req, 'database_restored', `BD restaurée depuis: ${filename}`, 'success', { filename, ...result });
-    // Fix soft-deletes + recréer admin
-    await fixSoftDeletes();
+    // Recréer admin si absent après restauration
     await ensureAdminUser();
     res.json({
       success: true,
@@ -632,8 +631,7 @@ router.post('/restore/upload', upload.single('backup'), async (req, res) => {
     await logActivity(req, 'database_restored_upload', `BD restaurée depuis upload: ${req.file.originalname}`, 'success', {
       originalName: req.file.originalname, fileSize: req.file.size, ...result
     });
-    // Fix soft-deletes + recréer admin
-    await fixSoftDeletes();
+    // Recréer admin si absent après restauration
     await ensureAdminUser();
     res.json({
       success: true,
