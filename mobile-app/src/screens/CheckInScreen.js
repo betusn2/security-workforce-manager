@@ -14,17 +14,16 @@ import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { attendanceAPI, assignmentsAPI, eventsAPI } from '../services/api';
-import useAuthStore from '../services/authStore';
 
 // ── Haversine (identique au web CheckIn.jsx) ──────────────────
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
   if (!lat1 || !lon1 || !lat2 || !lon2) return null;
   const R = 6371e3;
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  const p1 = (lat1 * Math.PI) / 180;
+  const p2 = (lat2 * Math.PI) / 180;
+  const dp = ((lat2 - lat1) * Math.PI) / 180;
+  const dl = ((lon2 - lon1) * Math.PI) / 180;
+  const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
@@ -41,7 +40,6 @@ const isEventActive = (event) => {
 
 // ─────────────────────────────────────────────────────────────
 const CheckInScreen = ({ route, navigation }) => {
-  const { user } = useAuthStore();
   const { event: passedEvent, assignment: passedAssignment } = route.params || {};
 
   // ── States ────────────────────────────────────────────────
