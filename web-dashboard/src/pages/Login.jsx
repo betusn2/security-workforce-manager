@@ -368,8 +368,8 @@ const Login = () => {
             <div className="text-center">
               <p className="text-sm text-gray-500 mb-2">{t('login.demoAccount')} :</p>
               <div className="bg-gray-50 rounded-lg p-3">
-                <p className="font-mono text-sm text-gray-700">admin@securityguard.com</p>
-                <p className="font-mono text-sm text-gray-700">Admin@123</p>
+                <p className="font-mono text-sm text-gray-700">admin@security.com</p>
+                <p className="font-mono text-sm text-gray-700">Admin123!</p>
               </div>
             </div>
           </div>

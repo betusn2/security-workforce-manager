@@ -195,18 +195,23 @@ const app = express();
 const httpServer = createServer(app);
 
 // ✅ Socket.IO Configuration
+const ALLOWED_ORIGINS = [
+  'https://security-workforce-manager.vercel.app',
+  'https://security-guard-web.onrender.com',
+  'https://security-guard-frontend.onrender.com',
+  'https://security-guard-web.vercel.app',
+  process.env.FRONTEND_URL || 'http://localhost:3000',
+  process.env.WEB_URL || 'http://localhost:3000',
+  process.env.MOBILE_URL || 'exp://localhost:19000',
+  'http://localhost:3000',
+  'http://localhost:8081',
+  /\.onrender\.com$/,
+  /\.vercel\.app$/
+];
+
 const io = new Server(httpServer, {
   cors: {
-    origin: [
-      'https://security-guard-web.onrender.com',
-      'https://security-guard-frontend.onrender.com',
-      'https://security-guard-web.vercel.app',
-      process.env.FRONTEND_URL || process.env.WEB_URL || 'http://localhost:3000',
-      process.env.MOBILE_URL || 'exp://localhost:19000',
-      'http://localhost:8081',
-      /\.onrender\.com$/,
-      /\.vercel\.app$/
-    ],
+    origin: ALLOWED_ORIGINS,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
@@ -260,14 +265,10 @@ app.use((req, res, next) => {
   },
 })); */
 app.use(cors({
-  origin: [
-    'https://security-guard-web.onrender.com',
-    'https://security-guard-frontend.onrender.com',
-    process.env.FRONTEND_URL || process.env.WEB_URL || 'http://localhost:3000',
-    process.env.MOBILE_URL || 'exp://localhost:19000',
-    'http://localhost:8081'
-  ],
-  credentials: true
+  origin: ALLOWED_ORIGINS,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
 
 // Rate limiting - Désactivé en développement
@@ -310,7 +311,7 @@ if (process.env.NODE_ENV !== 'production') {
 // Static files (for uploaded photos) avec CORS amélioré pour le frontend
 app.use('/uploads', (req, res, next) => {
   // Définir les headers CORS explicitement
-  res.header('Access-Control-Allow-Origin', 'http://localhost:3000');
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Credentials', 'true');
@@ -324,11 +325,7 @@ app.use('/uploads', (req, res, next) => {
   
   next();
 }, cors({
-  origin: [
-    process.env.WEB_URL || 'http://localhost:3000',
-    process.env.MOBILE_URL || 'exp://localhost:19000',
-    'http://localhost:8081'
-  ],
+  origin: ALLOWED_ORIGINS,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']

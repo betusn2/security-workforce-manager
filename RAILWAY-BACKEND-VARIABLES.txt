@@ -19,11 +19,11 @@ NODE_ENV=production
 PORT=5000
 
 # === FRONTEND URL ===
-FRONTEND_URL=https://security-guard-web.onrender.com
-WEB_URL=https://security-guard-web.onrender.com
+FRONTEND_URL=https://security-workforce-manager.vercel.app
+WEB_URL=https://security-workforce-manager.vercel.app
 
 # === SOCKET.IO CONFIGURATION ===
-SOCKET_CORS_ORIGIN=https://security-guard-web.onrender.com
+SOCKET_CORS_ORIGIN=https://security-workforce-manager.vercel.app
 SOCKET_PATH=/socket.io/
 SOCKET_TRANSPORTS=websocket,polling
 SOCKET_PING_TIMEOUT=60000
