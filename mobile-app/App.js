@@ -1,7 +1,3 @@
-/**
- * ⚠️ CET IMPORT DOIT ÊTRE EN PREMIER
- * expo-task-manager exige que la tâche soit définie avant tout autre code
- */
 import './src/services/backgroundLocationTask';
 
 import React, { useEffect, useState } from 'react';
@@ -22,6 +18,7 @@ import {
   stopBackgroundTracking,
   syncPendingPositions,
 } from './src/services/backgroundLocationTask';
+
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import CheckInScreen from './src/screens/CheckInScreen';
@@ -30,6 +27,13 @@ import HistoryScreen from './src/screens/HistoryScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import IncidentReportScreen from './src/screens/IncidentReportScreen';
+import EventDetailScreen from './src/screens/EventDetailScreen';
+import EventsScreen from './src/screens/EventsScreen';
+import AssignmentsScreen from './src/screens/AssignmentsScreen';
+import ReportsScreen from './src/screens/ReportsScreen';
+import UsersScreen from './src/screens/UsersScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
+
 
 // ── Configuration des notifications ────────────────────────────────────────
 Notifications.setNotificationHandler({
@@ -42,41 +46,71 @@ Notifications.setNotificationHandler({
 
 // ── Les composants écrans sont importés depuis src/screens ──────────────────
 
-// Main Tab Navigator
+// Main Tab Navigator — role-based tabs
 const MainTabs = () => {
+  const { user } = useAuthStore();
+  const role = user?.role || 'agent';
+
+  const tabBarScreenOptions = ({ route }) => ({
+    tabBarIcon: ({ focused, color, size }) => {
+      const icons = {
+        'Accueil':       focused ? 'home'             : 'home-outline',
+        'Historique':    focused ? 'time'             : 'time-outline',
+        'Événements':    focused ? 'calendar'         : 'calendar-outline',
+        'Affectations':  focused ? 'briefcase'        : 'briefcase-outline',
+        'Notifications': focused ? 'notifications'    : 'notifications-outline',
+        'Profil':        focused ? 'person'           : 'person-outline',
+        'Utilisateurs':  focused ? 'people'           : 'people-outline',
+        'Rapports':      focused ? 'bar-chart'        : 'bar-chart-outline',
+        'Paramètres':    focused ? 'settings'         : 'settings-outline',
+      };
+      return <Ionicons name={icons[route.name] || 'ellipse-outline'} size={size} color={color} />;
+    },
+    tabBarActiveTintColor: role === 'admin' ? '#dc2626' : role === 'supervisor' ? '#d97706' : '#2563eb',
+    tabBarInactiveTintColor: '#9ca3af',
+    tabBarStyle: {
+      backgroundColor: '#fff',
+      borderTopWidth: 1,
+      borderTopColor: '#e5e7eb',
+      paddingBottom: 5,
+      paddingTop: 5,
+      height: 60,
+    },
+    headerShown: false,
+  });
+
+  if (role === 'admin') {
+    return (
+      <Tab.Navigator screenOptions={tabBarScreenOptions}>
+        <Tab.Screen name="Accueil"       component={HomeScreen} />
+        <Tab.Screen name="Événements"    component={EventsScreen} />
+        <Tab.Screen name="Utilisateurs"  component={UsersScreen} />
+        <Tab.Screen name="Rapports"      component={ReportsScreen} />
+        <Tab.Screen name="Profil"        component={ProfileScreen} />
+      </Tab.Navigator>
+    );
+  }
+
+  if (role === 'supervisor') {
+    return (
+      <Tab.Navigator screenOptions={tabBarScreenOptions}>
+        <Tab.Screen name="Accueil"       component={HomeScreen} />
+        <Tab.Screen name="Événements"    component={EventsScreen} />
+        <Tab.Screen name="Affectations"  component={AssignmentsScreen} />
+        <Tab.Screen name="Notifications" component={NotificationsScreen} />
+        <Tab.Screen name="Profil"        component={ProfileScreen} />
+      </Tab.Navigator>
+    );
+  }
+
+  // Agent (default)
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
-          if (route.name === 'Accueil') {
-            iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Historique') {
-            iconName = focused ? 'time' : 'time-outline';
-          } else if (route.name === 'Notifications') {
-            iconName = focused ? 'notifications' : 'notifications-outline';
-          } else if (route.name === 'Profil') {
-            iconName = focused ? 'person' : 'person-outline';
-          }
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: '#2563eb',
-        tabBarInactiveTintColor: '#9ca3af',
-        tabBarStyle: {
-          backgroundColor: '#fff',
-          borderTopWidth: 1,
-          borderTopColor: '#e5e7eb',
-          paddingBottom: 5,
-          paddingTop: 5,
-          height: 60,
-        },
-        headerShown: false,
-      })}
-    >
-      <Tab.Screen name="Accueil" component={HomeScreen} />
-      <Tab.Screen name="Historique" component={HistoryScreen} />
+    <Tab.Navigator screenOptions={tabBarScreenOptions}>
+      <Tab.Screen name="Accueil"       component={HomeScreen} />
+      <Tab.Screen name="Affectations"  component={AssignmentsScreen} />
+      <Tab.Screen name="Historique"    component={HistoryScreen} />
       <Tab.Screen name="Notifications" component={NotificationsScreen} />
-      <Tab.Screen name="Profil" component={ProfileScreen} />
+      <Tab.Screen name="Profil"        component={ProfileScreen} />
     </Tab.Navigator>
   );
 };
@@ -196,6 +230,36 @@ export default function App() {
             headerShown: true,
             headerTitle: 'Rapport d\'incident',
             headerStyle: { backgroundColor: '#ef4444' },
+            headerTintColor: '#fff',
+          }}
+        />
+        <Stack.Screen
+          name="EventDetail"
+          component={EventDetailScreen}
+          options={{
+            headerShown: true,
+            headerTitle: 'Détail événement',
+            headerStyle: { backgroundColor: '#2563eb' },
+            headerTintColor: '#fff',
+          }}
+        />
+        <Stack.Screen
+          name="Paramètres"
+          component={SettingsScreen}
+          options={{
+            headerShown: true,
+            headerTitle: 'Paramètres',
+            headerStyle: { backgroundColor: '#374151' },
+            headerTintColor: '#fff',
+          }}
+        />
+        <Stack.Screen
+          name="HistoriqueStack"
+          component={HistoryScreen}
+          options={{
+            headerShown: true,
+            headerTitle: 'Historique',
+            headerStyle: { backgroundColor: '#2563eb' },
             headerTintColor: '#fff',
           }}
         />

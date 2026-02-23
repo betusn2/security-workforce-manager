@@ -391,6 +391,19 @@ const ProfileScreen = ({ navigation }) => {
 
           <TouchableOpacity
             style={styles.menuRow}
+            onPress={() => navigation.navigate('Paramètres')}
+          >
+            <View style={styles.menuLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: '#f1f5f9' }]}>
+                <Ionicons name="settings-outline" size={20} color="#374151" />
+              </View>
+              <Text style={styles.menuLabel}>Paramètres</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuRow}
             onPress={() => navigation.navigate('Help')}
           >
             <View style={styles.menuLeft}>

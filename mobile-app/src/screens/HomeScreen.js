@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { attendanceAPI, assignmentsAPI, eventsAPI, usersAPI } from '../services/api';
+import { attendanceAPI, assignmentsAPI, eventsAPI, usersAPI, reportsAPI } from '../services/api';
 import useAuthStore from '../services/authStore';
 
 const ROLE_CONFIG = {
@@ -26,10 +26,15 @@ const HomeScreen = ({ navigation }) => {
   const [todayStatus, setTodayStatus]     = useState(null);
   const [assignments, setAssignments]     = useState([]);
   const [supervisor, setSupervisor]       = useState(null);
+  const [adminStats, setAdminStats]       = useState(null);
+  const [adminEvents, setAdminEvents]     = useState([]);
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);
   const [location, setLocation]           = useState(null);
   const [currentTime, setCurrentTime]     = useState(new Date());
+
+  const isAdmin = user?.role === 'admin';
+  const isSupervisor = user?.role === 'supervisor';
 
   // Live clock
   useEffect(() => {
@@ -39,21 +44,32 @@ const HomeScreen = ({ navigation }) => {
 
   const fetchData = async () => {
     try {
-      // 1. Today attendance status (same as web dashboard)
-      const statusRes = await attendanceAPI.getTodayStatus();
-      setTodayStatus(statusRes.data.data);
+      if (isAdmin || isSupervisor) {
+        // Admin/Supervisor: load dashboard stats + all events
+        const [statsRes, eventsRes] = await Promise.all([
+          reportsAPI.getDashboard().catch(() => null),
+          eventsAPI.getAll({ limit: 50 }).catch(() => null),
+        ]);
+        if (statsRes?.data?.data) setAdminStats(statsRes.data.data);
+        const evData = eventsRes?.data?.data;
+        const evList = Array.isArray(evData) ? evData : (evData?.events || []);
+        setAdminEvents(evList);
+      } else {
+        // Agent: today attendance status + assignments
+        const statusRes = await attendanceAPI.getTodayStatus();
+        setTodayStatus(statusRes.data.data);
 
-      // 2. Assignments with zone info (same as web CheckIn)
-      const assignRes = await assignmentsAPI.getMyAssignments({ status: 'confirmed' });
-      const myAssignments = assignRes.data.data || [];
-      setAssignments(myAssignments);
+        const assignRes = await assignmentsAPI.getMyAssignments({ status: 'confirmed' });
+        const myAssignments = assignRes.data.data || [];
+        setAssignments(myAssignments);
 
-      // 3. Load supervisor info (same as web CheckIn)
-      if (user?.supervisorId) {
-        try {
-          const supRes = await usersAPI.getById(user.supervisorId);
-          setSupervisor(supRes.data.data);
-        } catch (_) {}
+        // Load supervisor info
+        if (user?.supervisorId) {
+          try {
+            const supRes = await usersAPI.getById(user.supervisorId);
+            setSupervisor(supRes.data.data);
+          } catch (_) {}
+        }
       }
     } catch (error) {
       console.error('Error fetching home data:', error);
@@ -129,6 +145,17 @@ const HomeScreen = ({ navigation }) => {
   const checked = events.filter(e => e.attendance?.checkInTime).length;
   const pending = events.filter(e => !e.attendance?.checkInTime).length;
 
+  // Admin stats display values
+  const adminTotalEvents = adminStats?.totalEvents ?? adminStats?.events ?? adminEvents.length;
+  const adminTotalAgents = adminStats?.totalAgents ?? adminStats?.agents ?? adminStats?.totalUsers ?? '—';
+  const adminTodayPresences = adminStats?.todayAttendance ?? adminStats?.todayCheckins ?? '—';
+  const adminActiveEvents = adminStats?.activeEvents ?? adminStats?.ongoingEvents ?? adminEvents.filter(e => {
+    const now = new Date();
+    const start = e.startDate ? new Date(e.startDate.split('T')[0]) : null;
+    const end = e.endDate ? new Date(e.endDate.split('T')[0]) : null;
+    return start && end && now >= start && now <= end;
+  }).length;
+
   return (
     <ScrollView
       style={styles.container}
@@ -158,23 +185,45 @@ const HomeScreen = ({ navigation }) => {
         </View>
       </View>
 
-      {/* ── Quick Stats (même 3 cartes que web) ── */}
+      {/* ── Quick Stats ── */}
       <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Ionicons name="calendar-outline" size={22} color="#2563eb" />
-          <Text style={styles.statValue}>{events.length}</Text>
-          <Text style={styles.statLabel}>Événements</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Ionicons name="checkmark-circle-outline" size={22} color="#10b981" />
-          <Text style={styles.statValue}>{checked}</Text>
-          <Text style={styles.statLabel}>Pointés</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Ionicons name="time-outline" size={22} color="#f59e0b" />
-          <Text style={styles.statValue}>{pending}</Text>
-          <Text style={styles.statLabel}>En attente</Text>
-        </View>
+        {(isAdmin || isSupervisor) ? (
+          <>
+            <View style={styles.statCard}>
+              <Ionicons name="people-outline" size={22} color="#2563eb" />
+              <Text style={styles.statValue}>{adminTotalAgents}</Text>
+              <Text style={styles.statLabel}>Agents</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Ionicons name="calendar-outline" size={22} color="#8b5cf6" />
+              <Text style={styles.statValue}>{adminTotalEvents}</Text>
+              <Text style={styles.statLabel}>Événements</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Ionicons name="checkmark-circle-outline" size={22} color="#10b981" />
+              <Text style={styles.statValue}>{adminTodayPresences}</Text>
+              <Text style={styles.statLabel}>Présences</Text>
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={styles.statCard}>
+              <Ionicons name="calendar-outline" size={22} color="#2563eb" />
+              <Text style={styles.statValue}>{events.length}</Text>
+              <Text style={styles.statLabel}>Événements</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Ionicons name="checkmark-circle-outline" size={22} color="#10b981" />
+              <Text style={styles.statValue}>{checked}</Text>
+              <Text style={styles.statLabel}>Pointés</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Ionicons name="time-outline" size={22} color="#f59e0b" />
+              <Text style={styles.statValue}>{pending}</Text>
+              <Text style={styles.statLabel}>En attente</Text>
+            </View>
+          </>
+        )}
       </View>
 
       {/* ── Supervisor info if available (même que web) ── */}
@@ -192,15 +241,39 @@ const HomeScreen = ({ navigation }) => {
         </View>
       )}
 
-      {/* ── Today's Events (même logic que web: badge statut + boutons check-in/out) ── */}
+      {/* ── Today's Events ── */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Événements du jour</Text>
+        <Text style={styles.sectionTitle}>
+          {(isAdmin || isSupervisor) ? 'Tous les événements' : 'Événements du jour'}
+        </Text>
 
         {loading ? (
           <View style={styles.emptyCard}>
             <ActivityIndicator color="#2563eb" />
             <Text style={[styles.emptyText, { marginTop: 8 }]}>Chargement...</Text>
           </View>
+        ) : (isAdmin || isSupervisor) ? (
+          adminEvents.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Ionicons name="calendar-outline" size={48} color="#d1d5db" />
+              <Text style={styles.emptyText}>Aucun événement</Text>
+            </View>
+          ) : (
+            adminEvents.slice(0, 5).map((event, index) => (
+              <TouchableOpacity key={index} style={styles.eventCard} onPress={() => navigation.navigate('EventDetail', { eventId: event.id })} activeOpacity={0.75}>
+                <View style={styles.eventHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.eventName}>{event.name}</Text>
+                    {event.location ? <Text style={styles.eventDetailText} numberOfLines={1}>{event.location}</Text> : null}
+                    {event.startDate ? <Text style={[styles.eventDetailText, { marginTop: 2 }]}>{new Date(event.startDate.split('T')[0]).toLocaleDateString('fr-FR')}</Text> : null}
+                  </View>
+                  <View style={[styles.statusBadge, event.status === 'active' ? styles.statusActive : event.status === 'completed' ? styles.statusCompleted : styles.statusPending]}>
+                    <Text style={styles.statusText}>{event.status === 'active' ? 'En cours' : event.status === 'completed' ? 'Terminé' : 'Planifié'}</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))
+          )
         ) : events.length === 0 ? (
           <View style={styles.emptyCard}>
             <Ionicons name="calendar-outline" size={48} color="#d1d5db" />
@@ -214,7 +287,7 @@ const HomeScreen = ({ navigation }) => {
             const att  = event.attendance;
 
             return (
-              <View key={index} style={styles.eventCard}>
+              <View key={`agent-ev-${index}`} style={styles.eventCard}>
                 {/* Event header */}
                 <View style={styles.eventHeader}>
                   <View style={{ flex: 1 }}>
