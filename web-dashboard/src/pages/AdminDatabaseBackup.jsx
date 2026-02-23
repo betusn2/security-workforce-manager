@@ -20,6 +20,7 @@ const AdminDatabaseBackup = () => {
   const [resetting, setResetting] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetResult, setResetResult] = useState(null); // résultat affiché après reset
   const [scheduleForm, setScheduleForm] = useState({
     enabled: false,
     intervalDays: 7,
@@ -308,13 +309,19 @@ const AdminDatabaseBackup = () => {
       return;
     }
     setResetting(true);
+    setResetResult(null);
     try {
       const response = await api.post('/admin/database/reset', { confirmation: 'RESET' });
       if (response.data.success) {
-        toast.success(response.data.message);
-        setShowResetModal(false);
+        const { resetCount, errorCount, results, protectedTables } = response.data.data || {};
+        setResetResult({ resetCount, errorCount, results, protectedTables, message: response.data.message });
         setResetConfirmText('');
         fetchDatabaseInfo();
+        if (errorCount > 0) {
+          toast.warning(`⚠️ Reset partiel : ${resetCount} tables vidées, ${errorCount} erreurs`);
+        } else {
+          toast.success(`✅ ${resetCount} tables vidées avec succès !`);
+        }
       } else {
         toast.error(response.data.message);
       }
@@ -880,61 +887,118 @@ const AdminDatabaseBackup = () => {
         {/* Modale de confirmation Reset */}
         {showResetModal && (
           <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-3 bg-red-100 rounded-full">
-                  <FiAlertTriangle className="text-red-600 text-2xl" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-red-700">Réinitialiser les données</h3>
-                  <p className="text-sm text-gray-500">Action irréversible</p>
-                </div>
-              </div>
+            <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
 
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                <p className="text-sm text-red-800 font-medium mb-2">Seront vidées :</p>
-                <p className="text-xs text-red-700">
-                  Présences, affectations, événements, incidents, zones, notifications, 
-                  badges, logs, tracking GPS, SOS, messages, documents, permissions
-                </p>
-                <p className="text-sm text-green-700 font-semibold mt-3">
-                  ✅ Préservés : tous les utilisateurs et administrateurs
-                </p>
-              </div>
+              {/* Résultat après reset */}
+              {resetResult ? (
+                <>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`p-3 rounded-full ${resetResult.errorCount > 0 ? 'bg-yellow-100' : 'bg-green-100'}`}>
+                      <FiCheck className={`text-2xl ${resetResult.errorCount > 0 ? 'text-yellow-600' : 'text-green-600'}`} />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-gray-800">Réinitialisation terminée</h3>
+                      <p className="text-sm text-gray-500">{resetResult.message}</p>
+                    </div>
+                  </div>
 
-              <div className="mb-5">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Tapez <strong className="text-red-600">RESET</strong> pour confirmer :
-                </label>
-                <input
-                  type="text"
-                  value={resetConfirmText}
-                  onChange={(e) => setResetConfirmText(e.target.value)}
-                  placeholder="RESET"
-                  className="w-full px-3 py-2 border-2 border-red-300 rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent text-center font-mono text-lg tracking-widest"
-                  autoFocus
-                />
-              </div>
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-green-700">{resetResult.resetCount}</p>
+                      <p className="text-xs text-green-600">Tables vidées</p>
+                    </div>
+                    <div className={`border rounded-lg p-3 text-center ${resetResult.errorCount > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <p className={`text-2xl font-bold ${resetResult.errorCount > 0 ? 'text-red-700' : 'text-gray-400'}`}>{resetResult.errorCount || 0}</p>
+                      <p className={`text-xs ${resetResult.errorCount > 0 ? 'text-red-600' : 'text-gray-400'}`}>Erreurs</p>
+                    </div>
+                  </div>
 
-              <div className="flex gap-3">
-                <button
-                  onClick={() => { setShowResetModal(false); setResetConfirmText(''); }}
-                  className="flex-1 px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg transition-colors"
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={handleResetData}
-                  disabled={resetConfirmText !== 'RESET' || resetting}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white rounded-lg font-semibold transition-colors"
-                >
-                  {resetting ? (
-                    <><FiRefreshCw className="animate-spin" /> Réinitialisation...</>
-                  ) : (
-                    <><FiTrash2 /> Confirmer le reset</>
-                  )}
-                </button>
-              </div>
+                  {/* Détail par table */}
+                  <div className="mb-4 max-h-48 overflow-y-auto">
+                    <p className="text-xs font-semibold text-gray-600 mb-2">Détail par table :</p>
+                    <div className="space-y-1">
+                      {(resetResult.results || []).map((r, i) => (
+                        <div key={i} className={`flex items-center justify-between px-3 py-1 rounded text-xs ${r.status === 'ok' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+                          <span className="font-mono">{r.table}</span>
+                          <span>{r.status === 'ok' ? '✅ vidée' : `❌ ${r.reason?.substring(0, 40)}`}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                    <p className="text-xs text-blue-800 font-semibold">
+                      🔒 Table protégée : <code>users</code> — {' '}
+                      tous vos utilisateurs et administrateurs sont intacts.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => { setShowResetModal(false); setResetResult(null); }}
+                    className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
+                  >
+                    Fermer
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-3 bg-red-100 rounded-full">
+                      <FiAlertTriangle className="text-red-600 text-2xl" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-red-700">Réinitialiser les données</h3>
+                      <p className="text-sm text-gray-500">Toutes les tables seront vidées sauf <strong>users</strong></p>
+                    </div>
+                  </div>
+
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                    <p className="text-sm text-red-800 font-medium mb-2">⚠️ Seront vidées (toutes les tables) :</p>
+                    <p className="text-xs text-red-700">
+                      Présences, affectations, événements, incidents, zones, notifications,
+                      badges, logs, tracking GPS, SOS, messages, documents, permissions…
+                    </p>
+                    <p className="text-sm text-green-700 font-semibold mt-3">
+                      ✅ Préservés : tous les utilisateurs et administrateurs (<code>users</code>)
+                    </p>
+                  </div>
+
+                  <div className="mb-5">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Tapez <strong className="text-red-600">RESET</strong> pour confirmer :
+                    </label>
+                    <input
+                      type="text"
+                      value={resetConfirmText}
+                      onChange={(e) => setResetConfirmText(e.target.value.toUpperCase())}
+                      placeholder="RESET"
+                      className="w-full px-3 py-2 border-2 border-red-300 rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent text-center font-mono text-lg tracking-widest uppercase"
+                      autoFocus
+                      onKeyDown={(e) => e.key === 'Enter' && resetConfirmText === 'RESET' && handleResetData()}
+                    />
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => { setShowResetModal(false); setResetConfirmText(''); setResetResult(null); }}
+                      className="flex-1 px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg transition-colors"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      onClick={handleResetData}
+                      disabled={resetConfirmText !== 'RESET' || resetting}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white rounded-lg font-semibold transition-colors"
+                    >
+                      {resetting ? (
+                        <><FiRefreshCw className="animate-spin" /> Réinitialisation...</>
+                      ) : (
+                        <><FiTrash2 /> Confirmer le reset</>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

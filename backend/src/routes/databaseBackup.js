@@ -888,14 +888,13 @@ router.post('/run-scheduled', async (req, res) => {
 
 /**
  * POST /admin/database/reset
- * Remet à zéro toutes les tables SAUF users
- * Requiert un admin confirmé (mot de passe re-vérifié côté client via confirmation textuelle)
+ * Vide TOUTES les tables sauf `users` et `scheduled_backups`
+ * Utilise SHOW TABLES pour obtenir les vrais noms dynamiquement
  */
 router.post('/reset', async (req, res) => {
   try {
     const { confirmation } = req.body;
 
-    // Mot de passe de confirmation obligatoire
     if (confirmation !== 'RESET') {
       return res.status(400).json({
         success: false,
@@ -903,70 +902,62 @@ router.post('/reset', async (req, res) => {
       });
     }
 
-    // Tables à vider (toutes sauf users)
-    const tablesToReset = [
-      'activity_logs',
-      'assignments',
-      'attendances',
-      'badges',
-      'conversations',
-      'events',
-      'fraud_attempts',
-      'geo_trackings',
-      'gps_trackings',
-      'incidents',
-      'liveness_logs',
-      'messages',
-      'notifications',
-      'permissions',
-      'role_permissions',
-      'sos_alerts',
-      'tracking_alerts',
-      'tracking_locations',
-      'user_badges',
-      'user_documents',
-      'user_permissions',
-      'zones'
-    ];
+    // Tables à NE PAS toucher (users + config interne)
+    const PROTECTED_TABLES = new Set([
+      'users',
+      'scheduled_backups',
+      'sequelizemeta',
+      'SequelizeMeta'
+    ]);
+
+    // Récupérer la liste RÉELLE des tables depuis la base
+    const [tablesRaw] = await sequelize.query('SHOW TABLES');
+    const tableKey = Object.keys(tablesRaw[0] || {})[0]; // clé dynamique selon DB
+    const allTables = tablesRaw.map(t => t[tableKey] || Object.values(t)[0]);
+
+    const tablesToReset = allTables.filter(t => !PROTECTED_TABLES.has(t));
+
+    console.log(`🔍 Tables trouvées: ${allTables.join(', ')}`);
+    console.log(`🗑️ Tables à vider: ${tablesToReset.join(', ')}`);
+    console.log(`🔒 Tables protégées: users, scheduled_backups`);
 
     const results = [];
 
-    // Désactiver les vérifications de clés étrangères pour permettre le TRUNCATE
+    // Désactiver FK checks pour permettre TRUNCATE sans ordre
     await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
 
     for (const table of tablesToReset) {
       try {
         await sequelize.query(`TRUNCATE TABLE \`${table}\``);
         results.push({ table, status: 'ok' });
-        console.log(`🗑️ Table réinitialisée : ${table}`);
+        console.log(`✅ Vidée : ${table}`);
       } catch (err) {
-        // La table n'existe peut-être pas, on continue
-        results.push({ table, status: 'skipped', reason: err.message });
-        console.warn(`⚠️ Table ignorée : ${table} — ${err.message}`);
+        results.push({ table, status: 'error', reason: err.message });
+        console.error(`❌ Erreur table ${table} : ${err.message}`);
       }
     }
 
-    // Réactiver les vérifications de clés étrangères
     await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
 
     const resetCount = results.filter(r => r.status === 'ok').length;
+    const errorCount = results.filter(r => r.status === 'error').length;
 
-    await logActivity(req, 'database_reset', 
-      `Réinitialisation base de données : ${resetCount} tables vidées (users préservés)`,
+    await logActivity(req, 'database_reset',
+      `Reset BDD : ${resetCount} tables vidées, ${errorCount} erreurs (users préservés)`,
       'warning'
     );
 
     res.json({
       success: true,
-      message: `✅ Base de données réinitialisée : ${resetCount} tables vidées. Les utilisateurs sont préservés.`,
+      message: `✅ ${resetCount} tables vidées. Utilisateurs préservés.`,
       data: {
         resetCount,
-        skippedCount: results.filter(r => r.status === 'skipped').length,
+        errorCount,
+        protectedTables: [...PROTECTED_TABLES],
         results
       }
     });
   } catch (error) {
-    // S'assurer de réactiver FK checks même en cas d'erreur
     try { await sequelize.query('SET FOREIGN_KEY_CHECKS = 1'); } catch (_) {}
     console.error('Erreur reset base de données:', error);
     res.status(500).json({
