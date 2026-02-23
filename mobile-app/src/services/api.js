@@ -79,10 +79,12 @@ export const authAPI = {
 export const eventsAPI = {
   getMyEvents: (params) => api.get('/events/my-events', { params }),
   getToday: () => api.get('/events/today'),
+  getById: (id) => api.get(`/events/${id}`),
 };
 
 export const assignmentsAPI = {
   getMyAssignments: (params) => api.get('/assignments/my-assignments', { params }),
+  getById: (id) => api.get(`/assignments/${id}`),
   respond: (id, response) => api.post(`/assignments/${id}/respond`, { response }),
 };
 
@@ -91,7 +93,16 @@ export const attendanceAPI = {
   checkOut: (id, data) => api.post(`/attendance/check-out/${id}`, data),
   getMyAttendance: (params) => api.get('/attendance/my-attendance', { params }),
   getTodayStatus: () => api.get('/attendance/today-status'),
+  getTodayAttendance: (eventId) => api.get('/attendance/today-status', { params: { eventId } }),
   updateLocation: (data) => api.post('/attendance/update-location', data),
+};
+
+export const zonesAPI = {
+  getById: (id) => api.get(`/zones/${id}`),
+};
+
+export const usersAPI = {
+  getById: (id) => api.get(`/users/${id}`),
 };
 
 export const notificationsAPI = {

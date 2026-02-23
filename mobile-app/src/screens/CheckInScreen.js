@@ -12,449 +12,484 @@ import {
 } from 'react-native';
 import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
-import * as FaceDetector from 'expo-face-detector';
 import { Ionicons } from '@expo/vector-icons';
-import api from '../services/api';
+import { attendanceAPI, assignmentsAPI, eventsAPI } from '../services/api';
+import useAuthStore from '../services/authStore';
 
+// ── Haversine (identique au web CheckIn.jsx) ──────────────────
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+  const R = 6371e3;
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+// Fenêtre de check-in : 2h avant le début (même règle que web)
+const isEventActive = (event) => {
+  if (!event) return false;
+  const now   = new Date();
+  const start = event.startDate ? new Date(event.startDate) : null;
+  const end   = event.endDate   ? new Date(event.endDate)   : null;
+  if (!start) return true;
+  const openAt = new Date(start.getTime() - 2 * 60 * 60 * 1000);
+  return now >= openAt && (!end || now <= end);
+};
+
+// ─────────────────────────────────────────────────────────────
 const CheckInScreen = ({ route, navigation }) => {
-  const { event, assignment } = route.params || {};
+  const { user } = useAuthStore();
+  const { event: passedEvent, assignment: passedAssignment } = route.params || {};
 
-  // States
-  const [hasPermission, setHasPermission] = useState(null);
-  const [cameraReady, setCameraReady] = useState(false);
-  const [faceDetected, setFaceDetected] = useState(false);
-  const [faceData, setFaceData] = useState(null);
-  const [capturedPhoto, setCapturedPhoto] = useState(null);
-  const [location, setLocation] = useState(null);
-  const [locationError, setLocationError] = useState(null);
+  // ── States ────────────────────────────────────────────────
+  const [initLoading,     setInitLoading]     = useState(true);
+  const [activeEvents,    setActiveEvents]    = useState([]);
+  const [assignments,     setAssignments]     = useState([]);
+  const [selectedEvent,   setSelectedEvent]   = useState(passedEvent  || null);
+  const [selectedAssign,  setSelectedAssign]  = useState(passedAssignment || null);
+  const [todayAttendance, setTodayAttendance] = useState(null);
+  const [zone,            setZone]            = useState(null);
+
+  // Camera
+  const [cameraPermission, setCameraPermission] = useState(null);
+  const [cameraReady,      setCameraReady]      = useState(false);
+  const [faceDetected,     setFaceDetected]     = useState(false);
+  const [capturedPhoto,    setCapturedPhoto]    = useState(null);
+
+  // Location (même que web)
+  const [location,         setLocation]         = useState(null);
+  const [locationLoading,  setLocationLoading]  = useState(false);
+  const [distance,         setDistance]         = useState(null);
   const [isWithinGeofence, setIsWithinGeofence] = useState(null);
-  const [distance, setDistance] = useState(null);
+
+  // Flow: init | camera | confirm | success | already_checked_in
+  const [step,         setStep]         = useState('init');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [step, setStep] = useState('camera'); // 'camera', 'confirm', 'success'
 
   const cameraRef = useRef(null);
 
-  // Request permissions on mount
-  useEffect(() => {
-    (async () => {
-      // Camera permission
-      const { status: cameraStatus } = await Camera.requestCameraPermissionsAsync();
+  // ── 1. INIT : mêmes appels API que web ─────────────────────
+  useEffect(() => { initData(); }, []);
 
-      // Location permission
-      const { status: locationStatus } = await Location.requestForegroundPermissionsAsync();
-
-      setHasPermission(cameraStatus === 'granted' && locationStatus === 'granted');
-
-      if (locationStatus === 'granted') {
-        getCurrentLocation();
-      }
-    })();
-  }, []);
-
-  // Get current location
-  const getCurrentLocation = async () => {
+  const initData = async () => {
     try {
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-      setLocation(loc.coords);
+      setInitLoading(true);
 
-      // Check if within geofence of event
-      if (event?.latitude && event?.longitude) {
-        const dist = calculateDistance(
-          loc.coords.latitude,
-          loc.coords.longitude,
-          parseFloat(event.latitude),
-          parseFloat(event.longitude)
-        );
-        setDistance(Math.round(dist));
-        setIsWithinGeofence(dist <= (event.geoRadius || 100));
+      // Charger mes affectations confirmées (identique web assignmentsAPI.getMyAssignments)
+      const assignRes  = await assignmentsAPI.getMyAssignments({ status: 'confirmed' });
+      const myAssign   = assignRes.data.data || [];
+      setAssignments(myAssign);
+
+      // Charger les événements liés (identique web: Promise.all sur eventIds)
+      const eventIds = [...new Set(myAssign.map(a => a.eventId).filter(Boolean))];
+      let events = [];
+      if (eventIds.length > 0) {
+        const responses = await Promise.all(eventIds.map(id => eventsAPI.getById(id)));
+        events = responses.map(r => r.data?.data).filter(Boolean);
       }
-    } catch (error) {
-      console.error('Location error:', error);
-      setLocationError('Impossible d\'obtenir votre position');
+
+      // Filtrer uniquement les actifs (fenêtre 2h, même que web computeEventStatus)
+      const filtered = events.filter(isEventActive);
+      setActiveEvents(filtered);
+
+      // Auto-sélection (même que web: si 1 seul événement ou passé en params)
+      let autoEvent  = passedEvent;
+      let autoAssign = passedAssignment;
+      if (!autoEvent && filtered.length === 1) {
+        autoEvent  = filtered[0];
+        autoAssign = myAssign.find(a => a.eventId === filtered[0].id) || null;
+      }
+
+      if (autoEvent) {
+        await selectEvent(autoEvent, autoAssign || myAssign.find(a => a.eventId === autoEvent.id));
+      }
+    } catch (err) {
+      console.error('CheckIn init error:', err);
+      Alert.alert('Erreur', 'Impossible de charger les événements');
+    } finally {
+      setInitLoading(false);
     }
   };
 
-  // Haversine formula for distance calculation
-  const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371e3; // Earth's radius in meters
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δφ = (lat2 - lat1) * Math.PI / 180;
-    const Δλ = (lon2 - lon1) * Math.PI / 180;
+  // ── 2. Sélectionner un événement ──────────────────────────
+  const selectEvent = async (event, assignment) => {
+    setSelectedEvent(event);
+    setSelectedAssign(assignment);
+    setZone(assignment?.zone || assignment?.Zone || null);
 
-    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ/2) * Math.sin(Δλ/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-    return R * c;
-  };
-
-  // Handle face detection
-  const handleFacesDetected = ({ faces }) => {
-    if (faces.length > 0) {
-      setFaceDetected(true);
-      setFaceData(faces[0]);
-    } else {
-      setFaceDetected(false);
-      setFaceData(null);
-    }
-  };
-
-  // Capture photo
-  const capturePhoto = async () => {
-    if (!cameraRef.current || !cameraReady || !faceDetected) return;
-
+    // Vérifier déjà pointé (même comportement que web: auto-redirect checkout)
     try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.8,
-        base64: true,
-        exif: true,
-      });
+      const statusRes = await attendanceAPI.getTodayStatus();
+      const todayData = statusRes.data?.data?.events || [];
+      const existing  = todayData.find(e =>
+        (e.eventId === event.id || e.id === event.id) &&
+        e.attendance?.checkInTime && !e.attendance?.checkOutTime
+      );
+      if (existing?.attendance) {
+        setTodayAttendance(existing.attendance);
+        setStep('already_checked_in');
+        return;
+      }
+    } catch (_) {}
 
-      setCapturedPhoto(photo);
-      setStep('confirm');
-    } catch (error) {
-      console.error('Capture error:', error);
-      Alert.alert('Erreur', 'Impossible de capturer la photo');
-    }
-  };
-
-  // Retake photo
-  const retakePhoto = () => {
-    setCapturedPhoto(null);
+    // Demander permissions caméra + GPS en parallèle
+    await Promise.all([requestCamera(), getGPS(event)]);
     setStep('camera');
   };
 
-  // Submit check-in
+  const requestCamera = async () => {
+    const { status } = await Camera.requestCameraPermissionsAsync();
+    setCameraPermission(status === 'granted');
+  };
+
+  // ── GPS (même formule + même géofence que web) ─────────────
+  const getGPS = async (event) => {
+    setLocationLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') { setLocationLoading(false); return; }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      setLocation(loc.coords);
+      if (event?.latitude && event?.longitude) {
+        const dist = calculateDistance(
+          loc.coords.latitude, loc.coords.longitude,
+          parseFloat(event.latitude), parseFloat(event.longitude)
+        );
+        setDistance(Math.round(dist));
+        setIsWithinGeofence(dist <= (event.geoRadius || 200));
+      }
+    } catch (err) {
+      console.error('GPS error:', err);
+    } finally {
+      setLocationLoading(false);
+    }
+  };
+
+  // ── Capture photo ─────────────────────────────────────────
+  const capturePhoto = async () => {
+    if (!cameraRef.current || !cameraReady) return;
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8, base64: true });
+      setCapturedPhoto(photo);
+      setStep('confirm');
+    } catch (err) {
+      Alert.alert('Erreur', 'Capture impossible');
+    }
+  };
+
+  // ── Submit check-in (mêmes champs que web attendanceAPI.checkIn) ──
   const submitCheckIn = async () => {
     if (!capturedPhoto || !location) {
-      Alert.alert('Erreur', 'Photo et localisation requises');
+      Alert.alert('Erreur', 'Photo et GPS requis');
       return;
     }
-
     setIsSubmitting(true);
-
     try {
-      const checkInData = {
-        eventId: event?.id,
-        assignmentId: assignment?.id,
-        latitude: location.latitude,
-        longitude: location.longitude,
-        checkInPhoto: `data:image/jpeg;base64,${capturedPhoto.base64}`,
-        checkInMethod: 'facial',
-        isWithinGeofence: isWithinGeofence,
+      await attendanceAPI.checkIn({
+        eventId:              selectedEvent?.id,
+        assignmentId:         selectedAssign?.id,
+        latitude:             location.latitude,
+        longitude:            location.longitude,
+        checkInPhoto:         `data:image/jpeg;base64,${capturedPhoto.base64}`,
+        checkInMethod:        'facial',
+        isWithinGeofence,
         distanceFromLocation: distance,
-        deviceInfo: {
-          platform: Platform.OS,
-          version: Platform.Version,
-        }
-      };
-
-      const response = await api.post('/attendance/check-in', checkInData);
-
-      if (response.data.success) {
-        setStep('success');
-
-        // Navigate back after 2 seconds
-        setTimeout(() => {
-          navigation.goBack();
-        }, 2000);
-      }
-    } catch (error) {
-      console.error('Check-in error:', error);
-      Alert.alert(
-        'Erreur',
-        error.response?.data?.message || 'Erreur lors du pointage'
-      );
+        deviceInfo:           { platform: Platform.OS, version: String(Platform.Version) },
+      });
+      setStep('success');
+      setTimeout(() => navigation.navigate('Home'), 2500);
+    } catch (err) {
+      Alert.alert('Erreur', err.response?.data?.message || 'Erreur lors du pointage');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Render permission denied
-  if (hasPermission === false) {
+  // ────────────────────────────────────────────────────────────
+  //  RENDER
+  // ────────────────────────────────────────────────────────────
+
+  if (initLoading) {
     return (
-      <View style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="warning-outline" size={64} color="#ef4444" />
-          <Text style={styles.errorTitle}>Permissions requises</Text>
-          <Text style={styles.errorText}>
-            L'accès à la caméra et à la localisation est nécessaire pour le pointage.
-          </Text>
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text style={styles.loadingText}>Chargement des affectations...</Text>
+      </View>
+    );
+  }
+
+  // Sélection événement si plusieurs actifs
+  if (step === 'init' && activeEvents.length > 1) {
+    return (
+      <ScrollView style={styles.bgGray} contentContainerStyle={{ padding: 20 }}>
+        <Text style={styles.pageTitle}>Choisir un événement</Text>
+        <Text style={styles.pageSubtitle}>Plusieurs événements actifs. Sélectionnez celui à pointer.</Text>
+        {activeEvents.map((ev) => (
           <TouchableOpacity
-            style={styles.retryButton}
-            onPress={() => navigation.goBack()}
+            key={ev.id}
+            style={styles.eventSelectCard}
+            onPress={() => selectEvent(ev, assignments.find(a => a.eventId === ev.id))}
           >
-            <Text style={styles.retryButtonText}>Retour</Text>
+            <Ionicons name="calendar" size={22} color="#2563eb" />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.eventSelectName}>{ev.name}</Text>
+              {ev.location && <Text style={styles.eventSelectLoc}>{ev.location}</Text>}
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
           </TouchableOpacity>
-        </View>
-      </View>
+        ))}
+      </ScrollView>
     );
   }
 
-  // Render loading
-  if (hasPermission === null) {
+  // Aucun événement actif
+  if (step === 'init' && activeEvents.length === 0) {
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#10b981" />
-        <Text style={styles.loadingText}>Chargement...</Text>
+      <View style={styles.centered}>
+        <Ionicons name="calendar-outline" size={64} color="#d1d5db" />
+        <Text style={styles.errorTitle}>Aucun événement actif</Text>
+        <Text style={styles.errorText}>Pas d'événement ouvert au pointage pour le moment.</Text>
+        <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('Home')}>
+          <Text style={styles.btnText}>Retour</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  // Render success
+  // Déjà pointé → proposer checkout (même comportement que web)
+  if (step === 'already_checked_in') {
+    return (
+      <View style={styles.centered}>
+        <Ionicons name="checkmark-circle" size={80} color="#10b981" />
+        <Text style={styles.successTitle}>Déjà pointé !</Text>
+        <Text style={styles.successText}>
+          Arrivée à {new Date(todayAttendance?.checkInTime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+        </Text>
+        {selectedEvent && <Text style={styles.eventNameSmall}>{selectedEvent.name}</Text>}
+        <TouchableOpacity
+          style={[styles.btn, { backgroundColor: '#f59e0b', marginTop: 20, flexDirection: 'row', gap: 8 }]}
+          onPress={() => navigation.navigate('CheckOut', { attendanceId: todayAttendance.id, event: selectedEvent })}
+        >
+          <Ionicons name="log-out-outline" size={18} color="#fff" />
+          <Text style={styles.btnText}>Pointer le départ</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.btn, { backgroundColor: '#6b7280', marginTop: 10 }]} onPress={() => navigation.navigate('Home')}>
+          <Text style={styles.btnText}>Retour</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Succès
   if (step === 'success') {
     return (
-      <View style={styles.container}>
-        <View style={styles.successContainer}>
-          <View style={styles.successIconContainer}>
-            <Ionicons name="checkmark-circle" size={100} color="#10b981" />
+      <View style={styles.centered}>
+        <Ionicons name="checkmark-circle" size={100} color="#10b981" />
+        <Text style={styles.successTitle}>Pointage réussi !</Text>
+        <Text style={styles.successText}>
+          Arrivée enregistrée à {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+        </Text>
+        {selectedEvent && (
+          <View style={styles.eventInfoBox}>
+            <Text style={styles.eventInfoName}>{selectedEvent.name}</Text>
+            {selectedEvent.location && <Text style={styles.eventInfoLoc}>{selectedEvent.location}</Text>}
           </View>
-          <Text style={styles.successTitle}>Pointage réussi!</Text>
-          <Text style={styles.successText}>
-            Votre arrivée a été enregistrée à {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-          </Text>
-          {event && (
-            <View style={styles.eventInfo}>
-              <Text style={styles.eventName}>{event.name}</Text>
-              <Text style={styles.eventLocation}>{event.location}</Text>
-            </View>
-          )}
-        </View>
+        )}
       </View>
     );
   }
 
-  // Render confirmation
+  // Confirmation photo + GPS
   if (step === 'confirm' && capturedPhoto) {
     return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.confirmContainer}>
-          {/* Captured Photo */}
-          <View style={styles.photoPreview}>
-            <Image
-              source={{ uri: capturedPhoto.uri }}
-              style={styles.previewImage}
-            />
-            <View style={[
-              styles.faceIndicator,
-              { backgroundColor: faceDetected ? '#10b981' : '#ef4444' }
-            ]}>
-              <Ionicons
-                name={faceDetected ? 'checkmark' : 'close'}
-                size={16}
-                color="#fff"
-              />
-              <Text style={styles.faceIndicatorText}>
-                {faceDetected ? 'Visage détecté' : 'Aucun visage'}
-              </Text>
-            </View>
-          </View>
-
-          {/* Location Info */}
-          <View style={styles.locationCard}>
-            <View style={styles.locationHeader}>
-              <Ionicons name="location" size={24} color="#2563eb" />
-              <Text style={styles.locationTitle}>Localisation</Text>
-            </View>
-
-            {location ? (
-              <>
-                <View style={styles.locationRow}>
-                  <Text style={styles.locationLabel}>Position:</Text>
-                  <Text style={styles.locationValue}>
-                    {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
-                  </Text>
-                </View>
-
-                {distance !== null && (
-                  <View style={styles.locationRow}>
-                    <Text style={styles.locationLabel}>Distance:</Text>
-                    <Text style={[
-                      styles.locationValue,
-                      { color: isWithinGeofence ? '#10b981' : '#ef4444' }
-                    ]}>
-                      {distance}m de l'événement
-                    </Text>
-                  </View>
-                )}
-
-                <View style={[
-                  styles.geofenceStatus,
-                  { backgroundColor: isWithinGeofence ? '#dcfce7' : '#fee2e2' }
-                ]}>
-                  <Ionicons
-                    name={isWithinGeofence ? 'checkmark-circle' : 'warning'}
-                    size={20}
-                    color={isWithinGeofence ? '#10b981' : '#ef4444'}
-                  />
-                  <Text style={[
-                    styles.geofenceText,
-                    { color: isWithinGeofence ? '#166534' : '#991b1b' }
-                  ]}>
-                    {isWithinGeofence
-                      ? 'Dans la zone autorisée'
-                      : `Hors zone (max ${event?.geoRadius || 100}m)`
-                    }
-                  </Text>
-                </View>
-              </>
-            ) : (
-              <View style={styles.locationError}>
-                <Ionicons name="warning" size={20} color="#f59e0b" />
-                <Text style={styles.locationErrorText}>
-                  {locationError || 'Obtention de la position...'}
-                </Text>
+      <ScrollView style={styles.bgGray} contentContainerStyle={{ padding: 16 }}>
+        {/* Carte événement (même que web) */}
+        {selectedEvent && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{selectedEvent.name}</Text>
+            {selectedEvent.location && (
+              <View style={styles.infoRow}>
+                <Ionicons name="location-outline" size={14} color="#6b7280" />
+                <Text style={styles.infoText}>{selectedEvent.location}</Text>
+              </View>
+            )}
+            {zone && (
+              <View style={[styles.infoRow, { marginTop: 4 }]}>
+                <Ionicons name="map-outline" size={14} color="#7c3aed" />
+                <Text style={[styles.infoText, { color: '#7c3aed' }]}>Zone : {zone.name}</Text>
               </View>
             )}
           </View>
+        )}
 
-          {/* Event Info */}
-          {event && (
-            <View style={styles.eventCard}>
-              <Text style={styles.eventCardTitle}>{event.name}</Text>
-              <View style={styles.eventCardRow}>
-                <Ionicons name="location-outline" size={16} color="#6b7280" />
-                <Text style={styles.eventCardText}>{event.location}</Text>
-              </View>
-              <View style={styles.eventCardRow}>
-                <Ionicons name="time-outline" size={16} color="#6b7280" />
-                <Text style={styles.eventCardText}>
-                  {event.checkInTime} - {event.checkOutTime}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* Action Buttons */}
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={styles.retakeButton}
-              onPress={retakePhoto}
-              disabled={isSubmitting}
-            >
-              <Ionicons name="camera-reverse" size={20} color="#6b7280" />
-              <Text style={styles.retakeButtonText}>Reprendre</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.confirmButton,
-                (!location || isSubmitting) && styles.buttonDisabled
-              ]}
-              onPress={submitCheckIn}
-              disabled={!location || isSubmitting}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                  <Text style={styles.confirmButtonText}>Confirmer le pointage</Text>
-                </>
-              )}
-            </TouchableOpacity>
+        {/* Preview photo */}
+        <View style={styles.photoWrap}>
+          <Image source={{ uri: capturedPhoto.uri }} style={styles.previewImage} />
+          <View style={[styles.faceBadge, { backgroundColor: faceDetected ? '#10b981' : '#f59e0b' }]}>
+            <Ionicons name={faceDetected ? 'checkmark' : 'warning'} size={13} color="#fff" />
+            <Text style={styles.faceBadgeText}>{faceDetected ? 'Visage détecté' : 'Vérifier'}</Text>
           </View>
+        </View>
 
-          {/* Warning if outside geofence */}
-          {isWithinGeofence === false && (
-            <View style={styles.warningBanner}>
-              <Ionicons name="warning" size={20} color="#f59e0b" />
-              <Text style={styles.warningText}>
-                Attention: Vous êtes hors de la zone autorisée. Le pointage sera signalé.
-              </Text>
-            </View>
+        {/* GPS Card (même que web) */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Ionicons name="location" size={18} color="#2563eb" />
+            <Text style={styles.cardTitle2}>Géolocalisation</Text>
+            {locationLoading && <ActivityIndicator size="small" color="#2563eb" style={{ marginLeft: 8 }} />}
+          </View>
+          {location ? (
+            <>
+              <Text style={styles.coords}>{location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}</Text>
+              {distance !== null && (
+                <View style={[styles.geofenceRow, { backgroundColor: isWithinGeofence ? '#d1fae5' : '#fee2e2' }]}>
+                  <Ionicons
+                    name={isWithinGeofence ? 'checkmark-circle' : 'warning'}
+                    size={17}
+                    color={isWithinGeofence ? '#10b981' : '#ef4444'}
+                  />
+                  <Text style={[styles.geofenceText, { color: isWithinGeofence ? '#065f46' : '#991b1b' }]}>
+                    {isWithinGeofence
+                      ? `Dans la zone (${distance}m)`
+                      : `Hors zone — ${distance}m (max ${selectedEvent?.geoRadius || 200}m)`}
+                  </Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <Text style={{ color: '#f59e0b', fontSize: 13 }}>Acquisition GPS...</Text>
           )}
+        </View>
+
+        {/* Warning hors géofence */}
+        {isWithinGeofence === false && (
+          <View style={styles.warningBanner}>
+            <Ionicons name="warning" size={17} color="#f59e0b" />
+            <Text style={styles.warningText}>Hors de la zone autorisée — le pointage sera signalé.</Text>
+          </View>
+        )}
+
+        {/* Buttons */}
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={styles.retakeBtn}
+            onPress={() => { setCapturedPhoto(null); setStep('camera'); }}
+            disabled={isSubmitting}
+          >
+            <Ionicons name="camera-reverse" size={17} color="#6b7280" />
+            <Text style={styles.retakeBtnText}>Reprendre</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.confirmBtn, (!location || isSubmitting) && styles.btnDisabled]}
+            onPress={submitCheckIn}
+            disabled={!location || isSubmitting}
+          >
+            {isSubmitting
+              ? <ActivityIndicator color="#fff" />
+              : <><Ionicons name="checkmark-circle" size={17} color="#fff" /><Text style={styles.confirmBtnText}>Confirmer</Text></>
+            }
+          </TouchableOpacity>
         </View>
       </ScrollView>
     );
   }
 
-  // Render camera
+  // ── Pas de permission caméra ─────────────────────────────
+  if (cameraPermission === false) {
+    return (
+      <View style={styles.centered}>
+        <Ionicons name="camera-off-outline" size={64} color="#ef4444" />
+        <Text style={styles.errorTitle}>Caméra requise</Text>
+        <Text style={styles.errorText}>Autorisez la caméra dans les paramètres de l'application.</Text>
+        <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('Home')}>
+          <Text style={styles.btnText}>Retour</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // ── Vue caméra (step = 'camera') ─────────────────────────
   return (
     <View style={styles.container}>
+      {/* Barre infos événement + distance (même que web) */}
+      {selectedEvent && (
+        <View style={styles.cameraTopBar}>
+          <Text style={styles.cameraEventName} numberOfLines={1}>{selectedEvent.name}</Text>
+          {distance !== null && (
+            <View style={[styles.distPill, { backgroundColor: isWithinGeofence ? '#10b981' : '#ef4444' }]}>
+              <Text style={styles.distPillText}>{distance}m</Text>
+            </View>
+          )}
+        </View>
+      )}
+
       <Camera
         ref={cameraRef}
         style={styles.camera}
-        type={Camera.Constants.Type.front}
+        type={Camera.Constants?.Type?.front ?? 1}
         onCameraReady={() => setCameraReady(true)}
-        onFacesDetected={handleFacesDetected}
+        onFacesDetected={({ faces }) => setFaceDetected(faces.length > 0)}
         faceDetectorSettings={{
-          mode: FaceDetector.FaceDetectorMode.fast,
-          detectLandmarks: FaceDetector.FaceDetectorLandmarks.none,
-          runClassifications: FaceDetector.FaceDetectorClassifications.none,
-          minDetectionInterval: 100,
+          mode: 1,
+          detectLandmarks: 0,
+          runClassifications: 0,
+          minDetectionInterval: 150,
           tracking: true,
         }}
       >
-        {/* Face Guide Overlay */}
         <View style={styles.overlay}>
+          {/* Top */}
           <View style={styles.topOverlay}>
-            <Text style={styles.instructionText}>
-              Placez votre visage dans le cadre
-            </Text>
+            <Text style={styles.instructionText}>Placez votre visage dans le cadre</Text>
           </View>
 
-          <View style={styles.middleOverlay}>
-            <View style={styles.sideOverlay} />
-            <View style={[
-              styles.faceGuide,
-              { borderColor: faceDetected ? '#10b981' : '#fff' }
-            ]}>
+          {/* Oval guide (même design que web) */}
+          <View style={styles.middleRow}>
+            <View style={styles.sideMask} />
+            <View style={[styles.faceGuide, { borderColor: faceDetected ? '#10b981' : '#fff' }]}>
               {faceDetected && (
-                <View style={styles.faceDetectedBadge}>
+                <View style={styles.faceOKBadge}>
                   <Ionicons name="checkmark" size={16} color="#fff" />
                 </View>
               )}
             </View>
-            <View style={styles.sideOverlay} />
+            <View style={styles.sideMask} />
           </View>
 
+          {/* Bottom */}
           <View style={styles.bottomOverlay}>
-            {/* Location Status */}
-            <View style={styles.locationStatus}>
+            {/* GPS indicator */}
+            <View style={styles.gpsRow}>
               <Ionicons
-                name={location ? 'location' : 'location-outline'}
-                size={20}
-                color={location ? '#10b981' : '#f59e0b'}
+                name={location ? 'location' : locationLoading ? 'hourglass-outline' : 'location-outline'}
+                size={17}
+                color={location ? (isWithinGeofence === false ? '#ef4444' : '#10b981') : '#f59e0b'}
               />
-              <Text style={[
-                styles.locationStatusText,
-                { color: location ? '#10b981' : '#f59e0b' }
-              ]}>
-                {location
-                  ? `Position obtenue (${distance !== null ? `${distance}m` : '...'})`
-                  : 'Obtention position...'
-                }
+              <Text style={[styles.gpsText, {
+                color: location ? (isWithinGeofence === false ? '#ef4444' : '#10b981') : '#f59e0b'
+              }]}>
+                {locationLoading
+                  ? 'Acquisition GPS...'
+                  : location
+                    ? (distance !== null ? `${distance}m de l'événement` : 'Position OK')
+                    : 'GPS indisponible'}
               </Text>
             </View>
 
-            {/* Capture Button */}
+            {/* Bouton capture */}
             <TouchableOpacity
-              style={[
-                styles.captureButton,
-                (!faceDetected || !cameraReady) && styles.captureButtonDisabled
-              ]}
+              style={[styles.captureBtn, (!faceDetected || !cameraReady) && styles.captureBtnDisabled]}
               onPress={capturePhoto}
               disabled={!faceDetected || !cameraReady}
             >
-              <View style={styles.captureButtonInner}>
-                <Ionicons
-                  name="camera"
-                  size={32}
-                  color={faceDetected ? '#fff' : '#9ca3af'}
-                />
-              </View>
+              <Ionicons name="camera" size={32} color={faceDetected ? '#fff' : '#9ca3af'} />
             </TouchableOpacity>
 
             <Text style={styles.captureHint}>
-              {faceDetected
-                ? 'Appuyez pour capturer'
-                : 'Aucun visage détecté'
-              }
+              {faceDetected ? 'Appuyez pour capturer' : 'Aucun visage détecté'}
             </Text>
           </View>
         </View>
@@ -463,342 +498,100 @@ const CheckInScreen = ({ route, navigation }) => {
   );
 };
 
+// ──────────────────── STYLES ────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
+  container:  { flex: 1, backgroundColor: '#000' },
+  bgGray:     { flex: 1, backgroundColor: '#f3f4f6' },
+  centered:   { flex: 1, backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  loadingText:{ marginTop: 12, color: '#6b7280', fontSize: 15 },
+  pageTitle:  { fontSize: 20, fontWeight: '700', color: '#1f2937', marginBottom: 6 },
+  pageSubtitle:{ fontSize: 13, color: '#6b7280', marginBottom: 20 },
+  eventSelectCard: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12,
+    flexDirection: 'row', alignItems: 'center', elevation: 2,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 3,
   },
-  scrollContent: {
-    flexGrow: 1,
+  eventSelectName: { fontSize: 15, fontWeight: '600', color: '#1f2937' },
+  eventSelectLoc:  { fontSize: 12, color: '#6b7280', marginTop: 3 },
+  errorTitle:  { fontSize: 18, fontWeight: '600', color: '#1f2937', marginTop: 16, textAlign: 'center' },
+  errorText:   { fontSize: 13, color: '#6b7280', textAlign: 'center', marginTop: 8, marginBottom: 20 },
+  btn: { backgroundColor: '#2563eb', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10, flexDirection: 'row', alignItems: 'center' },
+  btnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  successTitle: { fontSize: 22, fontWeight: '700', color: '#1f2937', marginTop: 16 },
+  successText:  { fontSize: 14, color: '#6b7280', marginTop: 8, textAlign: 'center' },
+  eventNameSmall: { fontSize: 14, color: '#2563eb', marginTop: 8, fontWeight: '600' },
+  eventInfoBox: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginTop: 20, alignItems: 'center', minWidth: 260 },
+  eventInfoName: { fontSize: 16, fontWeight: '600', color: '#1f2937' },
+  eventInfoLoc:  { fontSize: 13, color: '#6b7280', marginTop: 4 },
+  // Confirm step
+  card: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 12, elevation: 1,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 2,
   },
-  camera: {
-    flex: 1,
+  cardTitle:  { fontSize: 15, fontWeight: '600', color: '#1f2937', marginBottom: 6 },
+  cardTitle2: { fontSize: 14, fontWeight: '600', color: '#1f2937', marginLeft: 8 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  infoRow:    { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
+  infoText:   { fontSize: 13, color: '#6b7280', marginLeft: 5, flex: 1 },
+  photoWrap:  { position: 'relative', borderRadius: 14, overflow: 'hidden', marginBottom: 12 },
+  previewImage: { width: '100%', height: 240, resizeMode: 'cover' },
+  faceBadge: {
+    position: 'absolute', top: 10, right: 10, flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
   },
-  overlay: {
-    flex: 1,
-    backgroundColor: 'transparent',
+  faceBadgeText: { color: '#fff', fontSize: 11, marginLeft: 4, fontWeight: '500' },
+  coords: { fontSize: 12, color: '#6b7280', marginBottom: 10, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  geofenceRow:  { flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 8 },
+  geofenceText: { marginLeft: 7, fontSize: 13, fontWeight: '500', flex: 1 },
+  warningBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fef3c7', padding: 12, borderRadius: 8, marginBottom: 12 },
+  warningText:   { flex: 1, marginLeft: 7, color: '#92400e', fontSize: 12 },
+  actionRow:     { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  retakeBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#fff', paddingVertical: 14, borderRadius: 12,
+    borderWidth: 1, borderColor: '#d1d5db',
   },
+  retakeBtnText: { marginLeft: 6, color: '#6b7280', fontSize: 15, fontWeight: '500' },
+  confirmBtn: {
+    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#10b981', paddingVertical: 14, borderRadius: 12,
+  },
+  confirmBtnText: { marginLeft: 6, color: '#fff', fontSize: 15, fontWeight: '600' },
+  btnDisabled:    { backgroundColor: '#9ca3af' },
+  // Camera view
+  camera:  { flex: 1 },
+  overlay: { flex: 1 },
+  cameraTopBar: {
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20,
+    backgroundColor: 'rgba(0,0,0,0.72)', paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 52 : 38, paddingBottom: 10,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  cameraEventName: { color: '#fff', fontSize: 14, fontWeight: '600', flex: 1, marginRight: 10 },
+  distPill:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  distPillText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   topOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    paddingBottom: 20,
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 16,
   },
-  instructionText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  middleOverlay: {
-    flexDirection: 'row',
-    height: 280,
-  },
-  sideOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-  },
+  instructionText: { color: '#fff', fontSize: 15, fontWeight: '500' },
+  middleRow:   { flexDirection: 'row', height: 270 },
+  sideMask:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
   faceGuide: {
-    width: 220,
-    height: 280,
-    borderWidth: 3,
-    borderRadius: 120,
-    borderStyle: 'dashed',
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-    paddingTop: 10,
+    width: 210, height: 270, borderWidth: 3, borderRadius: 110,
+    borderStyle: 'dashed', justifyContent: 'flex-start', alignItems: 'center', paddingTop: 10,
   },
-  faceDetectedBadge: {
-    backgroundColor: '#10b981',
-    borderRadius: 20,
-    padding: 5,
+  faceOKBadge: { backgroundColor: '#10b981', borderRadius: 20, padding: 4 },
+  bottomOverlay: { flex: 1.5, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', paddingTop: 24 },
+  gpsRow:     { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
+  gpsText:    { marginLeft: 8, fontSize: 13 },
+  captureBtn: {
+    width: 76, height: 76, borderRadius: 38, backgroundColor: '#10b981',
+    justifyContent: 'center', alignItems: 'center', borderWidth: 4, borderColor: '#fff',
   },
-  bottomOverlay: {
-    flex: 1.5,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    alignItems: 'center',
-    paddingTop: 30,
-  },
-  locationStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  locationStatusText: {
-    marginLeft: 8,
-    fontSize: 14,
-  },
-  captureButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#10b981',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#fff',
-  },
-  captureButtonDisabled: {
-    backgroundColor: '#374151',
-  },
-  captureButtonInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  captureHint: {
-    color: '#9ca3af',
-    fontSize: 14,
-    marginTop: 15,
-  },
-  // Confirmation styles
-  confirmContainer: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-    padding: 16,
-  },
-  photoPreview: {
-    position: 'relative',
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  previewImage: {
-    width: '100%',
-    height: 300,
-    resizeMode: 'cover',
-  },
-  faceIndicator: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  faceIndicatorText: {
-    color: '#fff',
-    fontSize: 12,
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  locationCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  locationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  locationTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginLeft: 8,
-  },
-  locationRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  locationLabel: {
-    color: '#6b7280',
-    fontSize: 14,
-  },
-  locationValue: {
-    color: '#1f2937',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  geofenceStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 12,
-  },
-  geofenceText: {
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  locationError: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#fef3c7',
-    borderRadius: 8,
-  },
-  locationErrorText: {
-    marginLeft: 8,
-    color: '#92400e',
-    fontSize: 14,
-  },
-  eventCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-  },
-  eventCardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 12,
-  },
-  eventCardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  eventCardText: {
-    marginLeft: 8,
-    color: '#6b7280',
-    fontSize: 14,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  retakeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    paddingVertical: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-  },
-  retakeButtonText: {
-    marginLeft: 8,
-    color: '#6b7280',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  confirmButton: {
-    flex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10b981',
-    paddingVertical: 16,
-    borderRadius: 12,
-  },
-  confirmButtonText: {
-    marginLeft: 8,
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  buttonDisabled: {
-    backgroundColor: '#9ca3af',
-  },
-  warningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fef3c7',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 16,
-  },
-  warningText: {
-    flex: 1,
-    marginLeft: 8,
-    color: '#92400e',
-    fontSize: 13,
-  },
-  // Success styles
-  successContainer: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  successIconContainer: {
-    marginBottom: 24,
-  },
-  successTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1f2937',
-    marginBottom: 8,
-  },
-  successText: {
-    fontSize: 16,
-    color: '#6b7280',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  eventInfo: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  eventName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1f2937',
-  },
-  eventLocation: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginTop: 4,
-  },
-  // Error styles
-  errorContainer: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  errorText: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  retryButton: {
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  loadingText: {
-    color: '#fff',
-    marginTop: 16,
-    fontSize: 16,
-  },
+  captureBtnDisabled: { backgroundColor: '#374151' },
+  captureHint: { color: '#9ca3af', fontSize: 13, marginTop: 14 },
 });
 
 export default CheckInScreen;
+
