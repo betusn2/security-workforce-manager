@@ -72,7 +72,14 @@ const useAuthStore = create((set, get) => ({
       set({ user, isAuthenticated: true, isCheckInMode: true, isLoading: false });
       return { success: true };
     } catch (error) {
-      const message = error.response?.data?.message || 'Erreur de connexion CIN';
+      let message = error.response?.data?.message || 'Erreur de connexion CIN';
+      // Enrichir le message "CIN non trouvé" avec du contexte utile
+      if (message === 'CIN non trouvé' || message === 'CIN not found') {
+        const roleHint = userType === 'agent'
+          ? 'Agents'
+          : 'Responsables';
+        message = `CIN non trouvé\n\n⚠️ Votre compte n\'existe pas encore. Demandez à l\'administrateur de créer votre compte via le tableau de bord web (section ${roleHint}).`;
+      }
       set({ error: message, isLoading: false });
       return { success: false, error: message };
     }

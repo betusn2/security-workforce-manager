@@ -67,9 +67,8 @@ const LoginScreen = ({ navigation }) => {
 
     if (result.success) {
       navigation.replace('CheckIn');
-    } else {
-      Alert.alert('Erreur', result.error);
     }
+    // L'erreur est déjà affichée dans le formulaire via authStore.error
   };
 
   return (

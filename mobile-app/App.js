@@ -10,7 +10,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { View, ActivityIndicator, Text, StyleSheet, TouchableOpacity, AppState } from 'react-native';
+import { View, ActivityIndicator, AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -24,8 +24,14 @@ import {
 } from './src/services/backgroundLocationTask';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
+import CheckInScreen from './src/screens/CheckInScreen';
+import CheckOutScreen from './src/screens/CheckOutScreen';
+import HistoryScreen from './src/screens/HistoryScreen';
+import NotificationsScreen from './src/screens/NotificationsScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
+import IncidentReportScreen from './src/screens/IncidentReportScreen';
 
-// Configuration des notifications (obligatoire Android pour le foreground service)
+// ── Configuration des notifications ────────────────────────────────────────
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: false,
@@ -34,134 +40,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Profile Screen Placeholder
-const ProfileScreen = ({ navigation }) => {
-  const { user, logout, isCheckInMode, logoutCheckIn } = useAuthStore();
-
-  const handleLogout = async () => {
-    if (isCheckInMode) {
-      await logoutCheckIn();
-    } else {
-      await logout();
-    }
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Login' }],
-    });
-  };
-
-  return (
-    <View style={{ flex: 1, backgroundColor: '#f3f4f6' }}>
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <Ionicons name="person-circle-outline" size={100} color="#2563eb" />
-        <Text style={styles.profileName}>
-          {user?.firstName} {user?.lastName}
-        </Text>
-        <Text style={styles.profileRole}>
-          {user?.role === 'agent' ? 'Agent de sécurité' : user?.role === 'supervisor' ? 'Responsable' : 'Administrateur'}
-        </Text>
-        {isCheckInMode && (
-          <View style={styles.checkInBadge}>
-            <Ionicons name="checkmark-circle" size={16} color="#fff" />
-            <Text style={styles.checkInBadgeText}>Mode Pointage</Text>
-          </View>
-        )}
-      </View>
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Ionicons name="log-out-outline" size={20} color="#fff" />
-        <Text style={styles.logoutButtonText}>
-          {isCheckInMode ? 'Quitter le pointage' : 'Déconnexion'}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-};
-
-// History Screen Placeholder
-const HistoryScreen = () => (
-  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f3f4f6' }}>
-    <Ionicons name="time-outline" size={80} color="#2563eb" />
-    <Text style={{ color: '#6b7280', marginTop: 16 }}>Historique des pointages</Text>
-  </View>
-);
-
-// Notifications Screen Placeholder
-const NotificationsScreen = () => (
-  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f3f4f6' }}>
-    <Ionicons name="notifications-outline" size={80} color="#2563eb" />
-    <Text style={{ color: '#6b7280', marginTop: 16 }}>Notifications</Text>
-  </View>
-);
-
-// Check In Screen Placeholder
-const CheckInScreen = ({ navigation }) => {
-  const { user, logoutCheckIn } = useAuthStore();
-
-  const handleSkip = async () => {
-    await logoutCheckIn();
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Login' }],
-    });
-  };
-
-  return (
-    <View style={styles.checkInContainer}>
-      <View style={styles.checkInCard}>
-        <View style={styles.checkInIcon}>
-          <Ionicons name="camera-outline" size={60} color="#10b981" />
-        </View>
-        <Text style={styles.checkInTitle}>Pointage d'arrivée</Text>
-        <Text style={styles.checkInUser}>
-          {user?.firstName} {user?.lastName}
-        </Text>
-        <Text style={styles.checkInCIN}>CIN: {user?.cin}</Text>
-
-        <TouchableOpacity style={styles.checkInButton}>
-          <Ionicons name="scan" size={24} color="#fff" />
-          <Text style={styles.checkInButtonText}>Scanner le visage</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-          <Text style={styles.skipButtonText}>Annuler</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
-
-// Check Out Screen Placeholder
-const CheckOutScreen = ({ route }) => {
-  const { user, logoutCheckIn } = useAuthStore();
-
-  const handleSkip = async () => {
-    await logoutCheckIn();
-    // Navigation will be handled automatically
-  };
-
-  return (
-    <View style={styles.checkInContainer}>
-      <View style={styles.checkInCard}>
-        <View style={[styles.checkInIcon, { backgroundColor: '#fef3c7' }]}>
-          <Ionicons name="log-out-outline" size={60} color="#f59e0b" />
-        </View>
-        <Text style={[styles.checkInTitle, { color: '#f59e0b' }]}>Pointage de départ</Text>
-        <Text style={styles.checkInUser}>
-          {user?.firstName} {user?.lastName}
-        </Text>
-
-        <TouchableOpacity style={[styles.checkInButton, { backgroundColor: '#f59e0b' }]}>
-          <Ionicons name="scan" size={24} color="#fff" />
-          <Text style={styles.checkInButtonText}>Scanner le visage</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-          <Text style={styles.skipButtonText}>Annuler</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
+// ── Les composants écrans sont importés depuis src/screens ──────────────────
 
 // Main Tab Navigator
 const MainTabs = () => {
@@ -236,14 +115,18 @@ export default function App() {
       };
       storeToken();
 
-      // Démarrer le tracking GPS background (fonctionne écran éteint)
-      startBackgroundTracking(user.id, currentEventId);
+      // Démarrer le tracking GPS background seulement pour agents/responsables (pas admin)
+      if (user?.role !== 'admin') {
+        startBackgroundTracking(user.id, currentEventId);
+      } else {
+        stopBackgroundTracking(); // s'assurer qu'il est arrêté pour admin
+      }
 
     } else {
       socketService.disconnect();
       stopBackgroundTracking();
     }
-  }, [isAuthenticated, user?.id, currentEventId]);
+  }, [isAuthenticated, user?.id, user?.role, currentEventId]);
 
   // Synchroniser les positions offline quand l'app revient au premier plan
   useEffect(() => {
@@ -306,6 +189,16 @@ export default function App() {
             headerTintColor: '#fff',
           }}
         />
+        <Stack.Screen
+          name="IncidentReport"
+          component={IncidentReportScreen}
+          options={{
+            headerShown: true,
+            headerTitle: 'Rapport d\'incident',
+            headerStyle: { backgroundColor: '#ef4444' },
+            headerTintColor: '#fff',
+          }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
@@ -313,117 +206,3 @@ export default function App() {
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
-
-const styles = StyleSheet.create({
-  profileName: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginTop: 16,
-  },
-  profileRole: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginTop: 4,
-  },
-  checkInBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#10b981',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginTop: 12,
-    gap: 6,
-  },
-  checkInBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#dc2626',
-    marginHorizontal: 24,
-    marginBottom: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  logoutButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  checkInContainer: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  checkInCard: {
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 32,
-    alignItems: 'center',
-    width: '100%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  checkInIcon: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#d1fae5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  checkInTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#10b981',
-    marginBottom: 16,
-  },
-  checkInUser: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 8,
-  },
-  checkInCIN: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 32,
-  },
-  checkInButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10b981',
-    width: '100%',
-    paddingVertical: 16,
-    borderRadius: 12,
-    gap: 8,
-    marginBottom: 16,
-  },
-  checkInButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  skipButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  skipButtonText: {
-    color: '#6b7280',
-    fontSize: 14,
-  },
-});

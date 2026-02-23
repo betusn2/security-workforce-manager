@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import api from '../services/api';
+import api, { notificationsAPI } from '../services/api';
 
 const NotificationsScreen = ({ navigation }) => {
   const [notifications, setNotifications] = useState([]);
@@ -33,11 +33,15 @@ const NotificationsScreen = ({ navigation }) => {
         params.isRead = false;
       }
 
-      const response = await api.get('/notifications', { params });
+      // Fetch notifications + unread count in parallel
+      const [response, countResponse] = await Promise.all([
+        notificationsAPI.getMy(params),
+        notificationsAPI.getUnreadCount(),
+      ]);
       const data = response.data.data;
 
       setNotifications(data.notifications || []);
-      setUnreadCount(data.unreadCount || 0);
+      setUnreadCount(countResponse.data.data?.unreadCount || 0);
     } catch (error) {
       console.error('Error fetching notifications:', error);
     } finally {
@@ -58,7 +62,7 @@ const NotificationsScreen = ({ navigation }) => {
   // Mark as read
   const markAsRead = async (notificationId) => {
     try {
-      await api.patch(`/notifications/${notificationId}/read`);
+      await notificationsAPI.markAsRead(notificationId);
       setNotifications(prev =>
         prev.map(n =>
           n.id === notificationId ? { ...n, isRead: true } : n
@@ -73,7 +77,7 @@ const NotificationsScreen = ({ navigation }) => {
   // Mark all as read
   const markAllAsRead = async () => {
     try {
-      await api.patch('/notifications/read-all');
+      await notificationsAPI.markAllAsRead();
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
       setUnreadCount(0);
     } catch (error) {
@@ -95,6 +99,7 @@ const NotificationsScreen = ({ navigation }) => {
             try {
               await api.delete(`/notifications/${notificationId}`);
               setNotifications(prev => prev.filter(n => n.id !== notificationId));
+              setUnreadCount(prev => Math.max(0, prev - 1));
             } catch (error) {
               console.error('Error deleting notification:', error);
             }
