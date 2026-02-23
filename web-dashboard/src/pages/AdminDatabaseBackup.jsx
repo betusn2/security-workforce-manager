@@ -948,18 +948,19 @@ const AdminDatabaseBackup = () => {
                     </div>
                     <div>
                       <h3 className="text-xl font-bold text-red-700">Réinitialiser les données</h3>
-                      <p className="text-sm text-gray-500">Toutes les tables seront vidées sauf <strong>users</strong></p>
+                      <p className="text-sm text-gray-500">Toutes les tables vidées + tous les utilisateurs supprimés sauf l'admin</p>
                     </div>
                   </div>
 
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                    <p className="text-sm text-red-800 font-medium mb-2">⚠️ Seront vidées (toutes les tables) :</p>
+                    <p className="text-sm text-red-800 font-medium mb-2">⚠️ Seront supprimés :</p>
                     <p className="text-xs text-red-700">
                       Présences, affectations, événements, incidents, zones, notifications,
-                      badges, logs, tracking GPS, SOS, messages, documents, permissions…
+                      badges, logs, tracking GPS, SOS, messages, documents, permissions,
+                      historique de création… et <strong>TOUS les agents/superviseurs créés</strong>.
                     </p>
                     <p className="text-sm text-green-700 font-semibold mt-3">
-                      ✅ Préservés : tous les utilisateurs et administrateurs (<code>users</code>)
+                      ✅ Conservé uniquement : l'administrateur principal (<code>admin@security.com</code>)
                     </p>
                   </div>
 

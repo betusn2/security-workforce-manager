@@ -902,8 +902,8 @@ router.post('/reset', async (req, res) => {
       });
     }
 
-    // Tables à NE PAS toucher (users + config interne)
-    const PROTECTED_TABLES = new Set([
+    // Tables à NE PAS TRUNCATE (users géré séparément par DELETE WHERE role != 'admin')
+    const SKIP_TRUNCATE = new Set([
       'users',
       'scheduled_backups',
       'sequelizemeta',
@@ -915,11 +915,11 @@ router.post('/reset', async (req, res) => {
     const tableKey = Object.keys(tablesRaw[0] || {})[0]; // clé dynamique selon DB
     const allTables = tablesRaw.map(t => t[tableKey] || Object.values(t)[0]);
 
-    const tablesToReset = allTables.filter(t => !PROTECTED_TABLES.has(t));
+    const tablesToReset = allTables.filter(t => !SKIP_TRUNCATE.has(t));
 
     console.log(`🔍 Tables trouvées: ${allTables.join(', ')}`);
     console.log(`🗑️ Tables à vider: ${tablesToReset.join(', ')}`);
-    console.log(`🔒 Tables protégées: users, scheduled_backups`);
+    console.log(`🔒 Tables ignorées du TRUNCATE: users (DELETE partiel), scheduled_backups`);
 
     const results = [];
 
@@ -937,23 +937,37 @@ router.post('/reset', async (req, res) => {
       }
     }
 
+    // Supprimer tous les utilisateurs sauf l'admin
+    let usersDeleted = 0;
+    try {
+      const [deleteResult] = await sequelize.query(
+        `DELETE FROM \`users\` WHERE role != 'admin'`
+      );
+      usersDeleted = deleteResult.affectedRows || 0;
+      results.push({ table: 'users (non-admin)', status: 'ok', deleted: usersDeleted });
+      console.log(`✅ users : ${usersDeleted} utilisateur(s) non-admin supprimé(s), admin conservé`);
+    } catch (err) {
+      results.push({ table: 'users (non-admin)', status: 'error', reason: err.message });
+      console.error(`❌ Erreur suppression users non-admin : ${err.message}`);
+    }
+
     await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
 
     const resetCount = results.filter(r => r.status === 'ok').length;
     const errorCount = results.filter(r => r.status === 'error').length;
 
     await logActivity(req, 'database_reset',
-      `Reset BDD : ${resetCount} tables vidées, ${errorCount} erreurs (users préservés)`,
+      `Reset BDD : ${resetCount - 1} tables vidées, ${usersDeleted} utilisateurs supprimés (admin conservé), ${errorCount} erreurs`,
       'warning'
     );
 
     res.json({
       success: true,
-      message: `✅ ${resetCount} tables vidées. Utilisateurs préservés.`,
+      message: `✅ Reset terminé : ${resetCount - 1} tables vidées, ${usersDeleted} utilisateur(s) supprimé(s). Seul l'admin est conservé.`,
       data: {
-        resetCount,
+        resetCount: resetCount - 1,
+        usersDeleted,
         errorCount,
-        protectedTables: [...PROTECTED_TABLES],
         results
       }
     });
