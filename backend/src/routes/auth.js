@@ -8,29 +8,42 @@ const bcrypt = require('bcryptjs');
 // Route pour créer/réinitialiser l'admin - utiliser uniquement lors du premier déploiement
 router.get('/setup-admin', async (req, res) => {
   try {
-    const { User } = require('../models');
+    const { sequelize } = require('../models');
+    const { v4: uuidv4 } = require('uuid');
 
+    const id = uuidv4();
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash('Admin123!', salt);
+    const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
-    // Supprimer tous les anciens admins (évite les conflits de contraintes unique)
-    await User.destroy({
-      where: { role: 'admin' },
-      force: true
-    });
+    // ── 1. Réinitialiser le mot de passe si l'admin existe déjà ───────────
+    const [existingRows] = await sequelize.query(
+      "SELECT id FROM users WHERE email = 'admin@security.com' AND deleted_at IS NULL LIMIT 1"
+    );
 
-    // Créer l'admin avec les bonnes credentials
-    await User.create({
-      employeeId: 'ADMIN001',
-      firstName: 'Admin',
-      lastName: 'System',
-      cin: null,
-      email: 'admin@security.com',
-      password: hashedPassword,
-      phone: '+212600000000',
-      role: 'admin',
-      status: 'active'
-    }, { hooks: false });
+    if (existingRows.length > 0) {
+      await sequelize.query(
+        "UPDATE users SET password = ?, status = 'active', updated_at = ? WHERE email = 'admin@security.com'",
+        { replacements: [hashedPassword, now] }
+      );
+      return res.json({
+        success: true,
+        message: 'Mot de passe admin réinitialisé!',
+        credentials: { email: 'admin@security.com', password: 'Admin123!' }
+      });
+    }
+
+    // ── 2. Nettoyer d'anciens enregistrements qui bloqueraient unique ──────
+    await sequelize.query(
+      "DELETE FROM users WHERE (email = 'admin@securityguard.com' OR employee_id = 'ADMIN001') AND role = 'admin'"
+    );
+
+    // ── 3. Créer l'admin via SQL brut (contourne les hooks + validations) ──
+    await sequelize.query(
+      `INSERT INTO users (id, employee_id, first_name, last_name, email, password, phone, role, status, created_at, updated_at)
+       VALUES (?, 'ADMIN001', 'Admin', 'System', 'admin@security.com', ?, '+212600000000', 'admin', 'active', ?, ?)`,
+      { replacements: [id, hashedPassword, now, now] }
+    );
 
     res.json({
       success: true,
