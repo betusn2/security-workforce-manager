@@ -178,7 +178,7 @@ const paginationQuery = [
     .isInt({ min: 1 }).withMessage('Numéro de page invalide'),
   query('limit')
     .optional()
-    .isInt({ min: 1, max: 100 }).withMessage('Limite invalide (1-100)'),
+    .isInt({ min: 1, max: 200 }).withMessage('Limite invalide (1-200)'),
   query('sortBy')
     .optional()
     .isString().withMessage('Champ de tri invalide'),

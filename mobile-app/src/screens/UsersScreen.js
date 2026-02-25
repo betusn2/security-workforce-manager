@@ -30,9 +30,9 @@ export default function UsersScreen({ navigation }) {
   const fetchUsers = useCallback(async () => {
     try {
       setError(null);
-      const res = await usersAPI.getAll({ limit: 200 });
+      const res = await usersAPI.getAll({ limit: 100 });
       const raw = res?.data?.data;
-      const list = Array.isArray(raw) ? raw : (raw?.users || []);
+      const list = Array.isArray(raw) ? raw : (raw?.users || raw || []);
       setUsers(list);
     } catch (err) {
       setError('Impossible de charger les utilisateurs');
