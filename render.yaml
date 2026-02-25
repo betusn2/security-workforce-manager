@@ -18,7 +18,6 @@ services:
         value: 5000
       
       # Railway MySQL Database (External)
-      # Configurer avec vos valeurs Railway
       - key: DB_HOST
         value: mainline.proxy.rlwy.net
       - key: DB_PORT
@@ -28,7 +27,7 @@ services:
       - key: DB_USER
         value: root
       - key: DB_PASSWORD
-        sync: false  # À configurer manuellement
+        value: uRpoqGKauYDRIYymcsApwnBblZJDnykx
       - key: DB_DIALECT
         value: mysql
       - key: DB_SSL
