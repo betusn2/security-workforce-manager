@@ -45,11 +45,17 @@ exports.getEvents = async (req, res) => {
       startDate,
       endDate,
       search,
+      supervisorId,
       sortBy = 'startDate',
       sortOrder = 'DESC'
     } = req.query;
 
     const where = {};
+
+    // Filtre par superviseur (utilisé par l'app mobile pour les responsables)
+    if (supervisorId) {
+      where.supervisorId = supervisorId;
+    }
 
     // Support pour plusieurs statuts séparés par des virgules
     if (status) {

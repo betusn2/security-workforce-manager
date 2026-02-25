@@ -205,6 +205,7 @@ exports.loginByCin = async (req, res) => {
     const { cin, userType } = req.body; // userType: 'agent' ou 'supervisor'
     const { isCheckInAllowed, getEventTimeStatus } = require('../utils/eventTimeWindows');
     const { Assignment, Event } = require('../models');
+    const { Op } = require('sequelize');
 
     if (!cin || !cin.trim()) {
       await logActivity({
@@ -321,25 +322,45 @@ exports.loginByCin = async (req, res) => {
 
     // ✅ VÉRIFICATION DES FENÊTRES DE TEMPS POUR LES ÉVÉNEMENTS
     // Récupérer les affectations confirmées de l'utilisateur
-    const assignments = await Assignment.findAll({
-      where: {
-        agentId: user.id,
-        status: 'confirmed'
-      },
-      include: [{
-        model: Event,
-        as: 'event',
-        required: true
-      }]
-    });
+    // Pour les agents : via la table assignments (agentId)
+    // Pour les superviseurs/responsables : via events.supervisorId
+    let eventsToCheck = [];
 
-    if (assignments.length === 0) {
+    if (userType === 'supervisor') {
+      // Superviseur : chercher les événements où il est désigné comme superviseur
+      const supervisorEvents = await Event.findAll({
+        where: {
+          supervisorId: user.id,
+          status: { [Op.notIn]: ['cancelled', 'terminated'] }
+        }
+      });
+      // Construire des objets compatibles avec la structure attendue plus bas
+      eventsToCheck = supervisorEvents.map(e => ({ event: e }));
+    } else {
+      // Agent : chercher via la table assignments
+      const assignments = await Assignment.findAll({
+        where: {
+          agentId: user.id,
+          status: 'confirmed'
+        },
+        include: [{
+          model: Event,
+          as: 'event',
+          required: true
+        }]
+      });
+      eventsToCheck = assignments;
+    }
+
+    if (eventsToCheck.length === 0) {
       await logActivity({
         userId: user.id,
         action: 'LOGIN_BY_CIN_FAILED',
         entityType: 'auth',
         entityId: user.id,
-        description: 'Connexion CIN refusée - aucune affectation confirmée',
+        description: userType === 'supervisor'
+          ? 'Connexion CIN refusée - aucun événement supervisé actif'
+          : 'Connexion CIN refusée - aucune affectation confirmée',
         req,
         status: 'failure',
         errorMessage: 'Aucune affectation'
@@ -347,7 +368,9 @@ exports.loginByCin = async (req, res) => {
 
       return res.status(403).json({
         success: false,
-        message: 'Vous n\'avez aucune affectation confirmée.',
+        message: userType === 'supervisor'
+          ? 'Vous n\'êtes responsable d\'aucun événement actif.'
+          : 'Vous n\'avez aucune affectation confirmée.',
         code: 'NO_ASSIGNMENTS'
       });
     }
@@ -357,7 +380,7 @@ exports.loginByCin = async (req, res) => {
     const validEvents = [];
     const allEventStatuses = [];
 
-    for (const assignment of assignments) {
+    for (const assignment of eventsToCheck) {
       const event = assignment.event;
       const timeStatus = getEventTimeStatus(event);
       
