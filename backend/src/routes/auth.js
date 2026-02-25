@@ -10,36 +10,21 @@ router.get('/setup-admin', async (req, res) => {
   try {
     const { User } = require('../models');
 
-    // Chercher si l'admin existe déjà
-    const existing = await User.findOne({ where: { email: 'admin@security.com' } });
-
-    if (existing) {
-      // Réinitialiser le mot de passe uniquement
-      const salt = await bcrypt.genSalt(12);
-      const hashedPassword = await bcrypt.hash('Admin123!', salt);
-      await User.update(
-        { password: hashedPassword, status: 'active' },
-        { where: { email: 'admin@security.com' }, hooks: false }
-      );
-      return res.json({
-        success: true,
-        message: 'Mot de passe admin réinitialisé!',
-        credentials: { email: 'admin@security.com', password: 'Admin123!' }
-      });
-    }
-
-    // Supprimer toute ancienne version
-    await User.destroy({ where: { email: 'admin@securityguard.com' }, force: true });
-
-    // Créer le hash du mot de passe
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash('Admin123!', salt);
 
-    // Créer l'admin
+    // Supprimer tous les anciens admins (évite les conflits de contraintes unique)
+    await User.destroy({
+      where: { role: 'admin' },
+      force: true
+    });
+
+    // Créer l'admin avec les bonnes credentials
     await User.create({
       employeeId: 'ADMIN001',
       firstName: 'Admin',
       lastName: 'System',
+      cin: null,
       email: 'admin@security.com',
       password: hashedPassword,
       phone: '+212600000000',
