@@ -145,11 +145,18 @@ const HomeScreen = ({ navigation }) => {
   const checked = events.filter(e => e.attendance?.checkInTime).length;
   const pending = events.filter(e => !e.attendance?.checkInTime).length;
 
-  // Admin stats display values
-  const adminTotalEvents = adminStats?.totalEvents ?? adminStats?.events ?? adminEvents.length;
-  const adminTotalAgents = adminStats?.totalAgents ?? adminStats?.agents ?? adminStats?.totalUsers ?? '—';
-  const adminTodayPresences = adminStats?.todayAttendance ?? adminStats?.todayCheckins ?? '—';
-  const adminActiveEvents = adminStats?.activeEvents ?? adminStats?.ongoingEvents ?? adminEvents.filter(e => {
+  // Admin stats display values — API returns { overview: {...}, todayAttendance: {present,late,absent} }
+  const _overview = adminStats?.overview ?? adminStats;
+  const adminTotalEvents = _overview?.totalEvents ?? adminStats?.events ?? adminEvents.length;
+  const adminTotalAgents = _overview?.totalAgents ?? adminStats?.agents ?? adminStats?.totalUsers ?? '—';
+  const _todayBreakdown = adminStats?.todayAttendance;
+  const adminTodayPresences =
+    _overview?.todayAttendances ??
+    (_todayBreakdown && typeof _todayBreakdown === 'object'
+      ? (_todayBreakdown.present ?? 0) + (_todayBreakdown.late ?? 0)
+      : _todayBreakdown) ??
+    adminStats?.todayCheckins ?? '—';
+  const adminActiveEvents = _overview?.activeEvents ?? adminStats?.ongoingEvents ?? adminEvents.filter(e => {
     const now = new Date();
     const start = e.startDate ? new Date(e.startDate.split('T')[0]) : null;
     const end = e.endDate ? new Date(e.endDate.split('T')[0]) : null;
@@ -176,7 +183,7 @@ const HomeScreen = ({ navigation }) => {
           </View>
         </View>
         <View style={{ alignItems: 'flex-end', gap: 8 }}>
-          <TouchableOpacity style={styles.avatar} onPress={() => navigation.navigate('Profil')}>
+          <TouchableOpacity style={styles.avatar} onPress={() => navigation.navigate('Profile')}>
             <Text style={styles.avatarText}>{user?.firstName?.[0]}{user?.lastName?.[0]}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleLogout}>
@@ -225,6 +232,38 @@ const HomeScreen = ({ navigation }) => {
           </>
         )}
       </View>
+
+      {/* ── Accès rapide Admin ── */}
+      {(isAdmin || isSupervisor) && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Accès rapide</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+            <TouchableOpacity
+              style={styles.adminShortcut}
+              onPress={() => navigation.navigate('AdminEvents')}
+            >
+              <Ionicons name="calendar" size={24} color="#8b5cf6" />
+              <Text style={styles.adminShortcutText}>Événements</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.adminShortcut}
+              onPress={() => navigation.navigate('AdminReports')}
+            >
+              <Ionicons name="bar-chart" size={24} color="#10b981" />
+              <Text style={styles.adminShortcutText}>Rapports</Text>
+            </TouchableOpacity>
+            {isAdmin && (
+              <TouchableOpacity
+                style={styles.adminShortcut}
+                onPress={() => navigation.navigate('AdminUsers')}
+              >
+                <Ionicons name="people" size={24} color="#2563eb" />
+                <Text style={styles.adminShortcutText}>Agents</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
 
       {/* ── Supervisor info if available (même que web) ── */}
       {supervisor && (
@@ -476,6 +515,13 @@ const styles = StyleSheet.create({
     padding: 12, borderRadius: 10, elevation: 1,
   },
   locationText: { marginLeft: 8, color: '#6b7280', fontSize: 12 },
+  adminShortcut: {
+    flex: 1, minWidth: '28%', backgroundColor: '#fff', borderRadius: 12,
+    padding: 14, alignItems: 'center', elevation: 2,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 3,
+  },
+  adminShortcutText: { fontSize: 12, fontWeight: '600', color: '#374151', marginTop: 6 },
 });
 
 export default HomeScreen;

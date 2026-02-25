@@ -3,7 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
 // Screens
 import LoginScreen from '../screens/LoginScreen';
@@ -15,6 +15,30 @@ import NotificationsScreen from '../screens/NotificationsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import IncidentReportScreen from '../screens/IncidentReportScreen';
 import EventDetailScreen from '../screens/EventDetailScreen';
+import SettingsScreen from '../screens/SettingsScreen';
+import EventsScreen from '../screens/EventsScreen';
+import ReportsScreen from '../screens/ReportsScreen';
+import UsersScreen from '../screens/UsersScreen';
+import AssignmentsScreen from '../screens/AssignmentsScreen';
+
+// Placeholder screen for features not yet implemented
+const ComingSoonScreen = ({ navigation, route }) => (
+  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f3f4f6', padding: 32 }}>
+    <Ionicons name="construct-outline" size={64} color="#d1d5db" />
+    <Text style={{ fontSize: 20, fontWeight: '700', color: '#374151', marginTop: 16 }}>
+      {route?.params?.title || 'Fonctionnalité bientôt disponible'}
+    </Text>
+    <Text style={{ fontSize: 14, color: '#9ca3af', marginTop: 8, textAlign: 'center' }}>
+      Cette section sera disponible dans une prochaine mise à jour.
+    </Text>
+    <TouchableOpacity
+      onPress={() => navigation.goBack()}
+      style={{ marginTop: 24, backgroundColor: '#2563eb', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 }}
+    >
+      <Text style={{ color: '#fff', fontWeight: '600' }}>Retour</Text>
+    </TouchableOpacity>
+  </View>
+);
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -165,6 +189,19 @@ const AppStack = () => (
         headerBackTitleVisible: false,
       }}
     />
+    {/* Stub screens for features coming soon */}
+    <Stack.Screen name="EditProfile"    component={ComingSoonScreen} options={{ title: 'Modifier le profil' }} />
+    <Stack.Screen name="ChangePassword" component={ComingSoonScreen} options={{ title: 'Changer le mot de passe' }} />
+    <Stack.Screen name="Documents"      component={ComingSoonScreen} options={{ title: 'Documents' }} />
+    <Stack.Screen name="Paramètres"     component={SettingsScreen}  options={{ title: 'Paramètres', headerShown: false }} />
+    <Stack.Screen name="Help"           component={ComingSoonScreen} options={{ title: 'Aide' }} />
+    <Stack.Screen name="IncidentDetail" component={ComingSoonScreen} options={{ title: 'Détail incident' }} />
+    <Stack.Screen name="Profil"         component={ProfileScreen}   options={{ headerShown: false }} />
+    {/* Écrans admin */}
+    <Stack.Screen name="AdminEvents"      component={EventsScreen}      options={{ title: 'Gestion Événements', headerBackTitleVisible: false }} />
+    <Stack.Screen name="AdminReports"     component={ReportsScreen}     options={{ title: 'Rapports & Stats',    headerBackTitleVisible: false }} />
+    <Stack.Screen name="AdminUsers"       component={UsersScreen}       options={{ title: 'Gestion Agents',     headerBackTitleVisible: false }} />
+    <Stack.Screen name="MyAssignments"    component={AssignmentsScreen} options={{ title: 'Mes Affectations',    headerBackTitleVisible: false }} />
   </Stack.Navigator>
 );
 
