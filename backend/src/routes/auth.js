@@ -5,37 +5,52 @@ const { authenticate } = require('../middlewares/auth');
 const { userValidation, validate } = require('../middlewares/validator');
 const bcrypt = require('bcryptjs');
 
-// Route temporaire pour créer l'admin - SUPPRIMER EN PRODUCTION
+// Route pour créer/réinitialiser l'admin - utiliser uniquement lors du premier déploiement
 router.get('/setup-admin', async (req, res) => {
   try {
     const { User } = require('../models');
 
-    // Supprimer l'ancien admin s'il existe
+    // Chercher si l'admin existe déjà
+    const existing = await User.findOne({ where: { email: 'admin@security.com' } });
+
+    if (existing) {
+      // Réinitialiser le mot de passe uniquement
+      const salt = await bcrypt.genSalt(12);
+      const hashedPassword = await bcrypt.hash('Admin123!', salt);
+      await User.update(
+        { password: hashedPassword, status: 'active' },
+        { where: { email: 'admin@security.com' }, hooks: false }
+      );
+      return res.json({
+        success: true,
+        message: 'Mot de passe admin réinitialisé!',
+        credentials: { email: 'admin@security.com', password: 'Admin123!' }
+      });
+    }
+
+    // Supprimer toute ancienne version
     await User.destroy({ where: { email: 'admin@securityguard.com' }, force: true });
 
     // Créer le hash du mot de passe
     const salt = await bcrypt.genSalt(12);
-    const hashedPassword = await bcrypt.hash('Admin@123', salt);
+    const hashedPassword = await bcrypt.hash('Admin123!', salt);
 
     // Créer l'admin
-    const admin = await User.create({
+    await User.create({
       employeeId: 'ADMIN001',
       firstName: 'Admin',
       lastName: 'System',
-      email: 'admin@securityguard.com',
+      email: 'admin@security.com',
       password: hashedPassword,
-      phone: '+33600000000',
+      phone: '+212600000000',
       role: 'admin',
       status: 'active'
-    }, { hooks: false }); // Désactiver les hooks pour éviter le double hashage
+    }, { hooks: false });
 
     res.json({
       success: true,
       message: 'Admin créé avec succès!',
-      credentials: {
-        email: 'admin@securityguard.com',
-        password: 'Admin@123'
-      }
+      credentials: { email: 'admin@security.com', password: 'Admin123!' }
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
