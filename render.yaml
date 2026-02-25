@@ -19,9 +19,9 @@ services:
       
       # Railway MySQL Database (External)
       - key: DB_HOST
-        value: mainline.proxy.rlwy.net
+        value: nozomi.proxy.rlwy.net
       - key: DB_PORT
-        value: 20601
+        value: 23833
       - key: DB_NAME
         value: railway
       - key: DB_USER
