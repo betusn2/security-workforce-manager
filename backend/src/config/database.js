@@ -38,14 +38,13 @@ module.exports = {
     logging: false
   },
   production: {
-    use_env_variable: process.env.DATABASE_URL ? 'DATABASE_URL' : null,
-    username: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT || (isPostgres ? 5432 : 3306),
+    username: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || 'uRpoqGKauYDRIYymcsApwnBblZJDnykx',
+    database: process.env.DB_NAME || 'railway',
+    host: process.env.DB_HOST || 'nozomi.proxy.rlwy.net',
+    port: parseInt(process.env.DB_PORT) || 23833,
     dialect: dialect,
-    logging: console.log, // Enable logging to debug connection issues
+    logging: console.log, // E nable logging to debug connection issues
     dialectOptions: isPostgres ? {
       ssl: {
         require: true,
