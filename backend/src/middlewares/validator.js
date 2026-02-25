@@ -31,7 +31,7 @@ const userValidation = {
       .notEmpty().withMessage('Le nom est requis')
       .isLength({ max: 100 }).withMessage('Le nom ne doit pas dépasser 100 caractères'),
     body('email')
-      .notEmpty().withMessage('L\'email est requis')
+      .optional()
       .isEmail().withMessage('Email invalide'),
     // Le mot de passe est optionnel - si non fourni, le CIN sera utilisé pour agents/superviseurs
     body('password')
@@ -44,7 +44,10 @@ const userValidation = {
       .isLength({ min: 4, max: 20 }).withMessage('Le CIN doit contenir entre 4 et 20 caractères'),
     body('role')
       .optional()
-      .isIn(['agent', 'supervisor', 'admin']).withMessage('Rôle invalide')
+      .isIn(['agent', 'supervisor', 'admin']).withMessage('Rôle invalide'),
+    body('supervisorId')
+      .optional()
+      .isUUID().withMessage('supervisorId invalide')
   ],
   update: [
     body('firstName')

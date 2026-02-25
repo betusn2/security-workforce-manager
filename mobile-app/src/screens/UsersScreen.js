@@ -22,8 +22,9 @@ export default function UsersScreen({ navigation }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   // Create form state
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', cin: '', role: 'agent', phone: '', password: '' });
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', cin: '', role: 'agent', phone: '', password: '', supervisorId: '' });
   const [creating, setCreating] = useState(false);
+  const [supervisors, setSupervisors] = useState([]);
 
   const isAdmin = user?.role === 'admin';
 
@@ -43,11 +44,24 @@ export default function UsersScreen({ navigation }) {
   }, []);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
+
+  useEffect(() => {
+    usersAPI.getAll({ role: 'supervisor', limit: 100 })
+      .then(res => {
+        const raw = res?.data?.data;
+        setSupervisors(Array.isArray(raw) ? raw : (raw?.users || []));
+      })
+      .catch(() => {});
+  }, []);
   const onRefresh = () => { setRefreshing(true); fetchUsers(); };
 
   const handleCreate = async () => {
     if (!form.firstName || !form.lastName || !form.role) {
       Alert.alert('Erreur', 'Prénom, nom et rôle sont requis');
+      return;
+    }
+    if (form.role !== 'admin' && !form.cin) {
+      Alert.alert('Erreur', 'Le CIN est obligatoire pour les agents et responsables');
       return;
     }
     if (!form.email && !form.cin) {
@@ -58,9 +72,15 @@ export default function UsersScreen({ navigation }) {
     try {
       const payload = { ...form };
       if (!payload.password) payload.password = 'Temp1234!';
+      if (payload.role === 'agent' && !payload.supervisorId) {
+        Alert.alert('Erreur', 'Un agent doit avoir un responsable assigné');
+        setCreating(false);
+        return;
+      }
+      if (payload.role !== 'agent') delete payload.supervisorId;
       await usersAPI.create(payload);
       setShowCreateModal(false);
-      setForm({ firstName: '', lastName: '', email: '', cin: '', role: 'agent', phone: '', password: '' });
+      setForm({ firstName: '', lastName: '', email: '', cin: '', role: 'agent', phone: '', password: '', supervisorId: '' });
       Alert.alert('Succès', 'Utilisateur créé avec succès');
       fetchUsers();
     } catch (e) {
@@ -216,8 +236,8 @@ export default function UsersScreen({ navigation }) {
               {[
                 { label: 'Prénom *', key: 'firstName', placeholder: 'Prénom' },
                 { label: 'Nom *', key: 'lastName', placeholder: 'Nom' },
+                { label: 'CIN' + (form.role !== 'admin' ? ' *' : ''), key: 'cin', placeholder: 'Ex: AB123456' },
                 { label: 'Email', key: 'email', placeholder: 'email@example.com', kbType: 'email-address' },
-                { label: 'CIN', key: 'cin', placeholder: 'Ex: AB123456' },
                 { label: 'Téléphone', key: 'phone', placeholder: '0600000000', kbType: 'phone-pad' },
                 { label: 'Mot de passe', key: 'password', placeholder: 'Laissez vide → Temp1234!', secure: true },
               ].map(f => (
@@ -243,13 +263,40 @@ export default function UsersScreen({ navigation }) {
                     <TouchableOpacity
                       key={r}
                       style={[styles.roleOpt, form.role === r && { backgroundColor: ROLE_COLORS[r], borderColor: ROLE_COLORS[r] }]}
-                      onPress={() => setForm(prev => ({ ...prev, role: r }))}
+                      onPress={() => setForm(prev => ({ ...prev, role: r, supervisorId: '' }))}
                     >
                       <Text style={[styles.roleOptText, form.role === r && { color: '#fff' }]}>{ROLE_LABELS[r]}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
               </View>
+
+              {form.role === 'agent' && (
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Responsable *</Text>
+                  {supervisors.length === 0 ? (
+                    <Text style={{ color: '#ef4444', fontSize: 13, marginTop: 4 }}>Aucun responsable disponible. Créez d'abord un responsable.</Text>
+                  ) : (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
+                      {supervisors.map(s => (
+                        <TouchableOpacity
+                          key={s.id}
+                          style={[{
+                            paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                            borderWidth: 1.5, borderColor: '#7c3aed', marginRight: 8,
+                            backgroundColor: form.supervisorId === s.id ? '#7c3aed' : '#fff'
+                          }]}
+                          onPress={() => setForm(prev => ({ ...prev, supervisorId: s.id }))}
+                        >
+                          <Text style={{ color: form.supervisorId === s.id ? '#fff' : '#7c3aed', fontWeight: '600', fontSize: 13 }}>
+                            {s.firstName} {s.lastName}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  )}
+                </View>
+              )}
 
               <TouchableOpacity style={styles.createBtn} onPress={handleCreate} disabled={creating}>
                 {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.createBtnText}>Créer l'utilisateur</Text>}

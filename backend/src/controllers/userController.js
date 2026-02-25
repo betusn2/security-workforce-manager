@@ -259,7 +259,8 @@ exports.createUser = async (req, res) => {
     }
 
     // Check for existing user (email, CIN ou téléphone principal)
-    const whereConditions = [{ email }];
+    const whereConditions = [];
+    if (email) whereConditions.push({ email });
     if (cin) {
       whereConditions.push({ cin: cin.toUpperCase().trim() });
     }
@@ -267,12 +268,16 @@ exports.createUser = async (req, res) => {
       whereConditions.push({ phone: phone.trim() });
     }
 
+    if (whereConditions.length === 0) {
+      return res.status(400).json({ success: false, message: 'Email ou CIN requis' });
+    }
+
     const existing = await User.findOne({
       where: { [Op.or]: whereConditions }
     });
 
     if (existing) {
-      if (existing.email === email) {
+      if (email && existing.email === email) {
         return res.status(400).json({
           success: false,
           message: 'Cet email est déjà utilisé par un autre utilisateur'
