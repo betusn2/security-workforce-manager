@@ -1,5 +1,8 @@
 require('dotenv').config({ path: '../.env' });
 
+// Log DB connection info at startup (helps verify correct DB is used)
+console.log('[DB] Host:', process.env.DB_HOST, '| Port:', process.env.DB_PORT, '| DB:', process.env.DB_NAME);
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
