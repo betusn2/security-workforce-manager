@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
-import { authAPI, assignmentsAPI } from './api';
+import { authAPI } from './api';
+import { navigateToLogin } from './navigationRef';
 
 const useAuthStore = create((set, get) => ({
   user: null,
@@ -27,57 +28,27 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
-  // Login par CIN pour le pointage
+  // Login par CIN pour le pointage (même logique que /checkin web)
   loginByCin: async (cin, deviceInfo, userType = 'agent') => {
     set({ isLoading: true, error: null });
     try {
-      // 1. Connexion par CIN avec le type d'utilisateur
+      // Connexion par CIN avec le type d'utilisateur
       const loginResponse = await authAPI.loginByCin({ cin, deviceInfo, userType });
       const { user, checkInToken } = loginResponse.data.data;
 
       // Stocker le token check-in
       await SecureStore.setItemAsync('checkInToken', checkInToken);
-
-      // 2. Vérifier les assignations pour aujourd'hui ou dans les 2h
-      const assignmentsResponse = await assignmentsAPI.getMyAssignments({
-        status: 'confirmed',
-        today: true
-      });
-
-      const assignments = assignmentsResponse.data.data || [];
-      const now = new Date();
-      const twoHoursLater = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-      const today = now.toISOString().split('T')[0];
-
-      const validAssignments = assignments.filter(a => {
-        if (!a.event?.startDate) return false;
-        const eventDate = new Date(a.event.startDate);
-        const eventDateStr = eventDate.toISOString().split('T')[0];
-        if (eventDateStr === today) return true;
-        if (eventDate >= now && eventDate <= twoHoursLater) return true;
-        return false;
-      });
-
-      if (validAssignments.length === 0) {
-        await SecureStore.deleteItemAsync('checkInToken');
-        const roleMessage = userType === 'agent' 
-          ? "Aucun événement trouvé. Assurez-vous d'être connecté via la section 'Agents' et d'être affecté à un événement confirmé aujourd'hui ou dans les 2 prochaines heures."
-          : "Aucun événement trouvé. Assurez-vous d'être connecté via la section 'Responsables' et d'être affecté à un événement confirmé aujourd'hui ou dans les 2 prochaines heures.";
-        set({ isLoading: false, error: roleMessage });
-        return { success: false, error: roleMessage };
-      }
-
-      // Stocker les infos utilisateur
       await SecureStore.setItemAsync('checkInUser', JSON.stringify(user));
+
+      // Toujours rediriger vers CheckIn après login CIN (comme le web /checkin)
+      // Le CheckIn screen gère lui-même la vérification des événements disponibles
       set({ user, isAuthenticated: true, isCheckInMode: true, isLoading: false });
       return { success: true };
     } catch (error) {
       let message = error.response?.data?.message || 'Erreur de connexion CIN';
-      // Enrichir le message "CIN non trouvé" avec du contexte utile
+      // Enrichir le message "CIN non trouvé"
       if (message === 'CIN non trouvé' || message === 'CIN not found') {
-        const roleHint = userType === 'agent'
-          ? 'Agents'
-          : 'Responsables';
+        const roleHint = userType === 'agent' ? 'Agents' : 'Responsables';
         message = `CIN non trouvé\n\n⚠️ Votre compte n\'existe pas encore. Demandez à l\'administrateur de créer votre compte via le tableau de bord web (section ${roleHint}).`;
       }
       set({ error: message, isLoading: false });
@@ -96,6 +67,8 @@ const useAuthStore = create((set, get) => ({
       await SecureStore.deleteItemAsync('checkInToken');
       await SecureStore.deleteItemAsync('checkInUser');
       set({ user: null, isAuthenticated: false, isCheckInMode: false });
+      // Rediriger immédiatement vers la page Login
+      navigateToLogin();
     }
   },
 
@@ -104,6 +77,7 @@ const useAuthStore = create((set, get) => ({
     await SecureStore.deleteItemAsync('checkInToken');
     await SecureStore.deleteItemAsync('checkInUser');
     set({ user: null, isAuthenticated: false, isCheckInMode: false });
+    navigateToLogin();
   },
 
   checkAuth: async () => {
