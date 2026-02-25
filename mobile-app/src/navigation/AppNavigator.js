@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import useAuthStore from '../services/authStore';
 
 // Screens
 import LoginScreen from '../screens/LoginScreen';
@@ -139,8 +140,11 @@ const AuthStack = () => (
 );
 
 // App Stack (authenticated)
-const AppStack = () => (
+const AppStack = () => {
+  const { isCheckInMode } = useAuthStore();
+  return (
   <Stack.Navigator
+    initialRouteName={isCheckInMode ? 'CheckIn' : 'MainTabs'}
     screenOptions={{
       headerStyle: {
         backgroundColor: '#ffffff',
@@ -203,7 +207,8 @@ const AppStack = () => (
     <Stack.Screen name="AdminUsers"       component={UsersScreen}       options={{ title: 'Gestion Agents',     headerBackTitleVisible: false }} />
     <Stack.Screen name="MyAssignments"    component={AssignmentsScreen} options={{ title: 'Mes Affectations',    headerBackTitleVisible: false }} />
   </Stack.Navigator>
-);
+  );
+};
 
 // Main App Navigator
 const AppNavigator = ({ isAuthenticated }) => {

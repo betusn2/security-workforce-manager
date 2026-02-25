@@ -47,11 +47,10 @@ const LoginScreen = ({ navigation }) => {
     clearError();
     const result = await login(email.trim(), password);
 
-    if (result.success) {
-      navigation.replace('Main');
-    } else {
+    if (!result.success) {
       Alert.alert('Erreur de connexion', result.error || 'Email ou mot de passe incorrect');
     }
+    // Si succès, AppNavigator détecte isAuthenticated=true et affiche MainTabs automatiquement
   };
 
   const handleCinLogin = async () => {
@@ -65,10 +64,8 @@ const LoginScreen = ({ navigation }) => {
     const userType = loginMode === 'agent' ? 'agent' : 'supervisor';
     const result = await loginByCin(cin.toUpperCase(), null, userType);
 
-    if (result.success) {
-      navigation.replace('CheckIn');
-    }
-    // L'erreur est déjà affichée dans le formulaire via authStore.error
+    // Si succès, AppNavigator détecte isCheckInMode=true et affiche CheckIn automatiquement
+    // L'erreur est affichée dans le formulaire via authStore.error
   };
 
   return (
