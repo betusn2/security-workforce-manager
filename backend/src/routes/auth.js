@@ -11,19 +11,19 @@ router.get('/setup-admin', async (req, res) => {
     const { sequelize } = require('../models');
     const { v4: uuidv4 } = require('uuid');
 
-    const id = uuidv4();
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash('Admin123!', salt);
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
-    // ── 1. Réinitialiser le mot de passe si l'admin existe déjà ───────────
-    const [existingRows] = await sequelize.query(
-      "SELECT id FROM users WHERE email = 'admin@security.com' AND deleted_at IS NULL LIMIT 1"
+    // ── 1. Vérifier si un admin existe (même soft-deleted) ────────────────
+    const [existingByEmail] = await sequelize.query(
+      "SELECT id FROM users WHERE email = 'admin@security.com' LIMIT 1"
     );
 
-    if (existingRows.length > 0) {
+    if (existingByEmail.length > 0) {
+      // Admin trouvé (actif ou soft-deleted) → mettre à jour mot de passe et réactiver
       await sequelize.query(
-        "UPDATE users SET password = ?, status = 'active', updated_at = ? WHERE email = 'admin@security.com'",
+        "UPDATE users SET password = ?, status = 'active', deleted_at = NULL, updated_at = ? WHERE email = 'admin@security.com'",
         { replacements: [hashedPassword, now] }
       );
       return res.json({
@@ -33,12 +33,13 @@ router.get('/setup-admin', async (req, res) => {
       });
     }
 
-    // ── 2. Nettoyer d'anciens enregistrements qui bloqueraient unique ──────
+    // ── 2. Supprimer tout enregistrement bloquant sur employee_id ─────────
     await sequelize.query(
-      "DELETE FROM users WHERE (email = 'admin@securityguard.com' OR employee_id = 'ADMIN001') AND role = 'admin'"
+      "DELETE FROM users WHERE employee_id = 'ADMIN001' OR email = 'admin@securityguard.com'"
     );
 
     // ── 3. Créer l'admin via SQL brut (contourne les hooks + validations) ──
+    const id = uuidv4();
     await sequelize.query(
       `INSERT INTO users (id, employee_id, first_name, last_name, email, password, phone, role, status, created_at, updated_at)
        VALUES (?, 'ADMIN001', 'Admin', 'System', 'admin@security.com', ?, '+212600000000', 'admin', 'active', ?, ?)`,
@@ -51,7 +52,7 @@ router.get('/setup-admin', async (req, res) => {
       credentials: { email: 'admin@security.com', password: 'Admin123!' }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: error.message, detail: error.errors ? error.errors.map(e => e.message) : null });
   }
 });
 
