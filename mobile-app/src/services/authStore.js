@@ -29,22 +29,47 @@ const useAuthStore = create((set, get) => ({
   },
 
   // Login par CIN pour le pointage (même logique que /checkin web)
-  loginByCin: async (cin, deviceInfo, userType = 'agent') => {
+  loginByCin: async (cin, deviceFingerprint, deviceInfo, userType = 'agent') => {
     set({ isLoading: true, error: null });
     try {
-      // Connexion par CIN avec le type d'utilisateur
-      const loginResponse = await authAPI.loginByCin({ cin, deviceInfo, userType });
+      // 🆕 Connexion par CIN avec MÊMES paramètres que le web
+      console.log('📞 API Call: authAPI.loginByCin', {
+        cin,
+        hasFingerprint: !!deviceFingerprint,
+        hasDeviceInfo: !!deviceInfo,
+        userType
+      });
+      
+      const loginResponse = await authAPI.loginByCin({ 
+        cin, 
+        deviceFingerprint,  // NOUVEAU - identique au web
+        deviceInfo,         // NOUVEAU - identique au web
+        userType 
+      });
+      
       const { user, checkInToken } = loginResponse.data.data;
 
       // Stocker le token check-in
       await SecureStore.setItemAsync('checkInToken', checkInToken);
       await SecureStore.setItemAsync('checkInUser', JSON.stringify(user));
 
+      console.log('✅ Login CIN réussi:', {
+        userId: user.id,
+        role: user.role,
+        hasToken: !!checkInToken
+      });
+
       // Toujours rediriger vers CheckIn après login CIN (comme le web /checkin)
       // Le CheckIn screen gère lui-même la vérification des événements disponibles
       set({ user, isAuthenticated: true, isCheckInMode: true, isLoading: false });
       return { success: true };
     } catch (error) {
+      console.error('❌ Login CIN Error:', {
+        status: error.response?.status,
+        message: error.response?.data?.message,
+        code: error.response?.data?.code
+      });
+      
       let message = error.response?.data?.message || 'Erreur de connexion CIN';
       // Enrichir le message "CIN non trouvé"
       if (message === 'CIN non trouvé' || message === 'CIN not found') {

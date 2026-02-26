@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import useAuthStore from '../services/authStore';
 import { wakeUpServer } from '../services/api';
+import { getDeviceFingerprint, getDeviceInfo } from '../utils/deviceFingerprint';
 
 const LoginScreen = ({ navigation }) => {
   const [loginMode, setLoginMode] = useState('agent'); // 'agent' ou 'supervisor'
@@ -42,8 +43,27 @@ const LoginScreen = ({ navigation }) => {
     }
 
     clearError();
+    
+    // 🆕 Collecter device fingerprint + info (IDENTIQUE AU WEB)
+    console.log('🔑 Collection device fingerprint & info...');
+    const deviceFingerprint = await getDeviceFingerprint();
+    const deviceInfo = await getDeviceInfo();
+    
+    console.log('📱 Device Info collected:', {
+      fingerprint: deviceFingerprint,
+      os: deviceInfo.platform,
+      model: deviceInfo.model
+    });
+    
     const userType = loginMode === 'agent' ? 'agent' : 'supervisor';
-    const result = await loginByCin(cin.toUpperCase().trim(), null, userType);
+    
+    // 🆕 Envoyer MÊMES données que le web: cin + deviceFingerprint + deviceInfo + userType
+    const result = await loginByCin(
+      cin.toUpperCase().trim(), 
+      deviceFingerprint,  // NOUVEAU
+      deviceInfo,         // NOUVEAU
+      userType
+    );
 
     if (!result.success) {
       Alert.alert(
