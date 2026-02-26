@@ -12,8 +12,14 @@ import {
 } from 'react-native';
 import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
+import * as Battery from 'expo-battery';
 import { Ionicons } from '@expo/vector-icons';
 import { attendanceAPI, assignmentsAPI, eventsAPI } from '../services/api';
+import socketService from '../services/socketService';
+import deviceInfoService from '../services/deviceInfoService';
+import soundEffects from '../utils/soundEffects';
+import { getDeviceFingerprint, getDeviceInfo } from '../utils/deviceFingerprint';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ── Haversine (identique au web CheckIn.jsx) ──────────────────
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -67,10 +73,283 @@ const CheckInScreen = ({ route, navigation }) => {
   const [step,         setStep]         = useState('init');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // 🆕 Web-like Features
+  const [batteryLevel,           setBatteryLevel]           = useState(null);
+  const [batteryCharging,        setBatteryCharging]        = useState(false);
+  const [deviceFingerprint,      setDeviceFingerprint]      = useState(null);
+  const [enrichedDeviceInfo,     setEnrichedDeviceInfo]     = useState(null);
+  const [isSocketAuthenticated,  setIsSocketAuthenticated]  = useState(false);
+  const [isSocketConnected,      setIsSocketConnected]      = useState(false);
+  const [userId,                 setUserId]                 = useState(null);
+
   const cameraRef = useRef(null);
+  const locationIntervalRef = useRef(null);
+  const batterySubscription = useRef(null);
 
   // ── 1. INIT : mêmes appels API que web ─────────────────────
   useEffect(() => { initData(); }, []);
+
+  // ── 🆕 INIT WEB-LIKE: Socket.IO + Battery + GPS Tracking ───
+  useEffect(() => {
+    console.log('🚀 CheckInScreen: Initialisation des fonctionnalités web');
+    
+    // Initialiser les services
+    const initServices = async () => {
+      // 1. Sound effects
+      await soundEffects.initialize();
+      
+      // 2. Device fingerprint
+      const fingerprint = await getDeviceFingerprint();
+      setDeviceFingerprint(fingerprint);
+      console.log('🔑 Device Fingerprint:', fingerprint);
+      
+      // 3. Device info enrichis
+      const deviceInfo = await getDeviceInfo();
+      setEnrichedDeviceInfo(deviceInfo);
+      console.log('📱 Device Info:', deviceInfo);
+      
+      // 4. Charger userId depuis AsyncStorage
+      try {
+        const userDataStr = await AsyncStorage.getItem('checkInUser');
+        if (userDataStr) {
+          const userData = JSON.parse(userDataStr);
+          setUserId(userData.id);
+          console.log('👤 User ID chargé:', userData.id);
+          
+          // 5. Initialiser Socket.IO
+          await initializeSocket(userData.id);
+        }
+      } catch (error) {
+        console.error('Erreur chargement userId:', error);
+      }
+      
+      // 6. Démarrer Battery monitoring
+      startBatteryMonitoring();
+      
+      // 7. Démarrer GPS tracking automatique
+      startLocationTracking();
+    };
+    
+    initServices();
+    
+    // Cleanup
+    return () => {
+      console.log('🧹 CheckInScreen: Cleanup');
+      stopLocationTracking();
+      stopBatteryMonitoring();
+      // Socket.IO reste actif (géré globalement par socketService)
+    };
+  }, []);
+
+  // ── Socket.IO Initialization (même que web) ──────────────
+  const initializeSocket = async (uid) => {
+    try {
+      const token = await AsyncStorage.getItem('checkInToken') || 
+                    await AsyncStorage.getItem('accessToken') ||
+                    await AsyncStorage.getItem('token');
+      
+      const validEventsStr = await AsyncStorage.getItem('validEvents');
+      const validEvents = validEventsStr ? JSON.parse(validEventsStr) : [];
+      const eventId = validEvents[0]?.id || selectedEvent?.id || null;
+      
+      console.log('🔌 Initialisation Socket.IO:', { userId: uid, eventId, hasToken: !!token });
+      
+      // Connecter avec les mêmes paramètres que le web
+      socketService.connect(uid, 'agent', eventId, token);
+      
+      // Écouter les événements Socket.IO
+      socketService.on('connect', () => {
+        console.log('✅ Socket.IO connecté');
+        setIsSocketConnected(true);
+      });
+      
+      socketService.on('auth:success', (data) => {
+        console.log('✅ Authentification Socket.IO réussie:', data);
+        setIsSocketAuthenticated(true);
+      });
+      
+      socketService.on('auth:error', (error) => {
+        console.error('❌ Erreur auth Socket.IO:', error);
+        setIsSocketAuthenticated(false);
+        Alert.alert('Erreur Socket.IO', error.message);
+      });
+      
+      socketService.on('tracking:position_ack', (data) => {
+        console.log('✅ Position confirmée:', data);
+      });
+      
+      socketService.on('tracking:error', (error) => {
+        console.error('❌ Erreur tracking:', error);
+      });
+      
+      socketService.on('disconnect', () => {
+        console.log('🔌 Socket.IO déconnecté');
+        setIsSocketConnected(false);
+        setIsSocketAuthenticated(false);
+      });
+      
+    } catch (error) {
+      console.error('Erreur initialisation Socket.IO:', error);
+    }
+  };
+
+  // ── Battery Monitoring (même que web getBatteryLevel) ─────
+  const startBatteryMonitoring = async () => {
+    try {
+      // Niveau initial
+      const level = await Battery.getBatteryLevelAsync();
+      const charging = await Battery.getBatteryStateAsync();
+      setBatteryLevel(Math.round(level * 100));
+      setBatteryCharging(charging === Battery.BatteryState.CHARGING);
+      
+      console.log('🔋 Batterie:', Math.round(level * 100) + '%', charging === Battery.BatteryState.CHARGING ? '(en charge)' : '');
+      
+      // Écouter les changements
+      batterySubscription.current = Battery.addBatteryLevelListener(({ batteryLevel }) => {
+        setBatteryLevel(Math.round(batteryLevel * 100));
+      });
+      
+      Battery.addBatteryStateListener(({ batteryState }) => {
+        setBatteryCharging(batteryState === Battery.BatteryState.CHARGING);
+      });
+    } catch (error) {
+      console.log('Battery API non disponible:', error);
+    }
+  };
+  
+  const stopBatteryMonitoring = () => {
+    if (batterySubscription.current) {
+      batterySubscription.current.remove();
+      batterySubscription.current = null;
+    }
+  };
+
+  // ── GPS Tracking Automatique (même que web: toutes les 5s) ───
+  const startLocationTracking = async () => {
+    try {
+      // Vérifier permission
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('⚠️ Permission GPS refusée');
+        return;
+      }
+      
+      // Position immédiate
+      const initialLoc = await Location.getCurrentPositionAsync({ 
+        accuracy: Location.Accuracy.High 
+      });
+      setLocation(initialLoc.coords);
+      await sendLocationUpdate(initialLoc.coords);
+      
+      // Puis toutes les 5 secondes (comme le web)
+      locationIntervalRef.current = setInterval(async () => {
+        try {
+          const loc = await Location.getCurrentPositionAsync({ 
+            accuracy: Location.Accuracy.High 
+          });
+          setLocation(loc.coords);
+          await sendLocationUpdate(loc.coords);
+        } catch (error) {
+          console.error('Erreur GPS:', error);
+        }
+      }, 5000); // 5 secondes
+      
+      console.log('📍 GPS tracking démarré (intervalle: 5s)');
+    } catch (error) {
+      console.error('Erreur démarrage GPS tracking:', error);
+    }
+  };
+  
+  const stopLocationTracking = () => {
+    if (locationIntervalRef.current) {
+      clearInterval(locationIntervalRef.current);
+      locationIntervalRef.current = null;
+      console.log('📍 GPS tracking arrêté');
+    }
+  };
+
+  // ── Envoyer position via Socket.IO (même que web sendLocationUpdate) ───
+  const sendLocationUpdate = async (coords) => {
+    if (!userId) {
+      console.log('⚠️ UserId non disponible, position non envoyée');
+      return;
+    }
+    
+    if (!socketService.isConnected()) {
+      console.log('⚠️ Socket.IO non connecté');
+      return;
+    }
+    
+    // CRITIQUE: Vérifier authentification (même que web)
+    if (!isSocketAuthenticated) {
+      console.log('⏳ En attente authentification Socket.IO...');
+      return;
+    }
+    
+    try {
+      // 🆕 Collecter TOUTES les infos enrichies (40+ champs comme le web)
+      const enrichedInfo = await deviceInfoService.getAllInfo();
+      
+      const data = {
+        userId: userId,
+        // GPS
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        accuracy: coords.accuracy,
+        altitude: coords.altitude || null,
+        speed: coords.speed || 0,
+        heading: coords.heading || null,
+        
+        // 🔋 Batterie complète
+        batteryLevel: enrichedInfo.battery?.level || batteryLevel || 100,
+        batteryCharging: enrichedInfo.battery?.charging || batteryCharging,
+        batteryChargingTime: enrichedInfo.battery?.chargingTime,
+        batteryDischargingTime: enrichedInfo.battery?.dischargingTime,
+        batteryStatus: enrichedInfo.battery?.status,
+        batteryEstimatedTime: enrichedInfo.battery?.estimatedTimeRemaining,
+        batteryLowPowerMode: enrichedInfo.battery?.lowPowerMode,
+        
+        // 📶 Réseau
+        networkType: enrichedInfo.network?.type,
+        networkConnected: enrichedInfo.network?.isConnected,
+        networkStatus: enrichedInfo.network?.status,
+        networkIpAddress: enrichedInfo.network?.ipAddress,
+        
+        // 📱 Appareil
+        deviceOS: enrichedInfo.device?.platform || Platform.OS,
+        deviceOSVersion: enrichedInfo.device?.osVersion,
+        deviceBrand: enrichedInfo.device?.brand,
+        deviceModel: enrichedInfo.device?.model,
+        deviceName: enrichedInfo.device?.deviceName,
+        deviceType: enrichedInfo.device?.isDevice ? 'physical' : 'emulator',
+        deviceMemory: enrichedInfo.device?.totalMemory,
+        deviceCPUArchitectures: enrichedInfo.device?.supportedCpuArchitectures?.join(','),
+        deviceScreenResolution: enrichedInfo.device?.screenResolution,
+        deviceAppVersion: enrichedInfo.device?.appVersion,
+        deviceFingerprint: deviceFingerprint,
+        
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('📡 Envoi position enrichie:', {
+        battery: data.batteryLevel + '%',
+        network: data.networkType,
+        device: `${data.deviceBrand} ${data.deviceModel}`
+      });
+      
+      socketService.emit('location-update', data);
+      
+      console.log('📍 Position envoyée via Socket.IO:', {
+        userId: userId,
+        lat: coords.latitude.toFixed(5),
+        lng: coords.longitude.toFixed(5),
+        battery: data.batteryLevel,
+        authenticated: isSocketAuthenticated
+      });
+    } catch (error) {
+      console.error('Erreur envoi position:', error);
+    }
+  };
 
   const initData = async () => {
     try {
@@ -170,6 +449,9 @@ const CheckInScreen = ({ route, navigation }) => {
   const capturePhoto = async () => {
     if (!cameraRef.current || !cameraReady) return;
     try {
+      // 🎵 Son de capture (comme le web)
+      soundEffects.playCameraShutter();
+      
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.8, base64: true });
       setCapturedPhoto(photo);
       setStep('confirm');
@@ -195,8 +477,17 @@ const CheckInScreen = ({ route, navigation }) => {
         checkInMethod:        'facial',
         isWithinGeofence,
         distanceFromLocation: distance,
-        deviceInfo:           { platform: Platform.OS, version: String(Platform.Version) },
+        deviceInfo:           { 
+          platform: Platform.OS, 
+          version: String(Platform.Version),
+          fingerprint: deviceFingerprint,
+          ...enrichedDeviceInfo 
+        },
       });
+      
+      // 🎵 Son de succès (comme le web)
+      soundEffects.playValidation();
+      
       setStep('success');
       setTimeout(() => navigation.navigate('Home'), 2500);
     } catch (err) {
@@ -304,6 +595,24 @@ const CheckInScreen = ({ route, navigation }) => {
   if (step === 'confirm' && capturedPhoto) {
     return (
       <ScrollView style={styles.bgGray} contentContainerStyle={{ padding: 16 }}>
+        {/* 🆕 Status Bar aussi dans confirmation */}
+        <View style={[styles.statusBar, { position: 'relative', top: 0, marginBottom: 12 }]}>
+          {batteryLevel !== null && (
+            <View style={[styles.statusBadge, { backgroundColor: batteryLevel < 20 ? '#ef4444' : '#10b981' }]}>
+              <Ionicons name={batteryCharging ? 'battery-charging' : 'battery-full'} size={12} color="#fff" />
+              <Text style={styles.statusBadgeText}>{batteryLevel}%</Text>
+            </View>
+          )}
+          <View style={[styles.statusBadge, { 
+            backgroundColor: isSocketAuthenticated ? '#10b981' : isSocketConnected ? '#f59e0b' : '#6b7280' 
+          }]}>
+            <Ionicons name="wifi" size={12} color="#fff" />
+            <Text style={styles.statusBadgeText}>
+              {isSocketAuthenticated ? 'En ligne' : isSocketConnected ? 'Auth...' : 'Hors ligne'}
+            </Text>
+          </View>
+        </View>
+        
         {/* Carte événement (même que web) */}
         {selectedEvent && (
           <View style={styles.card}>
@@ -423,6 +732,33 @@ const CheckInScreen = ({ route, navigation }) => {
           )}
         </View>
       )}
+
+      {/* 🆕 Indicateurs Web-like: Battery + Socket + GPS */}
+      <View style={styles.statusBar}>
+        {/* Battery */}
+        {batteryLevel !== null && (
+          <View style={[styles.statusBadge, { backgroundColor: batteryLevel < 20 ? '#ef4444' : '#10b981' }]}>
+            <Ionicons name={batteryCharging ? 'battery-charging' : 'battery-full'} size={12} color="#fff" />
+            <Text style={styles.statusBadgeText}>{batteryLevel}%</Text>
+          </View>
+        )}
+        
+        {/* Socket.IO */}
+        <View style={[styles.statusBadge, { 
+          backgroundColor: isSocketAuthenticated ? '#10b981' : isSocketConnected ? '#f59e0b' : '#6b7280' 
+        }]}>
+          <Ionicons name="wifi" size={12} color="#fff" />
+          <Text style={styles.statusBadgeText}>
+            {isSocketAuthenticated ? 'En ligne' : isSocketConnected ? 'Auth...' : 'Hors ligne'}
+          </Text>
+        </View>
+        
+        {/* GPS Tracking */}
+        <View style={[styles.statusBadge, { backgroundColor: location ? '#10b981' : '#f59e0b' }]}>
+          <Ionicons name="location" size={12} color="#fff" />
+          <Text style={styles.statusBadgeText}>GPS</Text>
+        </View>
+      </View>
 
       <Camera
         ref={cameraRef}
@@ -568,6 +904,29 @@ const styles = StyleSheet.create({
   cameraEventName: { color: '#fff', fontSize: 14, fontWeight: '600', flex: 1, marginRight: 10 },
   distPill:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   distPillText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  // 🆕 Status Bar Web-like
+  statusBar: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 92 : 78,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    gap: 8,
+    zIndex: 19,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  statusBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
   topOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 16,
