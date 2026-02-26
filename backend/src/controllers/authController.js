@@ -375,113 +375,15 @@ exports.loginByCin = async (req, res) => {
       });
     }
 
-    // Vérifier si au moins un événement est dans la fenêtre de temps autorisée
-    const now = new Date();
-    const validEvents = [];
-    const allEventStatuses = [];
-
-    for (const assignment of eventsToCheck) {
+    // ✅ PLUS DE BLOCAGE PAR FENÊTRE DE TEMPS
+    // La connexion est toujours autorisée si l'utilisateur est actif et a des affectations.
+    // L'app mobile gère l'affichage des événements disponibles dans l'écran CheckIn.
+    // On inclut TOUS les événements (valid + hors fenêtre) dans la réponse.
+    const allEventsForResponse = eventsToCheck.map(assignment => {
       const event = assignment.event;
       const timeStatus = getEventTimeStatus(event);
-      
-      allEventStatuses.push({
-        eventName: event.name,
-        startDate: event.startDate,
-        endDate: event.endDate,
-        timeStatus
-      });
-
-      // L'événement est accessible si:
-      // 1. La fenêtre check-in est ouverte (2h avant → lateThreshold après début)
-      // 2. OU l'événement est en cours (entre checkInTime et checkOutTime)
-      // 3. OU on est dans la fenêtre check-out (jusqu'à lateCheckoutTolerance après la fin)
-      const isAccessible = timeStatus.canCheckIn ||
-        timeStatus.isDuringEvent ||
-        timeStatus.isInCheckOutWindow ||
-        timeStatus.isInPreWindow;
-      if (isAccessible) {
-        validEvents.push({
-          event,
-          timeStatus
-        });
-      }
-    }
-
-    if (validEvents.length === 0) {
-      // Aucun événement dans la fenêtre de temps autorisée
-      // Préparer un message détaillé
-      const nextEvent = allEventStatuses
-        .filter(e => e.timeStatus.isBeforeWindow)
-        .sort((a, b) => new Date(a.startDate) - new Date(b.startDate))[0];
-
-      const pastEvent = allEventStatuses
-        .filter(e => e.timeStatus.isAfterEvent)
-        .sort((a, b) => new Date(b.endDate) - new Date(a.endDate))[0];
-
-      let detailedMessage = '';
-      let nextEventInfo = null;
-
-      if (nextEvent) {
-        const eventStart = new Date(nextEvent.startDate);
-        const twoHoursBefore = new Date(eventStart.getTime() - 2 * 60 * 60 * 1000);
-        const lateThreshold = nextEvent.lateThreshold || 15;
-        const checkInEnd = new Date(eventStart.getTime() + lateThreshold * 60 * 1000);
-        const timeDiff = twoHoursBefore - now;
-        const hoursDiff = Math.floor(timeDiff / (1000 * 60 * 60));
-        const minutesDiff = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
-
-        nextEventInfo = {
-          eventName: nextEvent.eventName,
-          startDate: nextEvent.startDate,
-          accessibleAt: twoHoursBefore,
-          checkInEndTime: checkInEnd,
-          lateThreshold: lateThreshold,
-          hoursRemaining: hoursDiff,
-          minutesRemaining: minutesDiff
-        };
-
-        detailedMessage = `Le check-in pour l'événement "${nextEvent.eventName}" sera disponible 2 heures avant le début (${twoHoursBefore.toLocaleString('fr-FR', { 
-          hour: '2-digit',
-          minute: '2-digit'
-        })}) jusqu'à ${lateThreshold} min après le début (${checkInEnd.toLocaleString('fr-FR', { 
-          hour: '2-digit',
-          minute: '2-digit'
-        })}). Il reste ${hoursDiff}h${minutesDiff}min.`;
-      } else if (pastEvent) {
-        const lateThreshold = pastEvent.lateThreshold || 15;
-        detailedMessage = `L'événement "${pastEvent.eventName}" est terminé. Le check-in était disponible jusqu'à ${lateThreshold} min après le début.`;
-      } else {
-        detailedMessage = 'Aucun événement n\'est actuellement accessible pour le check-in.';
-      }
-
-      await logActivity({
-        userId: user.id,
-        action: 'LOGIN_BY_CIN_FAILED',
-        entityType: 'auth',
-        entityId: user.id,
-        description: `Connexion CIN refusée - Hors fenêtre de temps: ${detailedMessage}`,
-        req,
-        status: 'failure',
-        errorMessage: 'Hors fenêtre de temps'
-      });
-
-      return res.status(403).json({
-        success: false,
-        message: detailedMessage,
-        code: 'OUTSIDE_TIME_WINDOW',
-        data: {
-          nextEvent: nextEventInfo,
-          allEvents: allEventStatuses.map(e => ({
-            name: e.eventName,
-            start: e.startDate,
-            end: e.endDate,
-            canCheckIn: e.timeStatus.canCheckIn,
-            isBeforeWindow: e.timeStatus.isBeforeWindow,
-            isAfterEvent: e.timeStatus.isAfterEvent
-          }))
-        }
-      });
-    }
+      return { event, timeStatus };
+    });
 
     // ✅ Connexion autorisée - Générer les tokens
     const { accessToken, refreshToken } = generateTokens(user);
@@ -501,7 +403,7 @@ exports.loginByCin = async (req, res) => {
       action: 'LOGIN_BY_CIN',
       entityType: 'user',
       entityId: user.id,
-      description: `Connexion par CIN réussie - ${validEvents.length} événement(s) accessible(s)`,
+      description: `Connexion par CIN réussie - ${allEventsForResponse.length} événement(s) trouvé(s)`,
       req
     });
 
@@ -513,7 +415,7 @@ exports.loginByCin = async (req, res) => {
         accessToken,
         refreshToken,
         checkInToken,
-        validEvents: validEvents.map(ve => ({
+        validEvents: allEventsForResponse.map(ve => ({
           eventId: ve.event.id,
           eventName: ve.event.name,
           startDate: ve.event.startDate,
