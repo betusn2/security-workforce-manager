@@ -11,13 +11,21 @@ const getDialect = () => {
 const dialect = getDialect();
 const isPostgres = dialect === 'postgres';
 
+// Support Railway MySQL variables (MYSQLHOST, MYSQLPORT, etc.)
+// Priority: DB_* vars > MYSQL* vars > hardcoded Railway nozomi defaults
+const dbUser     = process.env.DB_USER     || process.env.MYSQLUSER          || 'root';
+const dbPassword = process.env.DB_PASSWORD || process.env.MYSQLPASSWORD       || process.env.MYSQL_ROOT_PASSWORD || 'uRpoqGKauYDRIYymcsApwnBblZJDnykx';
+const dbName     = process.env.DB_NAME     || process.env.MYSQLDATABASE       || process.env.MYSQL_DATABASE      || 'railway';
+const dbHost     = process.env.DB_HOST     || process.env.MYSQLHOST           || 'nozomi.proxy.rlwy.net';
+const dbPort     = parseInt(process.env.DB_PORT || process.env.MYSQLPORT      || '23833');
+
 module.exports = {
   development: {
-    username: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'security_guard_db',
-    host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || (isPostgres ? 5432 : 3306),
+    username: dbUser,
+    password: dbPassword,
+    database: dbName,
+    host: dbHost,
+    port: dbPort,
     dialect: dialect,
     logging: console.log,
     pool: {
@@ -29,20 +37,20 @@ module.exports = {
     timezone: '+00:00'
   },
   test: {
-    username: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME + '_test' || 'security_guard_db_test',
-    host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || (isPostgres ? 5432 : 3306),
+    username: dbUser,
+    password: dbPassword,
+    database: dbName + '_test',
+    host: dbHost,
+    port: dbPort,
     dialect: dialect,
     logging: false
   },
   production: {
-    username: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || 'uRpoqGKauYDRIYymcsApwnBblZJDnykx',
-    database: process.env.DB_NAME || 'railway',
-    host: process.env.DB_HOST || 'nozomi.proxy.rlwy.net',
-    port: parseInt(process.env.DB_PORT) || 23833,
+    username: dbUser,
+    password: dbPassword,
+    database: dbName,
+    host: dbHost,
+    port: dbPort,
     dialect: dialect,
     logging: console.log, // E nable logging to debug connection issues
     dialectOptions: isPostgres ? {
