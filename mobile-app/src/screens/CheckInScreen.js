@@ -20,6 +20,7 @@ import deviceInfoService from '../services/deviceInfoService';
 import soundEffects from '../utils/soundEffects';
 import { getDeviceFingerprint, getDeviceInfo } from '../utils/deviceFingerprint';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { startBackgroundTracking, stopBackgroundTracking } from '../services/backgroundLocationTask';
 
 // ── Haversine (identique au web CheckIn.jsx) ──────────────────
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -128,6 +129,31 @@ const CheckInScreen = ({ route, navigation }) => {
       
       // 7. Démarrer GPS tracking automatique
       startLocationTracking();
+      
+      // 🆕 8. Reprendre le monitoring de fin d'événement si en cours
+      try {
+        const trackingEndDate = await AsyncStorage.getItem('trackingEventEndDate');
+        const trackingEventId = await AsyncStorage.getItem('trackingEventId');
+        
+        if (trackingEndDate && trackingEventId) {
+          const endDate = new Date(trackingEndDate);
+          const now = new Date();
+          
+          // Si l'événement n'est pas encore terminé
+          if (now < endDate) {
+            console.log('🔄 Reprise du monitoring événement en cours:', trackingEventId);
+            startEventEndMonitoring(trackingEndDate, trackingEventId);
+          } else {
+            // Événement déjà terminé, nettoyer
+            console.log('🏁 Événement déjà terminé - Nettoyage');
+            await stopBackgroundTracking();
+            await AsyncStorage.removeItem('trackingEventEndDate');
+            await AsyncStorage.removeItem('trackingEventId');
+          }
+        }
+      } catch (error) {
+        console.error('Erreur reprise monitoring:', error);
+      }
     };
     
     initServices();
@@ -138,6 +164,7 @@ const CheckInScreen = ({ route, navigation }) => {
       stopLocationTracking();
       stopBatteryMonitoring();
       // Socket.IO reste actif (géré globalement par socketService)
+      // Background tracking continue (ne pas arrêter ici)
     };
   }, []);
 
@@ -488,6 +515,37 @@ const CheckInScreen = ({ route, navigation }) => {
       // 🎵 Son de succès (comme le web)
       soundEffects.playValidation();
       
+      // 🆕 DÉMARRER LE TRACKING BACKGROUND (jusqu'à la fin de l'événement)
+      if (userId && selectedEvent?.id) {
+        console.log('🔋 Démarrage tracking arrière-plan...');
+        const bgStarted = await startBackgroundTracking(userId, selectedEvent.id);
+        
+        if (bgStarted) {
+          console.log('✅ Tracking arrière-plan actif jusqu\'à la fin de l\'événement');
+          
+          // Stocker la date de fin pour surveillance
+          if (selectedEvent.endDate) {
+            await AsyncStorage.setItem('trackingEventEndDate', selectedEvent.endDate);
+            await AsyncStorage.setItem('trackingEventId', String(selectedEvent.id));
+            
+            // Démarrer la surveillance de fin d'événement
+            startEventEndMonitoring(selectedEvent.endDate, selectedEvent.id);
+          }
+          
+          Alert.alert(
+            '✅ Pointage réussi',
+            'Votre position sera suivie automatiquement jusqu\'à la fin de l\'événement, même si votre appareil est en veille.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            '⚠️ Tracking limité',
+            'Le suivi en arrière-plan n\'a pas pu démarrer. Votre position sera suivie uniquement lorsque l\'application est ouverte.',
+            [{ text: 'OK' }]
+          );
+        }
+      }
+      
       setStep('success');
       setTimeout(() => navigation.navigate('Home'), 2500);
     } catch (err) {
@@ -495,6 +553,36 @@ const CheckInScreen = ({ route, navigation }) => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // 🆕 Surveillance de la fin d'événement (arrête le tracking automatiquement)
+  const startEventEndMonitoring = (endDate, eventId) => {
+    const checkInterval = setInterval(async () => {
+      const now = new Date();
+      const end = new Date(endDate);
+      
+      console.log(`🕐 Vérif fin événement: ${now.toISOString()} vs ${end.toISOString()}`);
+      
+      // Si l'événement est terminé
+      if (now >= end) {
+        console.log('🏁 Événement terminé - Arrêt du tracking background');
+        
+        await stopBackgroundTracking();
+        await AsyncStorage.removeItem('trackingEventEndDate');
+        await AsyncStorage.removeItem('trackingEventId');
+        
+        clearInterval(checkInterval);
+        
+        Alert.alert(
+          '🏁 Événement terminé',
+          'Le suivi de position a été arrêté automatiquement. N\'oubliez pas de pointer votre sortie.',
+          [{ text: 'OK' }]
+        );
+      }
+    }, 60000); // Vérifier toutes les minutes
+    
+    // Nettoyer l'intervalle quand le composant est démonté
+    return () => clearInterval(checkInterval);
   };
 
   // ────────────────────────────────────────────────────────────
