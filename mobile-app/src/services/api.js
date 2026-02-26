@@ -1,7 +1,7 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = 'https://security-guard-backend-w3qv.onrender.com/api'; // Production Render
+const API_URL = 'https://security-guard-deploy-production.up.railway.app/api'; // Production Railway
 
 const api = axios.create({
   baseURL: API_URL,

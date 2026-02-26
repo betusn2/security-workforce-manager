@@ -31,10 +31,21 @@ Write-Host "`n[3/5] Installation EAS CLI..." -ForegroundColor Yellow
 npm install -g eas-cli
 eas --version
 
-# ── 4. Login Expo ─────────────────────────────────────────────────────────────
-Write-Host "`n[4/5] Login compte Expo (nécessaire pour EAS Build)..." -ForegroundColor Yellow
-Write-Host "ℹ️  Créer un compte gratuit sur https://expo.dev si besoin" -ForegroundColor Gray
-eas login
+# ── 4. Vérifier / Login Expo ──────────────────────────────────────────────────
+Write-Host "`n[4/5] Vérification du compte Expo..." -ForegroundColor Yellow
+
+$whoami = eas whoami 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "✅ Déjà connecté en tant que : $whoami" -ForegroundColor Green
+} else {
+    Write-Host "ℹ️  Non connecté — lancement du login..." -ForegroundColor Gray
+    Write-Host "ℹ️  Compte : ahmadi58  (https://expo.dev)" -ForegroundColor Gray
+    eas login
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ Login échoué. Réessayer avec : eas login" -ForegroundColor Red
+        exit 1
+    }
+}
 
 # ── 5. Build APK ──────────────────────────────────────────────────────────────
 Write-Host "`n[5/5] Build APK Android (profil: preview)..." -ForegroundColor Yellow
@@ -42,5 +53,6 @@ Write-Host "⏳ La compilation prend ~10-15 minutes dans le cloud Expo..." -Fore
 
 eas build --platform android --profile preview --non-interactive
 
-Write-Host "`n✅ Build lancé ! Suivre la progression sur https://expo.dev/accounts/[compte]/projects/security-guard-mobile/builds" -ForegroundColor Green
+Write-Host "`n✅ Build lancé !" -ForegroundColor Green
+Write-Host "📊 Suivre : https://expo.dev/accounts/ahmadi58/projects/security-guard-mobile/builds" -ForegroundColor Cyan
 Write-Host "📱 Le lien de téléchargement APK sera disponible à la fin du build." -ForegroundColor Green

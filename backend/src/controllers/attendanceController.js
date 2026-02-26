@@ -994,6 +994,77 @@ exports.markAbsent = async (req, res) => {
   }
 };
 
+// Get personal stats for the authenticated agent (used by mobile /attendance/my-stats)
+exports.getMyStats = async (req, res) => {
+  try {
+    const where = { agentId: req.user.id };
+
+    const attendances = await Attendance.findAll({ where });
+
+    const present = attendances.filter(a => a.status === 'present').length;
+    const late    = attendances.filter(a => a.status === 'late').length;
+    const absent  = attendances.filter(a => a.status === 'absent').length;
+    const total   = attendances.length;
+    const totalHours = attendances.reduce((sum, a) => sum + (parseFloat(a.totalHours) || 0), 0);
+
+    const punctualityRate = (present + late) > 0
+      ? Math.round((present / (present + late)) * 100)
+      : 0;
+
+    res.json({
+      success: true,
+      data: {
+        presentCount: present,
+        lateCount: late,
+        absentCount: absent,
+        total,
+        totalHours: parseFloat(totalHours.toFixed(2)),
+        punctualityRate,
+        // also expose raw keys for compatibility
+        present,
+        late,
+        absent
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Erreur stats personnelles' });
+  }
+};
+
+// Get paginated attendance history for the authenticated agent (used by mobile /attendance/my-history)
+exports.getMyHistory = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const where = { agentId: req.user.id };
+    if (status && status !== 'all') where.status = status;
+
+    const { count, rows } = await Attendance.findAndCountAll({
+      where,
+      include: [{ model: Event, as: 'event', attributes: ['id', 'name', 'location', 'checkInTime', 'checkOutTime'] }],
+      order: [['date', 'DESC']],
+      limit: parseInt(limit),
+      offset
+    });
+
+    res.json({
+      success: true,
+      data: {
+        attendances: rows,
+        pagination: {
+          total: count,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          hasMore: offset + rows.length < count
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Erreur historique présences' });
+  }
+};
+
 // Get attendance statistics
 exports.getAttendanceStats = async (req, res) => {
   try {

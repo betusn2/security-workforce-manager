@@ -35,17 +35,17 @@ const IncidentReportScreen = ({ route, navigation }) => {
 
   const cameraRef = useRef(null);
 
-  // Incident types
+  // Incident types — valeurs correspondent exactement au ENUM backend
   const incidentTypes = [
-    { id: 'security', label: 'Securite', icon: 'shield' },
-    { id: 'theft', label: 'Vol', icon: 'hand-left' },
-    { id: 'vandalism', label: 'Vandalisme', icon: 'hammer' },
-    { id: 'trespass', label: 'Intrusion', icon: 'person-add' },
-    { id: 'medical', label: 'Medical', icon: 'medkit' },
-    { id: 'fire', label: 'Incendie', icon: 'flame' },
-    { id: 'accident', label: 'Accident', icon: 'car' },
-    { id: 'suspicious', label: 'Suspect', icon: 'eye' },
-    { id: 'other', label: 'Autre', icon: 'ellipsis-horizontal' },
+    { id: 'security_breach',    label: 'Sécurité',  icon: 'shield' },
+    { id: 'theft',              label: 'Vol',       icon: 'hand-left' },
+    { id: 'vandalism',          label: 'Vandalisme',icon: 'hammer' },
+    { id: 'trespassing',        label: 'Intrusion', icon: 'person-add' },
+    { id: 'medical_emergency',  label: 'Médical',   icon: 'medkit' },
+    { id: 'fire_alarm',         label: 'Incendie',  icon: 'flame' },
+    { id: 'suspicious_activity',label: 'Suspect',   icon: 'eye' },
+    { id: 'violence',           label: 'Violence',  icon: 'warning' },
+    { id: 'other',              label: 'Autre',     icon: 'ellipsis-horizontal' },
   ];
 
   // Severity levels
@@ -190,12 +190,10 @@ const IncidentReportScreen = ({ route, navigation }) => {
         eventId: event?.id,
         latitude: location?.latitude,
         longitude: location?.longitude,
-        locationAddress: locationAddress || 'Adresse inconnue',
-        photos: photos.map(p => `data:image/jpeg;base64,${p.base64}`),
-        deviceInfo: {
-          platform: Platform.OS,
-          version: Platform.Version,
-        },
+        location: locationAddress || 'Adresse inconnue', // champ 'location' attendu par le modèle
+        photos: photos.length > 0
+          ? photos.map(p => ({ uri: p.uri, base64: p.base64 ? `data:image/jpeg;base64,${p.base64}` : undefined }))
+          : undefined,
       };
 
       const response = await api.post('/incidents', incidentData);

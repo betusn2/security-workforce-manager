@@ -14,12 +14,16 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
+import useAuthStore from '../services/authStore';
+import { reportsAPI } from '../services/api';
 
 const ProfileScreen = ({ navigation }) => {
-  const [user, setUser] = useState(null);
+  const { user: authUser, logout: authLogout } = useAuthStore();
+  const [user, setUser] = useState(authUser || null); // initialiser avec le store
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [stats, setStats] = useState(null);
+  const [adminDashStats, setAdminDashStats] = useState(null);
   const [notifications, setNotifications] = useState(true);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [locationEnabled, setLocationEnabled] = useState(true);
@@ -28,13 +32,33 @@ const ProfileScreen = ({ navigation }) => {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const [profileRes, statsRes] = await Promise.all([
-        api.get('/auth/me'),
-        api.get('/attendance/my-stats')
+      // Utiliser d'abord l'utilisateur du store comme fallback rapide
+      if (authUser) setUser(authUser);
+
+      const isAdmin = authUser?.role === 'admin' || user?.role === 'admin';
+
+      const [profileRes, statsRes, dashRes] = await Promise.all([
+        api.get('/auth/me').catch(() => null),
+        !isAdmin ? api.get('/attendance/my-stats').catch(() => null) : null,
+        isAdmin ? reportsAPI.getDashboard().catch(() => null) : null,
       ]);
 
-      setUser(profileRes.data.data.user);
-      setStats(statsRes.data.data);
+      if (profileRes?.data?.data?.user) setUser(profileRes.data.data.user);
+      else if (profileRes?.data?.data) setUser(profileRes.data.data);
+      if (statsRes?.data?.data) setStats(statsRes.data.data);
+      if (dashRes?.data?.data) {
+        const d = dashRes.data.data;
+        setAdminDashStats({
+          totalAgents: d.overview?.totalAgents ?? d.totalAgents ?? d.agents ?? 0,
+          totalEvents: d.overview?.totalEvents ?? d.totalEvents ?? d.events ?? 0,
+          activeEvents: d.overview?.activeEvents ?? d.activeEvents ?? d.ongoingEvents ?? 0,
+          todayPresences: d.overview?.todayAttendances ??
+            (d.todayAttendance && typeof d.todayAttendance === 'object'
+              ? (d.todayAttendance.present ?? 0) + (d.todayAttendance.late ?? 0)
+              : d.todayAttendance ?? 0),
+          pendingAssignments: d.overview?.pendingAssignments ?? d.pendingAssignments ?? 0,
+        });
+      }
 
       // Load preferences
       const prefs = await AsyncStorage.getItem('userPreferences');
@@ -118,28 +142,17 @@ const ProfileScreen = ({ navigation }) => {
     await savePreferences('location', value);
   };
 
-  // Logout
+  // Logout — utilise useAuthStore qui vide SecureStore + remet isAuthenticated:false
   const handleLogout = () => {
     Alert.alert(
-      'Deconnexion',
-      'Voulez-vous vous deconnecter?',
+      'Déconnexion',
+      'Voulez-vous vous déconnecter ?',
       [
         { text: 'Annuler', style: 'cancel' },
         {
-          text: 'Deconnecter',
+          text: 'Se déconnecter',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              await AsyncStorage.removeItem('authToken');
-              await AsyncStorage.removeItem('userData');
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Login' }],
-              });
-            } catch (error) {
-              console.error('Logout error:', error);
-            }
-          }
+          onPress: () => authLogout(),
         }
       ]
     );
@@ -173,19 +186,31 @@ const ProfileScreen = ({ navigation }) => {
     }
   };
 
-  if (loading) {
+  // N'afficher le loading que si on n'a aucune donnée du tout
+  const displayUser = user || authUser;
+  if (loading && !displayUser) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2563eb" />
       </View>
     );
   }
+  if (!displayUser) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={{ color: '#6b7280' }}>Impossible de charger le profil</Text>
+      </View>
+    );
+  }
+
+  const roleColors = { admin: '#dc2626', supervisor: '#d97706', agent: '#2563eb', guard: '#059669' };
+  const headerColor = roleColors[displayUser?.role] || '#2563eb';
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Header with profile photo */}
       <View style={styles.header}>
-        <View style={styles.headerBg} />
+        <View style={[styles.headerBg, { backgroundColor: headerColor }]} />
         <View style={styles.profileSection}>
           <TouchableOpacity style={styles.avatarContainer} onPress={updateAvatar}>
             {user?.avatar ? (
@@ -222,14 +247,51 @@ const ProfileScreen = ({ navigation }) => {
         </View>
       </View>
 
-      {/* Stats Cards */}
-      {stats && (
+      {/* Stats Cards — différentes selon le rôle */}
+      {(displayUser?.role === 'admin' || displayUser?.role === 'supervisor') && adminDashStats ? (
+        <View style={styles.statsContainer}>
+          <View style={styles.statsRow}>
+            <View style={[styles.statCard, { backgroundColor: '#dbeafe' }]}>
+              <Ionicons name="people" size={24} color="#2563eb" />
+              <Text style={styles.statValue}>{adminDashStats.totalAgents}</Text>
+              <Text style={styles.statLabel}>Agents</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#f3e8ff' }]}>
+              <Ionicons name="calendar" size={24} color="#8b5cf6" />
+              <Text style={styles.statValue}>{adminDashStats.totalEvents}</Text>
+              <Text style={styles.statLabel}>Événements</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#dcfce7' }]}>
+              <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+              <Text style={styles.statValue}>{adminDashStats.todayPresences}</Text>
+              <Text style={styles.statLabel}>Présences</Text>
+            </View>
+          </View>
+          <View style={[styles.statsRow, { marginTop: 8 }]}>
+            <View style={[styles.statCard, { backgroundColor: '#fef3c7' }]}>
+              <Ionicons name="flash" size={24} color="#f59e0b" />
+              <Text style={styles.statValue}>{adminDashStats.activeEvents}</Text>
+              <Text style={styles.statLabel}>En cours</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#fee2e2' }]}>
+              <Ionicons name="briefcase" size={24} color="#ef4444" />
+              <Text style={styles.statValue}>{adminDashStats.pendingAssignments}</Text>
+              <Text style={styles.statLabel}>En attente</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: '#f1f5f9' }]}>
+              <Ionicons name="shield-checkmark" size={24} color="#64748b" />
+              <Text style={styles.statValue}>{getRoleLabel(displayUser?.role)}</Text>
+              <Text style={styles.statLabel}>Rôle</Text>
+            </View>
+          </View>
+        </View>
+      ) : stats ? (
         <View style={styles.statsContainer}>
           <View style={styles.statsRow}>
             <View style={[styles.statCard, { backgroundColor: '#dcfce7' }]}>
               <Ionicons name="checkmark-circle" size={24} color="#10b981" />
               <Text style={styles.statValue}>{stats.presentCount || 0}</Text>
-              <Text style={styles.statLabel}>Presences</Text>
+              <Text style={styles.statLabel}>Présences</Text>
             </View>
             <View style={[styles.statCard, { backgroundColor: '#dbeafe' }]}>
               <Ionicons name="time" size={24} color="#2563eb" />
@@ -238,12 +300,12 @@ const ProfileScreen = ({ navigation }) => {
             </View>
             <View style={[styles.statCard, { backgroundColor: '#fef3c7' }]}>
               <Ionicons name="star" size={24} color="#f59e0b" />
-              <Text style={styles.statValue}>{user?.overallScore || 0}</Text>
+              <Text style={styles.statValue}>{displayUser?.overallScore || stats.punctualityRate || 0}</Text>
               <Text style={styles.statLabel}>Score</Text>
             </View>
           </View>
         </View>
-      )}
+      ) : null}
 
       {/* Info Section */}
       <View style={styles.section}>
@@ -365,7 +427,11 @@ const ProfileScreen = ({ navigation }) => {
 
           <TouchableOpacity
             style={styles.menuRow}
-            onPress={() => navigation.navigate('History')}
+            onPress={() => {
+            // Agents ont l'onglet 'Historique', sinon aller au stack
+            try { navigation.navigate('Historique'); }
+            catch (_) { navigation.navigate('HistoriqueStack'); }
+          }}
           >
             <View style={styles.menuLeft}>
               <View style={[styles.menuIcon, { backgroundColor: '#dcfce7' }]}>

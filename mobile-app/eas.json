@@ -22,10 +22,30 @@
         "simulator": true
       }
     },
+    "preview-local": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "credentialsSource": "local",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://security-guard-backend.onrender.com/api"
+      }
+    },
     "production": {
       "distribution": "store",
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "credentialsSource": "local"
+      }
+    },
+    "production-local": {
+      "distribution": "store",
+      "android": {
+        "buildType": "app-bundle",
+        "credentialsSource": "local",
+        "gradleCommand": ":app:bundleRelease"
       }
     }
   },

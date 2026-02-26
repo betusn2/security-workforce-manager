@@ -1,0 +1,6 @@
+Columns: cin, first_name, role, status, deleted_at
+ERR1: Unknown column 'deletedAt' in 'where clause'
+Users: 3
+admin null
+supervisor BK517312
+agent A303730

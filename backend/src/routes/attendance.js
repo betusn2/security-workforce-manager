@@ -14,6 +14,8 @@ router.get('/device-info/current', attendanceController.getDeviceInfo);
 router.post('/check-in', attendanceValidation.checkIn, validate, attendanceController.checkIn);
 router.post('/check-out/:id', uuidParam(), attendanceValidation.checkOut, validate, attendanceController.checkOut);
 router.get('/my-attendance', attendanceController.getMyAttendance);
+router.get('/my-history', attendanceController.getMyHistory);
+router.get('/my-stats', attendanceController.getMyStats);
 router.get('/today-status', attendanceController.getTodayStatus);
 router.get('/stats', attendanceController.getAttendanceStats);
 router.post('/update-location', attendanceController.updateLocation);

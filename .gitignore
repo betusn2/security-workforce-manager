@@ -64,3 +64,6 @@ mobile-app/expo-env.d.ts
 *.orig
 node_modules/
 **/node_modules/
+
+*.apk
+*.aab

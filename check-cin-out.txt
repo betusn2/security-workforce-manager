@@ -1,0 +1,6 @@
+camelCase deletedAt FAILED: Unknown column 'deletedAt' in 'where clause'
+snake_case deleted_at: 1 users agent
+Raw (no filter): 1 users
+  user: A303730 agent deleted_at: null
+isActive column MISSING: Unknown column 'isActive' in 'field list'
+FATAL: Unknown column 'is_active' in 'field list'

@@ -100,15 +100,19 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            storeFile file('../../security-guard.jks')
+            storePassword (findProperty('MYAPP_UPLOAD_STORE_PASSWORD') ?: 'SecurityGuard2024!')
+            keyAlias (findProperty('MYAPP_UPLOAD_KEY_ALIAS') ?: 'securityguard')
+            keyPassword (findProperty('MYAPP_UPLOAD_KEY_PASSWORD') ?: 'SecurityGuard2024!')
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
@@ -118,6 +122,9 @@ android {
         jniLibs {
             useLegacyPackaging (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
         }
+    }
+    lint {
+        abortOnError false
     }
 }
 

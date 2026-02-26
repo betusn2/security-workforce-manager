@@ -74,9 +74,19 @@ export default function ReportsScreen({ navigation }) {
             <>
               <Text style={styles.sectionTitle}>Statistiques générales</Text>
               <View style={styles.statsGrid}>
-                <StatBox icon="people" label="Total Agents" value={stats.totalAgents ?? stats.agents ?? stats.totalUsers} color="#3b82f6" />
-                <StatBox icon="calendar" label="Événements" value={stats.totalEvents ?? stats.events} color="#8b5cf6" />
-                <StatBox icon="checkmark-circle" label="Présences aujourd'hui" value={stats.todayAttendance ?? stats.todayCheckins} color="#10b981" />
+                <StatBox icon="people" label="Total Agents" value={stats.overview?.totalAgents ?? stats.totalAgents ?? stats.agents ?? stats.totalUsers} color="#3b82f6" />
+                <StatBox icon="calendar" label="Événements" value={stats.overview?.totalEvents ?? stats.totalEvents ?? stats.events} color="#8b5cf6" />
+                <StatBox
+                  icon="checkmark-circle"
+                  label="Présences aujourd'hui"
+                  value={
+                    stats.overview?.todayAttendances ??
+                    (stats.todayAttendance && typeof stats.todayAttendance === 'object'
+                      ? (stats.todayAttendance.present ?? 0) + (stats.todayAttendance.late ?? 0)
+                      : stats.todayAttendance ?? stats.todayCheckins)
+                  }
+                  color="#10b981"
+                />
                 <StatBox icon="warning" label="Incidents" value={stats.totalIncidents ?? stats.incidents} color="#ef4444" />
               </View>
 
@@ -85,7 +95,7 @@ export default function ReportsScreen({ navigation }) {
                 <StatBox
                   icon="flash"
                   label="Événements actifs"
-                  value={stats.activeEvents ?? stats.ongoingEvents}
+                  value={stats.overview?.activeEvents ?? stats.activeEvents ?? stats.ongoingEvents}
                   color="#f59e0b"
                 />
                 <StatBox
@@ -106,15 +116,15 @@ export default function ReportsScreen({ navigation }) {
                   </View>
                 </View>
               )}
-              {stats.pendingAssignments !== undefined && (
+              {stats.pendingAssignments !== undefined || stats.overview?.pendingAssignments !== undefined ? (
                 <View style={styles.summaryCard}>
                   <View style={styles.summaryRow}>
                     <Ionicons name="briefcase-outline" size={20} color="#f59e0b" />
                     <Text style={styles.summaryLabel}>Affectations en attente</Text>
-                    <Text style={[styles.summaryValue, { color: '#f59e0b' }]}>{stats.pendingAssignments}</Text>
+                    <Text style={[styles.summaryValue, { color: '#f59e0b' }]}>{stats.overview?.pendingAssignments ?? stats.pendingAssignments}</Text>
                   </View>
                 </View>
-              )}
+              ) : null}
             </>
           )}
 

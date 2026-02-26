@@ -208,7 +208,7 @@ const HistoryScreen = ({ navigation }) => {
     return (
       <TouchableOpacity
         style={styles.attendanceCard}
-        onPress={() => navigation.navigate('AttendanceDetail', { attendance: item })}
+        onPress={() => item.event?.id ? navigation.navigate('EventDetail', { eventId: item.event.id }) : null}
       >
         <View style={styles.cardHeader}>
           <View style={styles.dateContainer}>

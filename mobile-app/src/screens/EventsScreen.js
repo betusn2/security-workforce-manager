@@ -25,8 +25,13 @@ export default function EventsScreen({ navigation }) {
       setError(null);
       let res;
       if (user?.role === 'agent') {
+        // Agent : seulement ses événements via assignments
         res = await eventsAPI.getMyEvents();
+      } else if (user?.role === 'supervisor' || user?.role === 'responsable') {
+        // Superviseur : uniquement les événements dont il est responsable
+        res = await eventsAPI.getAll({ supervisorId: user.id, limit: 100 });
       } else {
+        // Admin : tous les événements
         res = await eventsAPI.getAll({ limit: 100 });
       }
       const data = res?.data?.data;
