@@ -368,7 +368,7 @@ app.get('/', (req, res) => {
   res.json({
     success: true,
     message: 'Security Guard Management API',
-    version: '1.0.0',
+    version: '2.0.0',
     documentation: '/api/health'
   });
 });
