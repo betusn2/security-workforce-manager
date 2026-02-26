@@ -46,8 +46,19 @@ const userValidation = {
       .optional()
       .isIn(['agent', 'supervisor', 'admin']).withMessage('Rôle invalide'),
     body('supervisorId')
-      .optional()
-      .isUUID().withMessage('supervisorId invalide')
+      .optional({ nullable: true, checkFalsy: true })
+      .custom((value) => {
+        // Accepter null, undefined ou chaîne vide
+        if (value === null || value === undefined || value === '') {
+          return true;
+        }
+        // Si une valeur est fournie, elle doit être un UUID valide
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(value)) {
+          throw new Error('supervisorId invalide');
+        }
+        return true;
+      })
   ],
   update: [
     body('firstName')
