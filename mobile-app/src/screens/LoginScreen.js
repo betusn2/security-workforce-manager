@@ -60,12 +60,17 @@ const LoginScreen = ({ navigation }) => {
     }
 
     clearError();
-    // Déterminer le userType basé sur le mode de connexion
     const userType = loginMode === 'agent' ? 'agent' : 'supervisor';
-    const result = await loginByCin(cin.toUpperCase(), null, userType);
+    const result = await loginByCin(cin.toUpperCase().trim(), null, userType);
 
+    if (!result.success) {
+      Alert.alert(
+        'Erreur de connexion',
+        result.error || 'CIN introuvable. Vérifiez votre numéro CIN.',
+        [{ text: 'OK' }]
+      );
+    }
     // Si succès, AppNavigator détecte isCheckInMode=true et affiche CheckIn automatiquement
-    // L'erreur est affichée dans le formulaire via authStore.error
   };
 
   return (
@@ -199,8 +204,8 @@ const LoginScreen = ({ navigation }) => {
 
                 <View style={styles.demoInfo}>
                   <Text style={styles.demoTitle}>Compte administrateur:</Text>
-                  <Text style={styles.demoText}>admin@security.com</Text>
-                  <Text style={styles.demoText}>Admin123!</Text>
+                  <Text style={styles.demoText}>admin@securityguard.com</Text>
+                  <Text style={styles.demoText}>Admin@123</Text>
                 </View>
               </>
             ) : (
@@ -252,7 +257,7 @@ const LoginScreen = ({ navigation }) => {
 
                 <View style={styles.cinNote}>
                   <Text style={styles.cinNoteText}>
-                    Utilisation réservée aux agents et responsables affectés à un événement aujourd'hui ou dans les 2 prochaines heures.
+                    Entrez votre CIN pour accéder au pointage. En cas de problème, contactez votre administrateur.
                   </Text>
                 </View>
               </>
