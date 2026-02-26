@@ -1,9 +1,17 @@
 /**
  * SERVICE SOCKET.IO POUR MOBILE APP
- * 🚀 Gestion temps réel pour React Native
+ * 🚀 Gestion temps réel pour React Native avec tracking GPS automatique
+ * 
+ * Fonctionnalités :
+ * - Authentification Socket.IO stricte
+ * - Tracking GPS automatique toutes les 5 secondes
+ * - Battery/Network/Device info enrichies
+ * - Gestion reconnexion automatique
  */
 
 import { io } from 'socket.io-client';
+import * as Location from 'expo-location';
+import deviceInfoService from './deviceInfoService';
 
 const SOCKET_URL = 'https://security-guard-backend-w3qv.onrender.com'; // Production Render
 
@@ -11,20 +19,31 @@ class SocketService {
   constructor() {
     this.socket = null;
     this.isConnected = false;
+    this.isAuthenticated = false;
     this.eventHandlers = new Map();
+    
+    // Tracking GPS automatique
+    this.trackingInterval = null;
+    this.currentUserId = null;
+    this.currentEventId = null;
+    this.locationSubscription = null;
   }
 
   /**
-   * 🔌 CONNEXION SOCKET.IO
+   * 🔌 CONNEXION SOCKET.IO avec authentification stricte
    * @param {string} userId - ID de l'utilisateur
    * @param {string} role - Rôle (agent, supervisor, admin)
    * @param {string} eventId - ID de l'événement (optionnel)
+   * @param {string} token - JWT token (optionnel)
    */
-  connect(userId, role, eventId = null) {
+  connect(userId, role, eventId = null, token = null) {
     if (this.socket?.connected) {
       console.log('ℹ️ Socket.IO déjà connecté');
       return;
     }
+
+    this.currentUserId = userId;
+    this.currentEventId = eventId;
 
     try {
       this.socket = io(SOCKET_URL, {
@@ -33,7 +52,8 @@ class SocketService {
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
-        reconnectionAttempts: 10
+        reconnectionAttempts: 10,
+        auth: token ? { token } : undefined
       });
 
       // Événements de connexion
@@ -45,31 +65,48 @@ class SocketService {
         this.socket.emit('auth', {
           userId,
           role,
-          eventId
+          eventId,
+          token
         });
+        
+        // Rejoindre la room de l'événement
+        if (eventId) {
+          this.socket.emit('event:join', eventId);
+          this.socket.emit('tracking:subscribe', eventId);
+        }
         
         this._triggerHandler('connected', { userId, role, eventId });
       });
 
       this.socket.on('auth:success', (data) => {
         console.log('✅ Authentification Socket.IO réussie:', data);
+        this.isAuthenticated = true;
         this._triggerHandler('authenticated', data);
+        
+        // 🚀 Démarrer le tracking GPS automatique
+        this.startGPSTracking();
       });
 
       this.socket.on('auth:error', (error) => {
         console.error('❌ Erreur authentification Socket.IO:', error);
+        this.isAuthenticated = false;
         this._triggerHandler('auth_error', error);
       });
 
       this.socket.on('disconnect', () => {
         console.log('🔴 Socket.IO Mobile déconnecté');
         this.isConnected = false;
+        this.isAuthenticated = false;
         this._triggerHandler('disconnected');
+        
+        // Arrêter le tracking GPS
+        this.stopGPSTracking();
       });
 
       this.socket.on('connect_error', (error) => {
         console.error('❌ Erreur connexion Socket.IO:', error.message);
         this.isConnected = false;
+        this.isAuthenticated = false;
         this._triggerHandler('connection_error', error);
       });
 
@@ -345,6 +382,126 @@ class SocketService {
    */
   unsubscribeFromEvent(eventId) {
     this.emit('tracking:unsubscribe', eventId);
+  }
+
+  /**
+   * ========================================
+   * TRACKING GPS AUTOMATIQUE - TOUTES LES 5 SECONDES
+   * ========================================
+   */
+
+  /**
+   * 🚀 DÉMARRER LE TRACKING GPS AUTOMATIQUE
+   * Envoie la position toutes les 5 secondes avec infos enrichies
+   */
+  async startGPSTracking() {
+    // Ne démarrer que si authentifié
+    if (!this.isAuthenticated) {
+      console.log('⏳ En attente authentification Socket.IO avant démarrage GPS...');
+      return;
+    }
+
+    if (this.trackingInterval) {
+      console.log('ℹ️ Tracking GPS déjà actif');
+      return;
+    }
+
+    console.log('🚀 Démarrage tracking GPS automatique (toutes les 5s)...');
+
+    // Vérifier permission GPS
+    const { status } = await Location.getForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      console.warn('⚠️ Permission GPS non accordée');
+      return;
+    }
+
+    // Envoyer position immédiatement
+    await this._sendCurrentPosition();
+
+    // Puis toutes les 5 secondes
+    this.trackingInterval = setInterval(async () => {
+      await this._sendCurrentPosition();
+    }, 5000);
+
+    console.log('✅ Tracking GPS automatique démarré');
+  }
+
+  /**
+   * 🛑 ARRÊTER LE TRACKING GPS AUTOMATIQUE
+   */
+  stopGPSTracking() {
+    if (this.trackingInterval) {
+      clearInterval(this.trackingInterval);
+      this.trackingInterval = null;
+      console.log('🛑 Tracking GPS automatique arrêté');
+    }
+
+    if (this.locationSubscription) {
+      this.locationSubscription.remove();
+      this.locationSubscription = null;
+    }
+  }
+
+  /**
+   * 📍 ENVOYER LA POSITION ACTUELLE avec TOUTES infos enrichies
+   * @private
+   */
+  async _sendCurrentPosition() {
+    try {
+      if (!this.isAuthenticated || !this.socket?.connected) {
+        console.log('⏳ Socket non authentifié, skip position');
+        return;
+      }
+
+      // Obtenir position GPS
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+        timeout: 10000,
+        maximumAge: 0
+      });
+
+      // Collecter TOUTES les infos enrichies (Battery, Network, Device)
+      const transmissionData = await deviceInfoService.getTransmissionData(location.coords);
+
+      // Ajouter userId
+      transmissionData.userId = this.currentUserId;
+
+      // Émettre via Socket.IO
+      this.emit('location-update', transmissionData);
+
+      console.log('📍 Position envoyée:', {
+        lat: location.coords.latitude.toFixed(6),
+        lng: location.coords.longitude.toFixed(6),
+        battery: transmissionData.batteryLevel + '%',
+        network: transmissionData.networkType,
+        authenticated: this.isAuthenticated
+      });
+
+    } catch (error) {
+      console.error('❌ Erreur envoi position GPS:', error.message);
+    }
+  }
+
+  /**
+   * 📡 ENVOYER POSITION MANUELLE (avec infos enrichies)
+   * Utilisé pour check-in/check-out avec position ponctuelle
+   */
+  async sendEnrichedPosition(userId) {
+    try {
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High
+      });
+
+      const transmissionData = await deviceInfoService.getTransmissionData(location.coords);
+      transmissionData.userId = userId || this.currentUserId;
+
+      this.emit('location-update', transmissionData);
+      
+      return transmissionData;
+    } catch (error) {
+      console.error('❌ Erreur position enrichie:', error);
+      return null;
+    }
   }
 }
 
