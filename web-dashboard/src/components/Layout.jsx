@@ -84,6 +84,7 @@ const menuStructure = [
     icon: FiInfo,
     items: [
       { path: '/about', icon: FiInfo, label: 'À Propos' },
+      { path: '/pricing', icon: FiStar, label: 'Tarifs & Copilot Pro' },
       { path: '/privacy', icon: FiBook, label: 'Confidentialité' },
     ]
   },
