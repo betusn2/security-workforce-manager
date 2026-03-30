@@ -33,9 +33,6 @@
         "backgroundColor": "#2563eb"
       },
       "package": "com.securityguard.mobile",
-      "minSdkVersion": 21,
-      "targetSdkVersion": 34,
-      "compileSdkVersion": 34,
       "versionCode": 1,
       "jsEngine": "hermes",
       "permissions": [
@@ -61,7 +58,6 @@
         "android.permission.WAKE_LOCK",
         "android.permission.RECEIVE_BOOT_COMPLETED"
       ],
-      "useNextNotificationsApi": true,
       "allowBackup": false
     },
     "plugins": [
