@@ -17,35 +17,35 @@ services:
       - key: PORT
         value: 5000
       
-      # Railway MySQL Database (External)
+      # Railway MySQL Database — à renseigner dans le dashboard Render
       - key: DB_HOST
-        value: nozomi.proxy.rlwy.net
+        sync: false
       - key: DB_PORT
-        value: 23833
+        sync: false
       - key: DB_NAME
-        value: railway
+        sync: false
       - key: DB_USER
-        value: root
+        sync: false
       - key: DB_PASSWORD
-        value: uRpoqGKauYDRIYymcsApwnBblZJDnykx
+        sync: false
       - key: DB_DIALECT
         value: mysql
       - key: DB_SSL
         value: false
       
-      # Security (auto-généré)
+      # Security (auto-généré par Render)
       - key: JWT_SECRET
         generateValue: true
       - key: REFRESH_TOKEN_SECRET
         generateValue: true
       
-      # CORS & WebSocket (mettre à jour après déploiement Vercel)
+      # CORS & WebSocket — mettre à jour après déploiement Vercel
       - key: FRONTEND_URL
-        value: https://your-frontend.vercel.app
+        value: https://security-workforce-manager.vercel.app
       - key: WEB_URL
-        value: https://your-frontend.vercel.app
+        value: https://security-workforce-manager.vercel.app
       - key: SOCKET_CORS_ORIGIN
-        value: https://your-frontend.vercel.app
+        value: https://security-workforce-manager.vercel.app
       
       # Socket.IO Configuration
       - key: SOCKET_PATH
@@ -62,3 +62,41 @@ services:
         value: false
       - key: MAX_FILE_SIZE
         value: 10485760
+
+  # Web Dashboard — déployé comme site statique sur Render
+  - type: web
+    name: security-workforce-dashboard
+    env: static
+    region: frankfurt
+    plan: free
+    rootDir: web-dashboard
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./build
+    headers:
+      - path: /static/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /*
+        name: X-Frame-Options
+        value: SAMEORIGIN
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://security-workforce-backend.onrender.com/api
+      - key: REACT_APP_SOCKET_URL
+        value: https://security-workforce-backend.onrender.com
+      - key: REACT_APP_APP_NAME
+        value: Security Guard Management
+      - key: REACT_APP_ENV
+        value: production
+      - key: GENERATE_SOURCEMAP
+        value: false
+      - key: REACT_APP_ENABLE_FACIAL_RECOGNITION
+        value: true
+      - key: REACT_APP_ENABLE_GEOLOCATION
+        value: true
+      - key: REACT_APP_ENABLE_NOTIFICATIONS
+        value: true

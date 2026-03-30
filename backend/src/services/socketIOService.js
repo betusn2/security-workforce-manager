@@ -587,8 +587,13 @@ class SocketIOService {
         }
       }
       
-      // Supprimer la connexion
+      // Supprimer la connexion et nettoyer les positions
       this.connections.delete(socket.id);
+      // Nettoyer la position GPS si l'agent n'a plus d'autres sockets actives
+      if (!this.userSockets.has(connection.userId)) {
+        this.agentPositions.delete(connection.userId);
+        this.lastMovement.delete(connection.userId);
+      }
     } else {
       console.log(`❌ Client Socket.IO déconnecté: ${socket.id}`);
     }

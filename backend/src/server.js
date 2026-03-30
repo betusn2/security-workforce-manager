@@ -247,26 +247,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// Security middleware (DÉSACTIVÉ TEMPORAIREMENT POUR DEBUG WEBSOCKET)
-/* app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }, // Permet l'accès cross-origin aux ressources
-  crossOriginEmbedderPolicy: false, // Désactive COEP qui peut bloquer les images
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "http://localhost:3000", "http://localhost:5000"], // Autorise les images
-      connectSrc: [
-        "'self'", 
-        "http://localhost:3000", 
-        "http://localhost:5000",
-        "ws://localhost:5000",  // ✅ WebSocket HTTP
-        "wss://localhost:5000"  // ✅ WebSocket HTTPS
-      ],
-    },
-  },
-})); */
+// Security middleware - compatible avec WebSocket et cross-origin images
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: false, // Géré par le frontend (React)
+}));
 app.use(cors({
   origin: ALLOWED_ORIGINS,
   credentials: true,

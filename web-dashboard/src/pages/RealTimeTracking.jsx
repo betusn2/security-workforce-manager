@@ -13,9 +13,10 @@ import api from '../services/api';
 import { trackingAPI } from '../services/api';
 import useAuthStore from '../hooks/useAuth';
 
-// Socket.IO URL
-const SOCKET_URL = process.env.REACT_APP_API_URL?.replace('/api', '') || 
-                   'https://security-guard-backend.onrender.com';
+// Socket.IO URL — priorité à REACT_APP_SOCKET_URL, sinon dériver de REACT_APP_API_URL
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL ||
+                   process.env.REACT_APP_API_URL?.replace('/api', '') ||
+                   'https://security-workforce-manager.onrender.com';
 
 // Fix Leaflet icons
 delete L.Icon.Default.prototype._getIconUrl;
