@@ -170,7 +170,7 @@ dependencies {
         }
     }
 
-    implementation("com.facebook.react:flipper-integration")
+    // flipper-integration removed in React Native 0.73+
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
