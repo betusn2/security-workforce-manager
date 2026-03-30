@@ -8,11 +8,13 @@ import {
   RefreshControl,
   Alert,
   ActivityIndicator,
+  Vibration,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { attendanceAPI, assignmentsAPI, eventsAPI, usersAPI, reportsAPI } from '../services/api';
 import useAuthStore from '../services/authStore';
+import socketService from '../services/socketService';
 
 const ROLE_CONFIG = {
   admin:      { label: 'Administrateur', color: '#dc2626', icon: 'shield-checkmark' },
@@ -94,6 +96,48 @@ const HomeScreen = ({ navigation }) => {
   useEffect(() => {
     fetchData();
     getLocation();
+
+    // Écouter les alertes SOS en temps réel
+    const handleSOS = (data) => {
+      Vibration.vibrate([500, 500, 500, 500, 500]);
+      Alert.alert(
+        '🚨 ALERTE SOS',
+        `Un agent a déclenché une alerte d'urgence !${data.message ? `\n\n"${data.message}"` : ''}`,
+        [
+          { text: 'Fermer', style: 'cancel' },
+          { text: 'Voir les incidents', onPress: () => navigation.navigate('IncidentReport') },
+        ]
+      );
+    };
+
+    // Écouter les nouveaux incidents
+    const handleIncident = (data) => {
+      if (data.priority === 'urgent' || data.priority === 'high') {
+        Vibration.vibrate(300);
+        Alert.alert(
+          '⚠️ Nouvel incident',
+          `${data.title || data.type || 'Incident signalé'}`,
+          [{ text: 'OK' }]
+        );
+      }
+    };
+
+    // Écouter les nouvelles assignations
+    const handleAssignment = () => {
+      fetchData();
+    };
+
+    socketService.on('sos_alert', handleSOS);
+    socketService.on('incident_new', handleIncident);
+    socketService.on('assignment_new', handleAssignment);
+    socketService.on('event_updated', fetchData);
+
+    return () => {
+      socketService.off('sos_alert', handleSOS);
+      socketService.off('incident_new', handleIncident);
+      socketService.off('assignment_new', handleAssignment);
+      socketService.off('event_updated', fetchData);
+    };
   }, []);
 
   const onRefresh = useCallback(() => {

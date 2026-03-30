@@ -1,7 +1,6 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
-
-const API_URL = 'https://security-workforce-manager.onrender.com/api'; // Production Render
+import { API_URL } from '../config';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -122,7 +121,10 @@ export const usersAPI = {
 export const reportsAPI = {
   getDashboard: () => api.get('/reports/dashboard'),
   getAttendanceTrends: (params) => api.get('/reports/attendance-trends', { params }),
-  getExport: (params) => api.get('/reports/export', { params }),
+  getExport: (params) => api.get('/reports/export', { params, responseType: 'blob' }),
+  getAttendanceExport: (params) => api.get('/reports/attendance-export', { params }),
+  getIncidentReport: (params) => api.get('/reports/incidents-report', { params }),
+  getEventStats: (eventId) => api.get(`/events/${eventId}/statistics`),
 };
 
 export const incidentsAPI = {

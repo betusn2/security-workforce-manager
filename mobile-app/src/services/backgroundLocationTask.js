@@ -22,9 +22,9 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Platform } from 'react-native';
+import { API_URL } from '../config';
 
 export const BACKGROUND_LOCATION_TASK = 'SECURITY_GUARD_BACKGROUND_LOCATION';
-const API_URL = 'https://security-guard-backend-w3qv.onrender.com/api';
 
 // ─── Définition de la tâche ────────────────────────────────────────────────
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
@@ -109,15 +109,10 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
       timeout: 8000,
     });
 
-    // Mettre à jour la notification Android
+    // Mettre à jour la notification Android via le channel persistant
     if (Platform.OS === 'android') {
-      await Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowAlert: false,
-          shouldPlaySound: false,
-          shouldSetBadge: false,
-        }),
-      });
+      // La notification est gérée par le foreground service (startLocationUpdatesAsync)
+      // Pas besoin de la recréer à chaque position
     }
 
     console.log(`📍 [BG] ${latitude.toFixed(5)}, ${longitude.toFixed(5)} | ${speedKmh}km/h | batt:${batteryLevel}%`);

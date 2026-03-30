@@ -6,57 +6,80 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { eventsAPI } from '../services/api';
 import useAuthStore from '../services/authStore';
+import socketService from '../services/socketService';
 
 const STATUS_FILTERS = ['Tous', 'planned', 'active', 'completed', 'cancelled'];
 const STATUS_LABELS = { planned: 'Planifié', active: 'En cours', completed: 'Terminé', cancelled: 'Annulé' };
 const STATUS_COLORS = { planned: '#3b82f6', active: '#10b981', completed: '#6b7280', cancelled: '#ef4444' };
+
+const PAGE_SIZE = 20;
 
 export default function EventsScreen({ navigation }) {
   const { user } = useAuthStore();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('Tous');
   const [error, setError] = useState(null);
 
-  const fetchEvents = useCallback(async () => {
+  const fetchEvents = useCallback(async (pageNum = 1, append = false) => {
     try {
-      setError(null);
+      if (!append) setError(null);
       let res;
+      const params = { limit: PAGE_SIZE, page: pageNum };
       if (user?.role === 'agent') {
-        // Agent : seulement ses événements via assignments
-        res = await eventsAPI.getMyEvents();
+        res = await eventsAPI.getMyEvents(params);
       } else if (user?.role === 'supervisor' || user?.role === 'responsable') {
-        // Superviseur : uniquement les événements dont il est responsable
-        res = await eventsAPI.getAll({ supervisorId: user.id, limit: 100 });
+        res = await eventsAPI.getAll({ ...params, supervisorId: user.id });
       } else {
-        // Admin : tous les événements
-        res = await eventsAPI.getAll({ limit: 100 });
+        res = await eventsAPI.getAll(params);
       }
       const data = res?.data?.data;
-      if (Array.isArray(data)) {
-        setEvents(data);
-      } else if (data?.events && Array.isArray(data.events)) {
-        setEvents(data.events);
+      const list = Array.isArray(data) ? data : (data?.events || []);
+      if (append) {
+        setEvents(prev => [...prev, ...list]);
       } else {
-        setEvents([]);
+        setEvents(list);
       }
+      setHasMore(list.length === PAGE_SIZE);
     } catch (err) {
       setError('Impossible de charger les événements');
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setLoadingMore(false);
     }
-  }, [user?.role]);
+  }, [user?.role, user?.id]);
 
   useEffect(() => {
-    fetchEvents();
+    fetchEvents(1);
+
+    // Mises à jour temps réel
+    const handleUpdate = () => { setPage(1); fetchEvents(1); };
+    socketService.on('event_updated', handleUpdate);
+    socketService.on('event_deleted', handleUpdate);
+    return () => {
+      socketService.off('event_updated', handleUpdate);
+      socketService.off('event_deleted', handleUpdate);
+    };
   }, [fetchEvents]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchEvents();
+    setPage(1);
+    fetchEvents(1);
+  };
+
+  const onEndReached = () => {
+    if (!hasMore || loadingMore || loading) return;
+    const nextPage = page + 1;
+    setPage(nextPage);
+    setLoadingMore(true);
+    fetchEvents(nextPage, true);
   };
 
   const filteredEvents = events.filter(e => {
@@ -167,7 +190,7 @@ export default function EventsScreen({ navigation }) {
         <View style={styles.center}>
           <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={fetchEvents}>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => fetchEvents(1)}>
             <Text style={styles.retryBtnText}>Réessayer</Text>
           </TouchableOpacity>
         </View>
@@ -184,6 +207,9 @@ export default function EventsScreen({ navigation }) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563eb']} />}
           contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
           showsVerticalScrollIndicator={false}
+          onEndReached={onEndReached}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={loadingMore ? <ActivityIndicator style={{ marginVertical: 16 }} color="#2563eb" /> : null}
         />
       )}
     </View>

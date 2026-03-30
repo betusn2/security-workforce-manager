@@ -457,6 +457,19 @@ const ProfileScreen = ({ navigation }) => {
 
           <TouchableOpacity
             style={styles.menuRow}
+            onPress={() => navigation.navigate('Badges')}
+          >
+            <View style={styles.menuLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: '#fef3c7' }]}>
+                <Ionicons name="trophy-outline" size={20} color="#d97706" />
+              </View>
+              <Text style={styles.menuLabel}>Badges & Classement</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuRow}
             onPress={() => navigation.navigate('Paramètres')}
           >
             <View style={styles.menuLeft}>

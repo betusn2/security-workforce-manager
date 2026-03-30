@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import useAuthStore from '../services/authStore';
 import { wakeUpServer } from '../services/api';
 import { getDeviceFingerprint, getDeviceInfo } from '../utils/deviceFingerprint';
+import { API_URL } from '../config';
 
 const LoginScreen = ({ navigation }) => {
   const [loginMode, setLoginMode] = useState('agent'); // 'agent' ou 'supervisor'
@@ -26,7 +27,7 @@ const LoginScreen = ({ navigation }) => {
   useEffect(() => {
     const wake = async () => {
       try {
-        const r = await fetch(`https://security-workforce-manager.onrender.com/api/health`, { signal: AbortSignal.timeout(5000) });
+        const r = await fetch(`${API_URL}/health`, { signal: AbortSignal.timeout(5000) });
         if (r.ok) { setServerStatus('ready'); return; }
       } catch (_) {}
       setServerStatus('waking');

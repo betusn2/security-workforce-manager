@@ -13,6 +13,7 @@ import {
 import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
 import * as Battery from 'expo-battery';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
 import { attendanceAPI, assignmentsAPI, eventsAPI } from '../services/api';
 import socketService from '../services/socketService';
@@ -479,8 +480,14 @@ const CheckInScreen = ({ route, navigation }) => {
       // 🎵 Son de capture (comme le web)
       soundEffects.playCameraShutter();
       
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8, base64: true });
-      setCapturedPhoto(photo);
+      const raw = await cameraRef.current.takePictureAsync({ quality: 0.6, base64: false });
+      // Compresser et redimensionner avant upload (évite envoi 2MB+)
+      const compressed = await ImageManipulator.manipulateAsync(
+        raw.uri,
+        [{ resize: { width: 640 } }],
+        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+      setCapturedPhoto({ ...compressed, base64: compressed.base64 });
       setStep('confirm');
     } catch (err) {
       Alert.alert('Erreur', 'Capture impossible');

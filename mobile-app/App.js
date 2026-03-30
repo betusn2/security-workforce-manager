@@ -1,6 +1,6 @@
 import './src/services/backgroundLocationTask';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -47,6 +47,7 @@ class ErrorBoundary extends React.Component {
 }
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 import useAuthStore from './src/services/authStore';
 import { navigationRef } from './src/services/navigationRef';
@@ -72,6 +73,13 @@ import AssignmentsScreen from './src/screens/AssignmentsScreen';
 import ReportsScreen from './src/screens/ReportsScreen';
 import UsersScreen from './src/screens/UsersScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import EditProfileScreen from './src/screens/EditProfileScreen';
+import ChangePasswordScreen from './src/screens/ChangePasswordScreen';
+import DocumentsScreen from './src/screens/DocumentsScreen';
+import LiveTrackingScreen from './src/screens/LiveTrackingScreen';
+import BadgesScreen from './src/screens/BadgesScreen';
+import HelpScreen from './src/screens/HelpScreen';
+import TrackingStatusBanner from './src/components/TrackingStatusBanner';
 
 // Écran placeholder pour fonctionnalités bientôt disponibles
 const ComingSoonScreen = ({ navigation, route }) => (
@@ -96,9 +104,9 @@ const ComingSoonScreen = ({ navigation, route }) => (
 // ── Configuration des notifications ────────────────────────────────────────
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: false,
-    shouldPlaySound: false,
-    shouldSetBadge: false,
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
   }),
 });
 
@@ -143,6 +151,7 @@ const MainTabs = () => {
         <Tab.Screen name="Accueil"       component={HomeScreen} />
         <Tab.Screen name="Événements"    component={EventsScreen} />
         <Tab.Screen name="Utilisateurs"  component={UsersScreen} />
+        <Tab.Screen name="Suivi"         component={LiveTrackingScreen} options={{ tabBarIcon: ({ focused, color, size }) => <Ionicons name={focused ? 'location' : 'location-outline'} size={size} color={color} /> }} />
         <Tab.Screen name="Rapports"      component={ReportsScreen} />
         <Tab.Screen name="Profil"        component={ProfileScreen} />
       </Tab.Navigator>
@@ -155,6 +164,7 @@ const MainTabs = () => {
         <Tab.Screen name="Accueil"       component={HomeScreen} />
         <Tab.Screen name="Événements"    component={EventsScreen} />
         <Tab.Screen name="Affectations"  component={AssignmentsScreen} />
+        <Tab.Screen name="Suivi"         component={LiveTrackingScreen} options={{ tabBarIcon: ({ focused, color, size }) => <Ionicons name={focused ? 'location' : 'location-outline'} size={size} color={color} /> }} />
         <Tab.Screen name="Notifications" component={NotificationsScreen} />
         <Tab.Screen name="Profil"        component={ProfileScreen} />
       </Tab.Navigator>
@@ -177,7 +187,9 @@ const MainTabs = () => {
 export default function App() {
   const { isAuthenticated, isCheckInMode, checkAuth, user } = useAuthStore();
   const [isLoading, setIsLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
   const [currentEventId, setCurrentEventId] = useState(null);
+  const notificationResponseListener = useRef(null);
 
   // 🔌 Connexion Socket.IO + capture caméra sur demande
   useTracking(currentEventId);
@@ -188,6 +200,27 @@ export default function App() {
       setIsLoading(false);
     };
     initAuth();
+
+    // Surveillance de la connectivité réseau
+    const unsubNetInfo = NetInfo.addEventListener(state => {
+      setIsOffline(!state.isConnected);
+    });
+
+    // Deep linking depuis notifications
+    notificationResponseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data;
+      if (!navigationRef.current) return;
+      if (data?.screen === 'Notifications') navigationRef.current.navigate('Notifications');
+      else if (data?.screen === 'EventDetail' && data.eventId) navigationRef.current.navigate('EventDetail', { eventId: data.eventId });
+      else if (data?.screen === 'IncidentReport') navigationRef.current.navigate('IncidentReport');
+    });
+
+    return () => {
+      unsubNetInfo();
+      if (notificationResponseListener.current) {
+        Notifications.removeNotificationSubscription(notificationResponseListener.current);
+      }
+    };
   }, []);
 
   // Connecter Socket.IO + démarrer GPS background au login
@@ -243,6 +276,14 @@ export default function App() {
     <ErrorBoundary>
     <NavigationContainer ref={navigationRef}>
       <StatusBar style="light" />
+      {isAuthenticated && <TrackingStatusBanner />}
+      {isOffline && (
+        <View style={{ backgroundColor: '#ef4444', paddingVertical: 6, alignItems: 'center' }}>
+          <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
+            📡 Hors ligne — Vérifiez votre connexion
+          </Text>
+        </View>
+      )}
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           /* ── Non authentifié : seulement Login ── */
@@ -265,11 +306,14 @@ export default function App() {
             <Stack.Screen name="IncidentReport" component={IncidentReportScreen} options={{ headerShown: true, headerTitle: "Rapport d'incident", headerStyle: { backgroundColor: '#ef4444' }, headerTintColor: '#fff' }} />
             <Stack.Screen name="EventDetail" component={EventDetailScreen} options={{ headerShown: true, headerTitle: 'Détail événement', headerStyle: { backgroundColor: '#2563eb' }, headerTintColor: '#fff' }} />
             <Stack.Screen name="Paramètres" component={SettingsScreen} options={{ headerShown: true, headerTitle: 'Paramètres', headerStyle: { backgroundColor: '#374151' }, headerTintColor: '#fff' }} />
+            <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: true, headerTitle: 'Mon profil', headerStyle: { backgroundColor: '#2563eb' }, headerTintColor: '#fff' }} />
             <Stack.Screen name="HistoriqueStack" component={HistoryScreen} options={{ headerShown: true, headerTitle: 'Historique', headerStyle: { backgroundColor: '#2563eb' }, headerTintColor: '#fff' }} />
-            <Stack.Screen name="EditProfile" component={ComingSoonScreen} options={{ headerShown: true, headerTitle: 'Modifier le profil', headerStyle: { backgroundColor: '#2563eb' }, headerTintColor: '#fff' }} />
-            <Stack.Screen name="ChangePassword" component={ComingSoonScreen} options={{ headerShown: true, headerTitle: 'Changer le mot de passe', headerStyle: { backgroundColor: '#2563eb' }, headerTintColor: '#fff' }} />
-            <Stack.Screen name="Documents" component={ComingSoonScreen} options={{ headerShown: true, headerTitle: 'Mes documents', headerStyle: { backgroundColor: '#8b5cf6' }, headerTintColor: '#fff' }} />
-            <Stack.Screen name="Help" component={ComingSoonScreen} options={{ headerShown: true, headerTitle: 'Aide et support', headerStyle: { backgroundColor: '#0ea5e9' }, headerTintColor: '#fff' }} />
+            <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: true, headerTitle: 'Modifier le profil', headerStyle: { backgroundColor: '#2563eb' }, headerTintColor: '#fff' }} />
+            <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ headerShown: true, headerTitle: 'Changer le mot de passe', headerStyle: { backgroundColor: '#7c3aed' }, headerTintColor: '#fff' }} />
+            <Stack.Screen name="Documents" component={DocumentsScreen} options={{ headerShown: true, headerTitle: 'Mes documents', headerStyle: { backgroundColor: '#8b5cf6' }, headerTintColor: '#fff' }} />
+            <Stack.Screen name="Badges" component={BadgesScreen} options={{ headerShown: true, headerTitle: 'Badges & Classement', headerStyle: { backgroundColor: '#78350f' }, headerTintColor: '#fff' }} />
+            <Stack.Screen name="LiveTracking" component={LiveTrackingScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="Help" component={HelpScreen} options={{ headerShown: true, headerTitle: 'Aide et support', headerStyle: { backgroundColor: '#0ea5e9' }, headerTintColor: '#fff' }} />
           </>
         )}
       </Stack.Navigator>

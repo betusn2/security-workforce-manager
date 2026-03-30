@@ -488,7 +488,7 @@ const IncidentReportScreen = ({ route, navigation }) => {
           <TouchableOpacity
             style={styles.quickActionButton}
             onPress={() => {
-              setType('security');
+              setType('security_breach');
               setSeverity('high');
               setTitle('Alerte securite urgente');
             }}
@@ -500,7 +500,7 @@ const IncidentReportScreen = ({ route, navigation }) => {
           <TouchableOpacity
             style={styles.quickActionButton}
             onPress={() => {
-              setType('medical');
+              setType('medical_emergency');
               setSeverity('critical');
               setTitle('Urgence medicale');
             }}
@@ -512,7 +512,7 @@ const IncidentReportScreen = ({ route, navigation }) => {
           <TouchableOpacity
             style={styles.quickActionButton}
             onPress={() => {
-              setType('fire');
+              setType('fire_alarm');
               setSeverity('critical');
               setTitle('Alerte incendie');
             }}

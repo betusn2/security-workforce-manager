@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api, { notificationsAPI } from '../services/api';
+import socketService from '../services/socketService';
 
 const NotificationsScreen = ({ navigation }) => {
   const [notifications, setNotifications] = useState([]);
@@ -40,7 +41,7 @@ const NotificationsScreen = ({ navigation }) => {
       ]);
       const data = response.data.data;
 
-      setNotifications(data.notifications || []);
+      setNotifications(data.notifications || data || []);
       setUnreadCount(countResponse.data.data?.unreadCount || 0);
     } catch (error) {
       console.error('Error fetching notifications:', error);
@@ -53,6 +54,16 @@ const NotificationsScreen = ({ navigation }) => {
   useEffect(() => {
     fetchNotifications();
   }, [selectedTab]);
+
+  // Écouter nouvelles notifications en temps réel
+  useEffect(() => {
+    const handleNew = (data) => {
+      setNotifications(prev => [data, ...prev]);
+      setUnreadCount(c => c + 1);
+    };
+    socketService.on('notification_new', handleNew);
+    return () => socketService.off('notification_new', handleNew);
+  }, []);
 
   // Pull to refresh
   const onRefresh = useCallback(() => {

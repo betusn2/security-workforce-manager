@@ -91,10 +91,54 @@ export default function UsersScreen({ navigation }) {
     }
   };
 
+  const handleResetPassword = (u) => {
+    Alert.alert(
+      'Réinitialiser le mot de passe',
+      `Réinitialiser le mot de passe de ${u.firstName} ${u.lastName} ?\nUn mot de passe temporaire leur sera envoyé.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Réinitialiser',
+          onPress: async () => {
+            try {
+              await usersAPI.resetPassword(u.id, { newPassword: 'Temp1234!' });
+              Alert.alert('Succès', `Mot de passe réinitialisé à "Temp1234!" pour ${u.firstName}`);
+            } catch (e) {
+              Alert.alert('Erreur', e?.response?.data?.message || 'Impossible de réinitialiser');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleToggleSuspend = (u) => {
+    const isSuspended = u.status === 'suspended';
+    Alert.alert(
+      isSuspended ? 'Réactiver l\'utilisateur' : 'Suspendre l\'utilisateur',
+      `Voulez-vous ${isSuspended ? 'réactiver' : 'suspendre'} ${u.firstName} ${u.lastName} ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: isSuspended ? 'Réactiver' : 'Suspendre',
+          style: isSuspended ? 'default' : 'destructive',
+          onPress: async () => {
+            try {
+              await usersAPI.update(u.id, { status: isSuspended ? 'active' : 'suspended' });
+              fetchUsers();
+            } catch (e) {
+              Alert.alert('Erreur', e?.response?.data?.message || 'Impossible de modifier le statut');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleDelete = (u) => {
     Alert.alert(
       'Supprimer',
-      `Supprimer ${u.firstName} ${u.lastName} ?`,
+      `Supprimer définitivement ${u.firstName} ${u.lastName} ?\nCette action est irréversible.`,
       [
         { text: 'Annuler', style: 'cancel' },
         {
@@ -107,6 +151,21 @@ export default function UsersScreen({ navigation }) {
             }
           }
         }
+      ]
+    );
+  };
+
+  const showUserActions = (u) => {
+    if (!isAdmin || u.id === user?.id) return;
+    const isSuspended = u.status === 'suspended';
+    Alert.alert(
+      `${u.firstName} ${u.lastName}`,
+      `Rôle: ${ROLE_LABELS[u.role] || u.role}`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: '🔑 Réinitialiser mot de passe', onPress: () => handleResetPassword(u) },
+        { text: isSuspended ? '✅ Réactiver' : '🚫 Suspendre', onPress: () => handleToggleSuspend(u) },
+        { text: '🗑 Supprimer', style: 'destructive', onPress: () => handleDelete(u) },
       ]
     );
   };
@@ -124,8 +183,9 @@ export default function UsersScreen({ navigation }) {
   const renderUser = ({ item }) => {
     const roleColor = ROLE_COLORS[item.role] || '#6b7280';
     const isActive = item.status !== 'inactive' && item.status !== 'suspended';
+    const isSuspended = item.status === 'suspended';
     return (
-      <View style={styles.card}>
+      <TouchableOpacity style={styles.card} onPress={() => showUserActions(item)} activeOpacity={isAdmin && item.id !== user?.id ? 0.7 : 1}>
         <View style={styles.cardRow}>
           <View style={[styles.avatar, { backgroundColor: roleColor + '20' }]}>
             <Text style={[styles.avatarText, { color: roleColor }]}>
@@ -139,15 +199,23 @@ export default function UsersScreen({ navigation }) {
               <View style={[styles.roleBadge, { backgroundColor: roleColor + '20', borderColor: roleColor }]}>
                 <Text style={[styles.roleBadgeText, { color: roleColor }]}>{ROLE_LABELS[item.role] || item.role}</Text>
               </View>
-              <View style={[styles.statusDot, { backgroundColor: isActive ? '#10b981' : '#9ca3af' }]} />
-              <Text style={{ fontSize: 11, color: isActive ? '#10b981' : '#9ca3af' }}>
-                {STATUS_LABELS[item.status] || (isActive ? 'Actif' : 'Inactif')}
-              </Text>
+              {isSuspended ? (
+                <View style={[styles.roleBadge, { backgroundColor: '#fee2e2', borderColor: '#ef4444', marginLeft: 4 }]}>
+                  <Text style={[styles.roleBadgeText, { color: '#ef4444' }]}>Suspendu</Text>
+                </View>
+              ) : (
+                <>
+                  <View style={[styles.statusDot, { backgroundColor: isActive ? '#10b981' : '#9ca3af' }]} />
+                  <Text style={{ fontSize: 11, color: isActive ? '#10b981' : '#9ca3af' }}>
+                    {STATUS_LABELS[item.status] || (isActive ? 'Actif' : 'Inactif')}
+                  </Text>
+                </>
+              )}
             </View>
           </View>
           {isAdmin && item.id !== user?.id && (
-            <TouchableOpacity onPress={() => handleDelete(item)} style={styles.deleteBtn}>
-              <Ionicons name="trash-outline" size={18} color="#ef4444" />
+            <TouchableOpacity onPress={() => showUserActions(item)} style={styles.moreBtn}>
+              <Ionicons name="ellipsis-vertical" size={18} color="#6b7280" />
             </TouchableOpacity>
           )}
         </View>
@@ -158,7 +226,7 @@ export default function UsersScreen({ navigation }) {
             <Text style={styles.infoText}>{item.phone}</Text>
           </View>
         )}
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -335,6 +403,7 @@ const styles = StyleSheet.create({
   roleBadgeText: { fontSize: 11, fontWeight: '700' },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   deleteBtn: { padding: 6 },
+  moreBtn: { padding: 8 },
   cinText: { fontSize: 12, color: '#9ca3af', marginTop: 6 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   infoText: { fontSize: 12, color: '#9ca3af' },

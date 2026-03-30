@@ -12,8 +12,7 @@
 import { io } from 'socket.io-client';
 import * as Location from 'expo-location';
 import deviceInfoService from './deviceInfoService';
-
-const SOCKET_URL = 'https://security-guard-backend-w3qv.onrender.com'; // Production Render
+import { SOCKET_URL } from '../config';
 
 class SocketService {
   constructor() {
