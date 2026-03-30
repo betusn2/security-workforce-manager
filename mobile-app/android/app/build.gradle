@@ -101,10 +101,10 @@ android {
             keyPassword 'android'
         }
         release {
-            storeFile file('../../security-guard.jks')
-            storePassword (findProperty('MYAPP_UPLOAD_STORE_PASSWORD') ?: 'SecurityGuard2024!')
-            keyAlias (findProperty('MYAPP_UPLOAD_KEY_ALIAS') ?: 'securityguard')
-            keyPassword (findProperty('MYAPP_UPLOAD_KEY_PASSWORD') ?: 'SecurityGuard2024!')
+            storeFile file(findProperty('MYAPP_UPLOAD_STORE_FILE') ?: '../../security-guard-release.jks')
+            storePassword (findProperty('MYAPP_UPLOAD_STORE_PASSWORD') ?: 'Security@2024')
+            keyAlias (findProperty('MYAPP_UPLOAD_KEY_ALIAS') ?: 'security-guard')
+            keyPassword (findProperty('MYAPP_UPLOAD_KEY_PASSWORD') ?: 'Security@2024')
         }
     }
     buildTypes {
