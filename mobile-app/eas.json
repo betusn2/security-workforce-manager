@@ -30,7 +30,20 @@
         "gradleCommand": ":app:assembleRelease"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://security-guard-backend.onrender.com/api"
+        "EXPO_PUBLIC_API_URL": "https://security-workforce-manager.onrender.com/api"
+      }
+    },
+    "apk-universal": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "credentialsSource": "local",
+        "gradleCommand": ":app:assembleRelease",
+        "withoutCredentials": false
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://security-workforce-manager.onrender.com/api",
+        "EXPO_PUBLIC_SOCKET_URL": "https://security-workforce-manager.onrender.com"
       }
     },
     "production": {

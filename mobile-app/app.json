@@ -36,6 +36,8 @@
       "minSdkVersion": 21,
       "targetSdkVersion": 34,
       "compileSdkVersion": 34,
+      "versionCode": 1,
+      "jsEngine": "hermes",
       "permissions": [
         "CAMERA",
         "ACCESS_FINE_LOCATION",
@@ -52,11 +54,18 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_LOCATION"
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.INTERNET",
+        "android.permission.CHANGE_NETWORK_STATE",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
       ],
-      "useNextNotificationsApi": true
+      "useNextNotificationsApi": true,
+      "allowBackup": false
     },
     "plugins": [
+      "./plugins/withUniversalApk",
       [
         "expo-camera",
         {
