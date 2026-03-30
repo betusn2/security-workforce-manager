@@ -84,7 +84,7 @@
     "firebase": {
       "android": {
         "serviceAccountKeyPath": "./firebase-service-account.json",
-        "firebaseAppId": "YOUR_FIREBASE_APP_ID",
+        "firebaseAppId": "1:380656927574:android:dd8f0f6182a5b162560cf7",
         "groups": ["security-guards", "supervisors", "admins"],
         "releaseNotes": "Nouvelle version de Security Guard Mobile"
       }

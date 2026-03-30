@@ -1,0 +1,9 @@
+Version 1.0.0 - Security Guard Mobile
+
+Nouvelles fonctionnalités :
+- Pointage GPS (check-in/check-out)
+- Suivi en temps réel des gardes
+- Rapports d'incidents
+- Notifications push
+- Gestion des affectations
+- Badges et classement

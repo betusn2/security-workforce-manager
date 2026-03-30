@@ -3,7 +3,7 @@
   "appdistribution": {
     "projectId": "security-guard-app-66f7a",
     "projectNumber": "380656927574",
-    "appId": "PENDING - run: firebase apps:list --project security-guard-app-66f7a",
+    "appId": "1:380656927574:android:dd8f0f6182a5b162560cf7",
     "releaseNotesFile": "./RELEASE_NOTES.txt",
     "testers": [],
     "groups": ["security-guards", "supervisors", "admins"]

@@ -11,6 +11,11 @@ param(
     [string]$ReleaseNotes = "Nouvelle version Security Guard Mobile"
 )
 
+# App ID Firebase par défaut si non fourni
+if (-not $FirebaseAppId) {
+    $FirebaseAppId = "1:380656927574:android:dd8f0f6182a5b162560cf7"
+}
+
 $APK_PATH = ".\build\security-guard.apk"
 
 Write-Host ""
@@ -78,19 +83,7 @@ Write-Host "   Notes   : $ReleaseNotes" -ForegroundColor Gray
 Write-Host ""
 
 if (-not $FirebaseAppId) {
-    Write-Host "❌ FIREBASE_APP_ID manquant!" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "👉 Pour obtenir votre App ID :" -ForegroundColor Yellow
-    Write-Host "   1. Aller sur https://console.firebase.google.com" -ForegroundColor White
-    Write-Host "   2. Créer un projet (ex: security-guard-app)" -ForegroundColor White
-    Write-Host "   3. Ajouter une app Android (package: com.securityguard.mobile)" -ForegroundColor White
-    Write-Host "   4. Aller dans Paramètres du projet → Vos applications" -ForegroundColor White
-    Write-Host "   5. Copier l'App ID (format: 1:123456789:android:abc123)" -ForegroundColor White
-    Write-Host ""
-    Write-Host "Puis relancer avec :" -ForegroundColor Yellow
-    Write-Host '   $env:FIREBASE_APP_ID="1:XXXXXX:android:XXXXXX"' -ForegroundColor Cyan
-    Write-Host "   .\DEPLOY-FIREBASE-DISTRIBUTION.ps1" -ForegroundColor Cyan
-    exit 1
+    $FirebaseAppId = "1:380656927574:android:dd8f0f6182a5b162560cf7"
 }
 
 $uploadArgs = @(
