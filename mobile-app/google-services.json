@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "380656927574",
+    "project_id": "security-guard-app-66f7a",
+    "storage_bucket": "security-guard-app-66f7a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:380656927574:android:dd8f0f6182a5b162560cf7",
+        "android_client_info": {
+          "package_name": "com.securityguard.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAyn-HeVw9v7RfiW0YBALbS3417p0FEAIc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
