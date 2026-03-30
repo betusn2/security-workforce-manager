@@ -46,6 +46,18 @@
         "EXPO_PUBLIC_SOCKET_URL": "https://security-workforce-manager.onrender.com"
       }
     },
+    "firebase": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "credentialsSource": "local",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://security-workforce-manager.onrender.com/api",
+        "EXPO_PUBLIC_SOCKET_URL": "https://security-workforce-manager.onrender.com"
+      }
+    },
     "production": {
       "distribution": "store",
       "android": {
@@ -67,6 +79,14 @@
       "android": {
         "serviceAccountKeyPath": "./google-service-account.json",
         "track": "internal"
+      }
+    },
+    "firebase": {
+      "android": {
+        "serviceAccountKeyPath": "./firebase-service-account.json",
+        "firebaseAppId": "YOUR_FIREBASE_APP_ID",
+        "groups": ["security-guards", "supervisors", "admins"],
+        "releaseNotes": "Nouvelle version de Security Guard Mobile"
       }
     }
   }

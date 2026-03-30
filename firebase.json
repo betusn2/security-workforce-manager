@@ -1,0 +1,9 @@
+{
+  "apphosting": {},
+  "appdistribution": {
+    "appId": "YOUR_FIREBASE_APP_ID",
+    "releaseNotesFile": "./RELEASE_NOTES.txt",
+    "testers": [],
+    "groups": ["security-guards", "supervisors", "admins"]
+  }
+}
