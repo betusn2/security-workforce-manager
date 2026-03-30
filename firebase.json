@@ -1,7 +1,9 @@
 {
   "apphosting": {},
   "appdistribution": {
-    "appId": "YOUR_FIREBASE_APP_ID",
+    "projectId": "security-guard-app-66f7a",
+    "projectNumber": "380656927574",
+    "appId": "PENDING - run: firebase apps:list --project security-guard-app-66f7a",
     "releaseNotesFile": "./RELEASE_NOTES.txt",
     "testers": [],
     "groups": ["security-guards", "supervisors", "admins"]
