@@ -37,9 +37,8 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk",
-        "credentialsSource": "local",
-        "gradleCommand": ":app:assembleRelease",
-        "withoutCredentials": false
+        "credentialsSource": "remote",
+        "gradleCommand": ":app:assembleRelease"
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://security-workforce-manager.onrender.com/api",
@@ -50,7 +49,7 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk",
-        "credentialsSource": "local",
+        "credentialsSource": "remote",
         "gradleCommand": ":app:assembleRelease"
       },
       "env": {

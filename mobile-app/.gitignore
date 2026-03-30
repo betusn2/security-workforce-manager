@@ -6,3 +6,4 @@ dist/
 *.pfx
 credentials.json
 google-service-account.json
+android/
