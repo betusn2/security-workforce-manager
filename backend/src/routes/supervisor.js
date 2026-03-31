@@ -656,7 +656,6 @@ router.get('/managed-zones', authenticate, async (req, res) => {
   try {
     const supervisorUserId = req.user.id;
 
-    // Verify the requesting user is a supervisor
     const supervisor = await User.findByPk(supervisorUserId);
     if (!supervisor || supervisor.role !== 'supervisor') {
       return res.status(403).json({
@@ -664,29 +663,21 @@ router.get('/managed-zones', authenticate, async (req, res) => {
         message: 'Accès refusé. Seuls les responsables peuvent accéder à cette ressource.'
       });
     }
-    
+
     console.log(`🔍 Fetching zones for supervisor ID: ${supervisorUserId}`);
-    
-    // Récupérer les zones gérées par ce superviseur
-    // Utiliser une requête brute SQL pour chercher dans le JSON (supporte à la fois les strings et les arrays JSON)
-    const managedZones = await Zone.sequelize.query(`
-      SELECT * FROM zones 
-      WHERE deletedAt IS NULL 
-      AND supervisors LIKE '%${supervisorUserId}%'
-      ORDER BY name ASC
-    `, {
-      type: Zone.sequelize.QueryTypes.SELECT
-    });
+
+    // Utiliser CAST pour compatibilité MySQL + PostgreSQL (champ supervisors peut être JSON)
+    const managedZones = await Zone.sequelize.query(
+      `SELECT * FROM zones WHERE "deletedAt" IS NULL AND CAST(supervisors AS TEXT) LIKE :pattern ORDER BY name ASC`,
+      {
+        replacements: { pattern: `%${supervisorUserId}%` },
+        type: Zone.sequelize.QueryTypes.SELECT
+      }
+    );
 
     console.log(`✅ Found ${managedZones.length} zones for supervisor`);
-    if (managedZones.length > 0) {
-      console.log('Zones:', managedZones.map(z => z.name).join(', '));
-    }
 
-    res.json({
-      success: true,
-      zones: managedZones
-    });
+    res.json({ success: true, zones: managedZones });
 
   } catch (error) {
     console.error('Error fetching managed zones:', error);
@@ -707,7 +698,6 @@ router.get('/managed-events', authenticate, async (req, res) => {
   try {
     const supervisorUserId = req.user.id;
 
-    // Verify the requesting user is a supervisor
     const supervisor = await User.findByPk(supervisorUserId);
     if (!supervisor || supervisor.role !== 'supervisor') {
       return res.status(403).json({
@@ -715,67 +705,55 @@ router.get('/managed-events', authenticate, async (req, res) => {
         message: 'Accès refusé. Seuls les responsables peuvent accéder à cette ressource.'
       });
     }
-    
+
     console.log(`🔍 Fetching events for supervisor ID: ${supervisorUserId}`);
-    
-    // Récupérer les événements via les zones gérées
-    // Les événements restent affichés jusqu'à 2h après leur fin (pour permettre les check-out en retard)
-    const managedEvents = await Zone.sequelize.query(`
-      SELECT DISTINCT 
-        e.*,
-        (SELECT COUNT(*) FROM zones z WHERE z.eventId = e.id AND z.deletedAt IS NULL AND z.supervisors LIKE '%${supervisorUserId}%') as managedZonesCount,
-        CASE
-          WHEN CONCAT(DATE(e.endDate), ' ', IFNULL(e.checkOutTime, '23:59:59')) < NOW() THEN 'completed'
-          WHEN DATE_SUB(
-            CONCAT(DATE(e.startDate), ' ', IFNULL(e.checkInTime, '00:00:00')), 
-            INTERVAL IFNULL(e.agentCreationBuffer, 120) MINUTE
-          ) <= NOW() 
-            AND CONCAT(DATE(e.endDate), ' ', IFNULL(e.checkOutTime, '23:59:59')) >= NOW() THEN 'active'
-          WHEN DATE_SUB(
-            CONCAT(DATE(e.startDate), ' ', IFNULL(e.checkInTime, '00:00:00')), 
-            INTERVAL IFNULL(e.agentCreationBuffer, 120) MINUTE
-          ) > NOW() THEN 'scheduled'
-          ELSE e.status
-        END as computedStatus
-      FROM events e
-      INNER JOIN zones z ON e.id = z.eventId
-      WHERE e.deletedAt IS NULL 
-        AND z.deletedAt IS NULL
-        AND z.supervisors LIKE '%${supervisorUserId}%'
-        AND DATE_ADD(
-          CONCAT(DATE(e.endDate), ' ', IFNULL(e.checkOutTime, '23:59:59')), 
-          INTERVAL 2 HOUR
-        ) >= NOW()
-        AND e.status NOT IN ('cancelled', 'terminated')
-      ORDER BY e.startDate ASC
-    `, {
-      type: Zone.sequelize.QueryTypes.SELECT
+
+    // 1. Zones du superviseur (CAST pour compat MySQL+PostgreSQL)
+    const supervisorZones = await Zone.sequelize.query(
+      `SELECT id, "eventId", name, description, capacity, color FROM zones WHERE "deletedAt" IS NULL AND CAST(supervisors AS TEXT) LIKE :pattern`,
+      {
+        replacements: { pattern: `%${supervisorUserId}%` },
+        type: Zone.sequelize.QueryTypes.SELECT
+      }
+    );
+
+    const eventIds = [...new Set(supervisorZones.map(z => z.eventId).filter(Boolean))];
+
+    if (eventIds.length === 0) {
+      return res.json({ success: true, events: [] });
+    }
+
+    // 2. Événements actifs/récents (2h après la fin) — évite MySQL CONCAT/DATE_SUB
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const managedEvents = await Event.findAll({
+      where: {
+        id: { [Op.in]: eventIds },
+        deletedAt: null,
+        status: { [Op.notIn]: ['cancelled', 'terminated'] },
+        endDate: { [Op.gte]: twoHoursAgo },
+      },
+      order: [['startDate', 'ASC']],
+      raw: true
     });
+
+    // 3. Attacher les zones à chaque événement
+    for (const event of managedEvents) {
+      event.zones = supervisorZones.filter(z => z.eventId === event.id);
+      // Calculer statut dynamique côté JS (évite SQL dialect incompatible)
+      const now = new Date();
+      const start = new Date(event.startDate);
+      const end = new Date(event.endDate);
+      const buffer = (event.agentCreationBuffer || 120) * 60 * 1000;
+      if (end < now) event.computedStatus = 'completed';
+      else if (start - buffer <= now && end >= now) event.computedStatus = 'active';
+      else if (start - buffer > now) event.computedStatus = 'scheduled';
+      else event.computedStatus = event.status;
+      event.managedZonesCount = event.zones.length;
+    }
 
     console.log(`✅ Found ${managedEvents.length} events for supervisor`);
-    if (managedEvents.length > 0) {
-      console.log('Events:', managedEvents.map(e => e.name).join(', '));
-    }
 
-    // Charger les zones pour chaque événement
-    for (const event of managedEvents) {
-      const zones = await Zone.sequelize.query(`
-        SELECT id, name, description, capacity, color
-        FROM zones
-        WHERE eventId = ?
-          AND deletedAt IS NULL
-          AND supervisors LIKE ?
-      `, {
-        replacements: [event.id, `%${supervisorUserId}%`],
-        type: Zone.sequelize.QueryTypes.SELECT
-      });
-      event.zones = zones;
-    }
-
-    res.json({
-      success: true,
-      events: managedEvents
-    });
+    res.json({ success: true, events: managedEvents });
 
   } catch (error) {
     console.error('Error fetching managed events:', error);

@@ -82,6 +82,10 @@ exports.checkIn = async (req, res) => {
       agentId: requestedAgentId
     } = req.body;
 
+    // Resolve lat/lng — peut arriver sous plusieurs noms selon le client
+    const latitude = _latitude ?? checkInLatitude;
+    const longitude = _longitude ?? checkInLongitude;
+
     console.log('✅ CHECK-IN REQUEST RECEIVED:', {
       eventId,
       latitude,
