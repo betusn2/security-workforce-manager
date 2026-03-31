@@ -231,6 +231,20 @@ class SocketService {
   }
 
   /**
+   * Écouter les sorties de zone (alerte dashboard)
+   */
+  onAgentZoneExit(callback) {
+    this.on('agent:zone_exit', callback);
+  }
+
+  /**
+   * Écouter les alertes batterie faible
+   */
+  onAgentBatteryLow(callback) {
+    this.on('agent:battery_low', callback);
+  }
+
+  /**
    * Demander les positions de tous les agents
    */
   requestAgentLocations(eventId = null) {

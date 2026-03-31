@@ -206,8 +206,54 @@ exports.recordLocation = async (req, res) => {
         isWithinGeofence,
         distanceFromEvent,
         batteryLevel,
+        batteryCharging,
+        batteryStatus,
+        networkType,
         timestamp: new Date()
       });
+
+      // ── Alerte sortie de zone (événement dédié pour le dashboard) ──
+      if (!isWithinGeofence) {
+        io.to(`role:admin`).to(`role:supervisor`).emit('agent:zone_exit', {
+          userId,
+          eventId,
+          latitude,
+          longitude,
+          distanceFromEvent,
+          allowedRadius: event?.geoRadius || 100,
+          timestamp: new Date(),
+          severity: distanceFromEvent > 500 ? 'high' : 'medium',
+        });
+        // Format compatible ancien dashboard
+        io.to(`role:admin`).to(`role:supervisor`).emit('tracking:geofence_alert', {
+          type: 'geofence_exit',
+          userId,
+          eventId,
+          message: `Agent hors zone — ${distanceFromEvent}m (limite: ${event?.geoRadius || 100}m)`,
+          distanceFromEvent,
+          allowedRadius: event?.geoRadius || 100,
+          timestamp: new Date(),
+        });
+      }
+
+      // ── Alerte batterie faible ──
+      if (batteryLevel !== null && batteryLevel <= 15) {
+        io.to(`role:admin`).to(`role:supervisor`).emit('agent:battery_low', {
+          userId,
+          eventId,
+          batteryLevel,
+          batteryCharging: batteryCharging || false,
+          timestamp: new Date(),
+        });
+        // Format compatible ancien dashboard
+        io.to(`role:admin`).to(`role:supervisor`).emit('tracking:battery_alert', {
+          userId,
+          eventId,
+          batteryLevel,
+          message: `Batterie ${batteryLevel <= 5 ? 'critique' : 'faible'} — ${batteryLevel}%`,
+          timestamp: new Date(),
+        });
+      }
 
       if (eventId) {
         io.to(`event-${eventId}`).emit('agent:location', {
@@ -215,6 +261,8 @@ exports.recordLocation = async (req, res) => {
           latitude,
           longitude,
           isWithinGeofence,
+          distanceFromEvent,
+          batteryLevel,
           timestamp: new Date()
         });
       }
@@ -818,6 +866,78 @@ exports.resolveAlert = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la résolution de l\'alerte'
+    });
+  }
+};
+
+/**
+ * Build timeline segments from ordered GeoTracking points
+ */
+function buildPresenceTimeline(points) {
+  if (points.length === 0) {
+    return { segments: [], totalInZoneMinutes: 0, totalOutZoneMinutes: 0, totalOfflineMinutes: 0, compliancePercent: 0 };
+  }
+
+  const GAP_MS = 5 * 60 * 1000; // 5-minute gap threshold
+  const segments = [];
+  let segStart = new Date(points[0].createdAt);
+  let segStatus = points[0].isWithinGeofence ? 'in_zone' : 'out_zone';
+
+  for (let i = 1; i < points.length; i++) {
+    const prevTime = new Date(points[i - 1].createdAt);
+    const currTime = new Date(points[i].createdAt);
+    const gap = currTime - prevTime;
+
+    if (gap > GAP_MS) {
+      segments.push({ start: segStart, end: prevTime, status: segStatus, durationMinutes: Math.round((prevTime - segStart) / 60000) });
+      segments.push({ start: prevTime, end: currTime, status: 'offline', durationMinutes: Math.round(gap / 60000) });
+      segStart = currTime;
+      segStatus = points[i].isWithinGeofence ? 'in_zone' : 'out_zone';
+    } else {
+      const currStatus = points[i].isWithinGeofence ? 'in_zone' : 'out_zone';
+      if (currStatus !== segStatus) {
+        segments.push({ start: segStart, end: currTime, status: segStatus, durationMinutes: Math.round((currTime - segStart) / 60000) });
+        segStart = currTime;
+        segStatus = currStatus;
+      }
+    }
+  }
+
+  const lastTime = new Date(points[points.length - 1].createdAt);
+  segments.push({ start: segStart, end: lastTime, status: segStatus, durationMinutes: Math.round((lastTime - segStart) / 60000) });
+
+  const totalInZoneMinutes = segments.filter(s => s.status === 'in_zone').reduce((s, x) => s + x.durationMinutes, 0);
+  const totalOutZoneMinutes = segments.filter(s => s.status === 'out_zone').reduce((s, x) => s + x.durationMinutes, 0);
+  const totalOfflineMinutes = segments.filter(s => s.status === 'offline').reduce((s, x) => s + x.durationMinutes, 0);
+  const totalMinutes = totalInZoneMinutes + totalOutZoneMinutes + totalOfflineMinutes;
+  const compliancePercent = totalMinutes > 0 ? Math.round((totalInZoneMinutes / totalMinutes) * 10000) / 100 : 0;
+
+  return { segments, totalInZoneMinutes, totalOutZoneMinutes, totalOfflineMinutes, compliancePercent };
+}
+
+/**
+ * GET /api/tracking/timeline/:eventId/:agentId
+ * Presence timeline for an agent during an event
+ */
+exports.getPresenceTimeline = async (req, res) => {
+  try {
+    const { eventId, agentId } = req.params;
+
+    const points = await GeoTracking.findAll({
+      where: { userId: agentId, eventId },
+      order: [['createdAt', 'ASC']],
+      attributes: ['id', 'isWithinGeofence', 'distanceFromEvent', 'createdAt', 'recordedAt']
+    });
+
+    const timeline = buildPresenceTimeline(points);
+
+    res.json({ success: true, data: timeline });
+  } catch (error) {
+    console.error('Get presence timeline error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération de la timeline de présence',
+      error: error.message
     });
   }
 };

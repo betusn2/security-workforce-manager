@@ -14,6 +14,9 @@ import { format, isPast, isFuture, isToday, isTomorrow, differenceInDays, differ
 import { fr } from 'date-fns/locale';
 import MiniMap from '../components/MiniMap';
 import AgentInfoPanel from '../components/AgentInfoPanel';
+import PresenceTimeline from '../components/PresenceTimeline';
+import ComplianceScore from '../components/ComplianceScore';
+import AlertsPanel from '../components/AlertsPanel';
 import trackingStatsService from '../services/trackingStatsService';
 import useAuthStore from '../hooks/useAuth';
 
@@ -916,20 +919,25 @@ const EventDetails = () => {
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {agentAttendance ? (
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            agentAttendance.status === 'present' ? 'bg-green-100 text-green-700' :
-                            agentAttendance.status === 'late' ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-red-100 text-red-700'
-                          }`}>
-                            {agentAttendance.status === 'present' ? 'Présent' :
-                             agentAttendance.status === 'late' ? 'En retard' : 'Absent'}
-                          </span>
-                        ) : (
-                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                            Non pointé
-                          </span>
-                        )}
+                        <div className="flex flex-col gap-1">
+                          {agentAttendance ? (
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              agentAttendance.status === 'present' ? 'bg-green-100 text-green-700' :
+                              agentAttendance.status === 'late' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              {agentAttendance.status === 'present' ? 'Présent' :
+                               agentAttendance.status === 'late' ? 'En retard' : 'Absent'}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                              Non pointé
+                            </span>
+                          )}
+                          {agentAttendance?.id && (
+                            <ComplianceScore attendanceId={agentAttendance.id} size="sm" />
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {agentAttendance?.checkInTime ? 
@@ -940,6 +948,17 @@ const EventDetails = () => {
                         {agentAttendance?.checkOutTime ? 
                           format(new Date(agentAttendance.checkOutTime), 'HH:mm', { locale: fr }) : 
                           '-'}
+                      </td>
+                    </tr>
+                    <tr key={`timeline-${assignment.id}`} className="bg-gray-50">
+                      <td colSpan={10} className="px-6 py-2">
+                        <PresenceTimeline
+                          eventId={event?.id}
+                          agentId={assignment.agentId}
+                          agentName={`${assignment.agent?.firstName || ''} ${assignment.agent?.lastName || ''}`.trim()}
+                          eventStart={event?.startDate}
+                          eventEnd={event?.endDate}
+                        />
                       </td>
                     </tr>
                   );
@@ -983,6 +1002,7 @@ const EventDetails = () => {
           screenshotLoading={screenshotLoading}
         />
       )}
+      <AlertsPanel eventId={event?.id} token={localStorage.getItem('token')} />
     </div>
   );
 };

@@ -604,6 +604,26 @@ exports.checkOut = async (req, res) => {
 
     await attendance.save();
 
+    // Check early departure: if > 30 min before event end, emit socket alert
+    const eventEndTime = new Date(event.endDate);
+    const minutesBeforeEnd = (eventEndTime - now) / (1000 * 60);
+
+    if (minutesBeforeEnd > 30) {
+      await attendance.update({ status: 'early_departure' });
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to('role:admin').to('role:supervisor').emit('tracking:early_departure', {
+          userId: req.user.id,
+          eventId: attendance.eventId,
+          agentName: `${req.user.firstName} ${req.user.lastName}`,
+          minutesBeforeEnd: Math.round(minutesBeforeEnd),
+          timestamp: new Date(),
+          message: `Agent parti ${Math.round(minutesBeforeEnd)} min avant la fin de l'événement`
+        });
+      }
+    }
+
     await logActivity({
       userId: agentId,
       action: 'CHECK_OUT',
@@ -1171,5 +1191,227 @@ exports.updateLocation = async (req, res) => {
       success: false,
       message: 'Erreur lors de la mise à jour de la position'
     });
+  }
+};
+
+// ─── Helper: build presence timeline from GeoTracking points ────────────────
+function buildPresenceTimeline(points) {
+  if (points.length === 0) {
+    return { segments: [], totalInZoneMinutes: 0, totalOutZoneMinutes: 0, totalOfflineMinutes: 0, compliancePercent: 0 };
+  }
+
+  const GAP_MS = 5 * 60 * 1000;
+  const segments = [];
+  let segStart = new Date(points[0].createdAt);
+  let segStatus = points[0].isWithinGeofence ? 'in_zone' : 'out_zone';
+
+  for (let i = 1; i < points.length; i++) {
+    const prevTime = new Date(points[i - 1].createdAt);
+    const currTime = new Date(points[i].createdAt);
+    const gap = currTime - prevTime;
+
+    if (gap > GAP_MS) {
+      segments.push({ start: segStart, end: prevTime, status: segStatus, durationMinutes: Math.round((prevTime - segStart) / 60000) });
+      segments.push({ start: prevTime, end: currTime, status: 'offline', durationMinutes: Math.round(gap / 60000) });
+      segStart = currTime;
+      segStatus = points[i].isWithinGeofence ? 'in_zone' : 'out_zone';
+    } else {
+      const currStatus = points[i].isWithinGeofence ? 'in_zone' : 'out_zone';
+      if (currStatus !== segStatus) {
+        segments.push({ start: segStart, end: currTime, status: segStatus, durationMinutes: Math.round((currTime - segStart) / 60000) });
+        segStart = currTime;
+        segStatus = currStatus;
+      }
+    }
+  }
+
+  const lastTime = new Date(points[points.length - 1].createdAt);
+  segments.push({ start: segStart, end: lastTime, status: segStatus, durationMinutes: Math.round((lastTime - segStart) / 60000) });
+
+  const totalInZoneMinutes = segments.filter(s => s.status === 'in_zone').reduce((s, x) => s + x.durationMinutes, 0);
+  const totalOutZoneMinutes = segments.filter(s => s.status === 'out_zone').reduce((s, x) => s + x.durationMinutes, 0);
+  const totalOfflineMinutes = segments.filter(s => s.status === 'offline').reduce((s, x) => s + x.durationMinutes, 0);
+  const totalMinutes = totalInZoneMinutes + totalOutZoneMinutes + totalOfflineMinutes;
+  const compliancePercent = totalMinutes > 0 ? Math.round((totalInZoneMinutes / totalMinutes) * 10000) / 100 : 0;
+
+  return { segments, totalInZoneMinutes, totalOutZoneMinutes, totalOfflineMinutes, compliancePercent };
+}
+
+// GET /api/attendance/compliance/:attendanceId
+exports.getComplianceScore = async (req, res) => {
+  try {
+    const attendance = await Attendance.findByPk(req.params.attendanceId, {
+      include: [{ model: Event, as: 'event' }]
+    });
+
+    if (!attendance) {
+      return res.status(404).json({ success: false, message: 'Présence non trouvée' });
+    }
+
+    const event = attendance.event;
+
+    // Fetch GeoTracking points for this agent+event
+    const points = await GeoTracking.findAll({
+      where: { userId: attendance.agentId, eventId: attendance.eventId },
+      order: [['createdAt', 'ASC']],
+      attributes: ['id', 'isWithinGeofence', 'createdAt']
+    });
+
+    const { segments, totalInZoneMinutes, totalOutZoneMinutes, totalOfflineMinutes, compliancePercent } = buildPresenceTimeline(points);
+
+    const criteria = [];
+    let score = 0;
+
+    // +20: check-in on time (before event start + 15 min)
+    if (attendance.checkInTime && event && event.startDate) {
+      const onTimeThreshold = new Date(new Date(event.startDate).getTime() + 15 * 60000);
+      const onTime = new Date(attendance.checkInTime) <= onTimeThreshold;
+      const pts = onTime ? 20 : 0;
+      score += pts;
+      criteria.push({ name: 'Arrivée à l\'heure', points: pts, max: 20, met: onTime });
+    } else {
+      criteria.push({ name: 'Arrivée à l\'heure', points: 0, max: 20, met: false });
+    }
+
+    // +30/+15/+5: in-zone percentage
+    let zonePts = 0;
+    let zoneDesc = '';
+    if (compliancePercent > 90) { zonePts = 30; zoneDesc = '>90%'; }
+    else if (compliancePercent > 70) { zonePts = 15; zoneDesc = '>70%'; }
+    else if (compliancePercent > 50) { zonePts = 5; zoneDesc = '>50%'; }
+    else { zoneDesc = '≤50%'; }
+    score += zonePts;
+    criteria.push({ name: `Temps en zone (${zoneDesc})`, points: zonePts, max: 30, met: zonePts > 0, compliancePercent });
+
+    // +20: no single out-of-zone > 5 min
+    const longOozSegment = segments.find(s => s.status === 'out_zone' && s.durationMinutes > 5);
+    const noLongOoz = !longOozSegment;
+    const oozPts = noLongOoz ? 20 : 0;
+    score += oozPts;
+    criteria.push({ name: 'Aucune sortie de zone > 5 min', points: oozPts, max: 20, met: noLongOoz });
+
+    // +10: has check-out
+    const hasCheckOut = !!attendance.checkOutTime;
+    const checkOutPts = hasCheckOut ? 10 : 0;
+    score += checkOutPts;
+    criteria.push({ name: 'Check-out enregistré', points: checkOutPts, max: 10, met: hasCheckOut });
+
+    // +10: check-out not early (within 30 min of event end)
+    let notEarlyPts = 0;
+    if (hasCheckOut && event && event.endDate) {
+      const eventEnd = new Date(event.endDate);
+      const checkOutTime = new Date(attendance.checkOutTime);
+      const minBeforeEnd = (eventEnd - checkOutTime) / 60000;
+      const notEarly = minBeforeEnd <= 30;
+      notEarlyPts = notEarly ? 10 : 0;
+      score += notEarlyPts;
+      criteria.push({ name: 'Départ pas trop tôt (≤30 min avant fin)', points: notEarlyPts, max: 10, met: notEarly });
+    } else {
+      criteria.push({ name: 'Départ pas trop tôt (≤30 min avant fin)', points: 0, max: 10, met: false });
+    }
+
+    // +10: has check-in photo
+    const hasPhoto = !!attendance.checkInPhoto;
+    const photoPts = hasPhoto ? 10 : 0;
+    score += photoPts;
+    criteria.push({ name: 'Photo de check-in', points: photoPts, max: 10, met: hasPhoto });
+
+    // Grade
+    let grade;
+    if (score >= 90) grade = 'A';
+    else if (score >= 75) grade = 'B';
+    else if (score >= 60) grade = 'C';
+    else if (score >= 40) grade = 'D';
+    else grade = 'F';
+
+    res.json({
+      success: true,
+      data: {
+        score,
+        maxScore: 100,
+        grade,
+        details: { criteria },
+        compliancePercent,
+        timeline: { totalInZoneMinutes, totalOutZoneMinutes, totalOfflineMinutes }
+      }
+    });
+  } catch (error) {
+    console.error('Get compliance score error:', error);
+    res.status(500).json({ success: false, message: 'Erreur lors du calcul du score de conformité', error: error.message });
+  }
+};
+
+// POST /api/attendance/periodic-proof
+exports.submitPeriodicProof = async (req, res) => {
+  try {
+    const { eventId, latitude, longitude, photo, accuracy } = req.body;
+    const userId = req.user.id;
+
+    if (!eventId || latitude == null || longitude == null) {
+      return res.status(400).json({ success: false, message: 'eventId, latitude et longitude sont requis' });
+    }
+
+    // Find active attendance (present or late, no checkout)
+    const attendance = await Attendance.findOne({
+      where: {
+        agentId: userId,
+        eventId,
+        status: { [Op.in]: ['present', 'late'] },
+        checkOutTime: null
+      },
+      include: [{ model: Event, as: 'event' }]
+    });
+
+    if (!attendance) {
+      return res.status(404).json({ success: false, message: 'Aucun pointage actif trouvé pour cet événement' });
+    }
+
+    const event = attendance.event;
+
+    // Check geofence
+    const geoCheck = geoService.checkGeofence(parseFloat(latitude), parseFloat(longitude), event);
+    const isWithinGeofence = geoCheck.isWithinGeofence;
+    const distanceFromEvent = geoCheck.distance;
+
+    // Save periodic proof point to GeoTracking
+    // notes: 'periodic_proof' is used as a logical marker (requires DB migration to persist)
+    await GeoTracking.create({
+      userId,
+      eventId,
+      latitude: parseFloat(latitude),
+      longitude: parseFloat(longitude),
+      accuracy: accuracy ? parseFloat(accuracy) : null,
+      isWithinGeofence,
+      distanceFromEvent: distanceFromEvent ? Math.round(distanceFromEvent) : null,
+      recordedAt: new Date()
+    });
+
+    // Emit socket alert if agent is out of geofence
+    if (!isWithinGeofence) {
+      const io = req.app.get('io');
+      if (io) {
+        io.to('role:admin').to('role:supervisor').emit('tracking:periodic_out_of_zone', {
+          userId,
+          eventId,
+          agentName: `${req.user.firstName} ${req.user.lastName}`,
+          latitude: parseFloat(latitude),
+          longitude: parseFloat(longitude),
+          distanceFromEvent: Math.round(distanceFromEvent || 0),
+          timestamp: new Date(),
+          message: `Preuve périodique: agent hors zone (${Math.round(distanceFromEvent || 0)}m)`
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        isWithinGeofence,
+        distanceFromEvent: distanceFromEvent ? Math.round(distanceFromEvent) : null
+      }
+    });
+  } catch (error) {
+    console.error('Submit periodic proof error:', error);
+    res.status(500).json({ success: false, message: 'Erreur lors de la soumission de la preuve périodique', error: error.message });
   }
 };

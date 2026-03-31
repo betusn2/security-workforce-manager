@@ -22,6 +22,13 @@ router.post('/update-location', attendanceController.updateLocation);
 
 // Get attendance records
 router.get('/', paginationQuery, validate, attendanceController.getAttendances);
+
+// Compliance score for an attendance record
+router.get('/compliance/:attendanceId', uuidParam(), validate, attendanceController.getComplianceScore);
+
+// Periodic presence proof (authenticated agent)
+router.post('/periodic-proof', attendanceController.submitPeriodicProof);
+
 router.get('/:id', uuidParam(), validate, attendanceController.getAttendanceById);
 
 // Admin/Supervisor routes

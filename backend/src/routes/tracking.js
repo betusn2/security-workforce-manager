@@ -229,6 +229,9 @@ router.delete('/purge', authorize('admin'), async (req, res) => {
   }
 });
 
+// GET /api/tracking/timeline/:eventId/:agentId - Timeline de présence d'un agent pour un événement
+router.get('/timeline/:eventId/:agentId', authorize('admin', 'supervisor'), trackingController.getPresenceTimeline);
+
 // GET /api/tracking/purge/count - Prévisualiser le nombre à supprimer (admin)
 router.get('/purge/count', authorize('admin'), async (req, res) => {
   try {

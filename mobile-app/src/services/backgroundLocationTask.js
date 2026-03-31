@@ -50,6 +50,32 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
 
     if (!userId || !token) return;
 
+    // ─── Infos événement pour géofence ─────────────────────────────────────
+    let eventLat = null, eventLng = null, eventRadius = 200;
+    try {
+      const eventDataStr = await AsyncStorage.getItem('currentEventData');
+      if (eventDataStr) {
+        const ev = JSON.parse(eventDataStr);
+        eventLat = ev.latitude ? parseFloat(ev.latitude) : null;
+        eventLng = ev.longitude ? parseFloat(ev.longitude) : null;
+        eventRadius = ev.geoRadius || 200;
+      }
+    } catch {}
+
+    // ─── Calcul géofence ───────────────────────────────────────────────────
+    let distanceFromEvent = null;
+    let isWithinGeofence = true; // défaut: dans zone
+    if (eventLat && eventLng) {
+      const R = 6371e3;
+      const p1 = (latitude * Math.PI) / 180;
+      const p2 = (eventLat * Math.PI) / 180;
+      const dp = ((eventLat - latitude) * Math.PI) / 180;
+      const dl = ((eventLng - longitude) * Math.PI) / 180;
+      const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+      distanceFromEvent = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+      isWithinGeofence = distanceFromEvent <= eventRadius;
+    }
+
     // Batterie
     let batteryLevel = null, batteryCharging = false, batteryStatus = '—';
     try {
@@ -85,7 +111,6 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
 
     const speedKmh = speed != null ? Math.round(speed * 3.6 * 10) / 10 : 0;
 
-    // Payload complet
     const payload = {
       latitude, longitude, accuracy,
       altitude, speed, speedKmh, heading,
@@ -100,6 +125,8 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
       deviceBrowser: `Expo/${Device.modelName || 'Mobile'}`,
       userId,
       eventId: eventId || null,
+      isWithinGeofence,
+      distanceFromEvent,
       source: 'background',
     };
 
@@ -109,13 +136,89 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
       timeout: 8000,
     });
 
-    // Mettre à jour la notification Android via le channel persistant
-    if (Platform.OS === 'android') {
-      // La notification est gérée par le foreground service (startLocationUpdatesAsync)
-      // Pas besoin de la recréer à chaque position
+    // ─── Notification locale si sortie de zone ─────────────────────────────
+    if (eventLat && eventLng && !isWithinGeofence) {
+      const lastZoneStatus = await AsyncStorage.getItem('lastGeofenceStatus');
+      // N'envoyer la notification que si le statut a changé (entré/sorti)
+      if (lastZoneStatus !== 'outside') {
+        await AsyncStorage.setItem('lastGeofenceStatus', 'outside');
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '⚠️ Sortie de zone',
+            body: `Vous êtes à ${distanceFromEvent}m de votre zone de travail (limite: ${eventRadius}m). Retournez dans la zone.`,
+            sound: true,
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+            color: '#ef4444',
+          },
+          trigger: null, // immédiate
+        });
+      }
+    } else if (eventLat && eventLng && isWithinGeofence) {
+      const lastZoneStatus = await AsyncStorage.getItem('lastGeofenceStatus');
+      if (lastZoneStatus === 'outside') {
+        // Agent revenu dans la zone
+        await AsyncStorage.setItem('lastGeofenceStatus', 'inside');
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '✅ Retour en zone',
+            body: 'Vous êtes revenu dans votre zone de travail.',
+            sound: false,
+            priority: Notifications.AndroidNotificationPriority.DEFAULT,
+            color: '#10b981',
+          },
+          trigger: null,
+        });
+      }
     }
 
-    console.log(`📍 [BG] ${latitude.toFixed(5)}, ${longitude.toFixed(5)} | ${speedKmh}km/h | batt:${batteryLevel}%`);
+    // ─── Alerte batterie critique ──────────────────────────────────────────
+    if (batteryLevel !== null && batteryLevel <= 15 && !batteryCharging) {
+      const lastBattWarn = await AsyncStorage.getItem('lastBatteryWarning');
+      const now = Date.now();
+      // Alerte max 1 fois par 15 minutes
+      if (!lastBattWarn || now - parseInt(lastBattWarn) > 15 * 60 * 1000) {
+        await AsyncStorage.setItem('lastBatteryWarning', String(now));
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `🔋 Batterie ${batteryLevel <= 5 ? 'critique' : 'faible'} — ${batteryLevel}%`,
+            body: batteryLevel <= 5
+              ? 'Batterie critique ! Connectez votre chargeur immédiatement.'
+              : `Batterie à ${batteryLevel}%. Branchez votre téléphone bientôt.`,
+            sound: true,
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+            color: '#ef4444',
+          },
+          trigger: null,
+        });
+      }
+    }
+
+    // ─── Preuve de présence périodique (toutes les 30 min) ────────────────
+    try {
+      const attendanceId = await AsyncStorage.getItem('currentAttendanceId');
+      if (attendanceId && eventId) {
+        const lastProofStr = await AsyncStorage.getItem('lastPeriodicProof');
+        const lastProof = lastProofStr ? parseInt(lastProofStr) : 0;
+        const thirtyMin = 30 * 60 * 1000;
+        if (Date.now() - lastProof >= thirtyMin) {
+          await AsyncStorage.setItem('lastPeriodicProof', String(Date.now()));
+          await axios.post(`${API_URL}/attendance/periodic-proof`, {
+            eventId,
+            attendanceId,
+            latitude, longitude, accuracy,
+            isWithinGeofence, distanceFromEvent,
+          }, {
+            headers: { Authorization: `Bearer ${token}` },
+            timeout: 8000,
+          });
+          console.log('📸 [BG] Preuve périodique envoyée');
+        }
+      }
+    } catch (proofErr) {
+      console.warn('⚠️ [BG] Preuve périodique échouée:', proofErr.message);
+    }
+
+    console.log(`📍 [BG] ${latitude.toFixed(5)}, ${longitude.toFixed(5)} | ${speedKmh}km/h | batt:${batteryLevel}% | zone:${isWithinGeofence ? '✅' : `❌ ${distanceFromEvent}m`}`);
 
   } catch (err) {
     // Stocker localement si pas de réseau

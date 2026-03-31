@@ -585,7 +585,7 @@ const CheckInScreen = ({ route, navigation }) => {
     setIsSubmitting(true);
     try {
       if (type === 'in') {
-        await attendanceAPI.checkIn({
+        const checkInResponse = await attendanceAPI.checkIn({
           eventId:              selectedEvent?.id,
           assignmentId:         selectedAssign?.id,
           latitude:             location.latitude,
@@ -603,6 +603,21 @@ const CheckInScreen = ({ route, navigation }) => {
         });
         soundEffects.playValidation();
         if (userId && selectedEvent?.id) {
+          // ── Sauvegarder données événement pour géofence en background ──
+          await AsyncStorage.setItem('currentEventData', JSON.stringify({
+            id: selectedEvent.id,
+            name: selectedEvent.name,
+            latitude: selectedEvent.latitude || null,
+            longitude: selectedEvent.longitude || null,
+            geoRadius: selectedEvent.geoRadius || 200,
+          }));
+          await AsyncStorage.setItem('lastGeofenceStatus', 'inside');
+          await AsyncStorage.setItem('lastPeriodicProof', String(Date.now()));
+          // Sauvegarder l'ID du pointage pour les preuves périodiques
+          const attendanceId = checkInResponse?.data?.attendance?.id || checkInResponse?.data?.id;
+          if (attendanceId) {
+            await AsyncStorage.setItem('currentAttendanceId', String(attendanceId));
+          }
           const bgStarted = await startBackgroundTracking(userId, selectedEvent.id);
           if (bgStarted && selectedEvent.endDate) {
             await AsyncStorage.setItem('trackingEventEndDate', selectedEvent.endDate);

@@ -12,6 +12,7 @@ import { io } from 'socket.io-client';
 import api from '../services/api';
 import { trackingAPI } from '../services/api';
 import useAuthStore from '../hooks/useAuth';
+import AlertsPanel from '../components/AlertsPanel';
 
 // Socket.IO URL — priorité à REACT_APP_SOCKET_URL, sinon dériver de REACT_APP_API_URL
 const SOCKET_URL = process.env.REACT_APP_SOCKET_URL ||
@@ -984,6 +985,7 @@ const RealTimeTracking = () => {
         </div>
       )}
 
+      <AlertsPanel eventId={selectedEvent?.id} token={localStorage.getItem('token')} />
     </div>
   );
 };
