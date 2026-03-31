@@ -1,15 +1,14 @@
 /**
  * Plugin: withAndroid15Fix
  * ========================
- * Fixes crashes on Android 14+ (API 34+) and Android 15 (API 35):
+ * Fixes crashes on Android 14+ (API 34) and Android 15 (API 35) / ColorOS 15.
  *
- * 1. Declares foregroundServiceType="location" on the Location service
- *    (required since Android 14 — without this, starting a foreground
- *    service with location crashes the app immediately)
- *
- * 2. Adds POST_NOTIFICATIONS permission (required since Android 13 / API 33)
- *
- * 3. Adds android:exported="false" on services that need it
+ * Android 14 breaking changes that cause immediate launch crashes:
+ * 1. ALL foreground services MUST declare android:foregroundServiceType
+ * 2. ALL components with intent-filters MUST have android:exported
+ * 3. POST_NOTIFICATIONS required since Android 13
+ * 4. SCHEDULE_EXACT_ALARM behavior changed (SecurityException if missing)
+ * 5. Firebase/FCM services need android:exported="true"
  */
 
 const { withAndroidManifest } = require('@expo/config-plugins');
@@ -18,65 +17,115 @@ const withAndroid15Fix = (config) => {
   return withAndroidManifest(config, (mod) => {
     const manifest = mod.modResults.manifest;
 
-    // ── 1. Ensure uses-permission entries exist ───────────────────────────
-    if (!manifest['uses-permission']) {
-      manifest['uses-permission'] = [];
-    }
+    // ── 1. Permissions required for Android 13/14/15 ─────────────────────
+    if (!manifest['uses-permission']) manifest['uses-permission'] = [];
 
-    const addPermission = (name) => {
+    const addPermission = (name, attrs = {}) => {
       const exists = manifest['uses-permission'].some(
         (p) => p.$?.['android:name'] === name
       );
       if (!exists) {
-        manifest['uses-permission'].push({ $: { 'android:name': name } });
+        manifest['uses-permission'].push({ $: { 'android:name': name, ...attrs } });
       }
     };
 
     addPermission('android.permission.POST_NOTIFICATIONS');
     addPermission('android.permission.FOREGROUND_SERVICE');
     addPermission('android.permission.FOREGROUND_SERVICE_LOCATION');
+    addPermission('android.permission.FOREGROUND_SERVICE_CAMERA');
+    // USE_EXACT_ALARM does not need user approval (unlike SCHEDULE_EXACT_ALARM)
+    addPermission('android.permission.USE_EXACT_ALARM');
+    addPermission('android.permission.RECEIVE_BOOT_COMPLETED');
 
-    // ── 2. Add foregroundServiceType="location" to expo-location service ──
     const app = manifest.application?.[0];
     if (!app) return mod;
 
-    if (!app.service) {
-      app.service = [];
+    // ── 2. Fix ALL services: add exported + foregroundServiceType ─────────
+    if (app.service) {
+      app.service.forEach((service) => {
+        const name = service.$?.['android:name'] || '';
+
+        // All services need android:exported
+        if (service.$?.['android:exported'] == null) {
+          // FCM and Firebase services need exported=true to receive messages
+          const needsExportedTrue =
+            name.includes('firebase') ||
+            name.includes('Firebase') ||
+            name.includes('FirebaseMessaging') ||
+            name.includes('FirebaseInstanceId') ||
+            name.includes('ExpoNotificationsService') ||
+            name.includes('notifications.service');
+
+          service.$['android:exported'] = needsExportedTrue ? 'true' : 'false';
+        }
+
+        // Location-related services need foregroundServiceType="location"
+        const isLocationService =
+          name.toLowerCase().includes('location') ||
+          name.toLowerCase().includes('taskconsumer') ||
+          name.includes('expo.modules.location') ||
+          name.includes('LocationModule') ||
+          name.includes('BackgroundFetch');
+
+        if (isLocationService && !service.$?.['android:foregroundServiceType']) {
+          service.$['android:foregroundServiceType'] = 'location';
+        }
+
+        // Camera-related foreground services
+        const isCameraService = name.toLowerCase().includes('camera');
+        if (isCameraService && !service.$?.['android:foregroundServiceType']) {
+          service.$['android:foregroundServiceType'] = 'camera';
+        }
+      });
+
+      // Ensure expo-location task consumer service exists with correct type
+      const locationTaskService = 'expo.modules.location.taskConsumers.LocationTaskConsumer';
+      const hasLocationTask = app.service.some(
+        (s) => s.$?.['android:name'] === locationTaskService
+      );
+      if (!hasLocationTask) {
+        app.service.push({
+          $: {
+            'android:name': locationTaskService,
+            'android:foregroundServiceType': 'location',
+            'android:exported': 'false',
+          },
+        });
+      }
     }
 
-    // expo-location background task service
-    const locationServiceName =
-      'expo.modules.location.taskConsumers.LocationTaskConsumer';
-
-    const existingService = app.service.find(
-      (s) => s.$?.['android:name'] === locationServiceName
-    );
-
-    if (existingService) {
-      // Update existing service to add foregroundServiceType
-      existingService.$['android:foregroundServiceType'] = 'location';
-      existingService.$['android:exported'] = 'false';
-    } else {
-      // Add service declaration
-      app.service.push({
-        $: {
-          'android:name': locationServiceName,
-          'android:foregroundServiceType': 'location',
-          'android:exported': 'false',
-        },
+    // ── 3. Fix ALL receivers: add android:exported ────────────────────────
+    if (app.receiver) {
+      app.receiver.forEach((receiver) => {
+        if (receiver.$?.['android:exported'] == null) {
+          const name = receiver.$?.['android:name'] || '';
+          // Boot receivers need exported=true to receive BOOT_COMPLETED
+          const needsExportedTrue =
+            name.includes('BootReceiver') ||
+            name.includes('boot') ||
+            name.includes('Boot') ||
+            name.includes('firebase') ||
+            name.includes('Firebase') ||
+            name.includes('AlarmReceiver');
+          receiver.$['android:exported'] = needsExportedTrue ? 'true' : 'false';
+        }
       });
     }
 
-    // ── 3. Fix any service missing android:exported ────────────────────────
-    // Android 12+ requires android:exported on services with intent-filters
-    app.service.forEach((service) => {
-      if (service['intent-filter'] && service.$?.['android:exported'] == null) {
-        service.$['android:exported'] = 'false';
-      }
-    });
+    // ── 4. Fix activities: ensure android:exported on main activity ────────
+    if (app.activity) {
+      app.activity.forEach((activity) => {
+        if (activity.$?.['android:exported'] == null) {
+          // Activities with intent-filters (like main launcher) need exported=true
+          const hasIntentFilter = !!activity['intent-filter'];
+          activity.$['android:exported'] = hasIntentFilter ? 'true' : 'false';
+        }
+      });
+    }
 
     return mod;
   });
 };
 
 module.exports = withAndroid15Fix;
+
