@@ -34,7 +34,7 @@
         "backgroundColor": "#2563eb"
       },
       "package": "com.securityguard.mobile",
-      "versionCode": 4,
+      "versionCode": 5,
       "jsEngine": "hermes",
       "permissions": [
         "CAMERA",

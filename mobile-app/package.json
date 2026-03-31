@@ -30,7 +30,6 @@
     "expo-location": "~16.5.0",
     "expo-network": "~5.8.0",
     "expo-notifications": "~0.27.0",
-    "expo-screen-capture": "~5.8.1",
     "expo-secure-store": "~12.8.0",
     "expo-sharing": "~11.10.0",
     "expo-status-bar": "~1.11.1",
