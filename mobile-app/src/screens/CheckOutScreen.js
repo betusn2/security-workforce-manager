@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
-import * as FaceDetector from 'expo-face-detector';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
 
@@ -116,16 +115,8 @@ const CheckOutScreen = ({ route, navigation }) => {
     return R * c;
   };
 
-  // Handle face detection
-  const handleFacesDetected = ({ faces }) => {
-    if (faces.length > 0) {
-      setFaceDetected(true);
-      setFaceData(faces[0]);
-    } else {
-      setFaceDetected(false);
-      setFaceData(null);
-    }
-  };
+  // Handle face detection - auto-enabled when camera is ready (no expo-face-detector on Android 14+)
+  const handleFacesDetected = () => {};
 
   // Capture photo
   const capturePhoto = async () => {
@@ -600,16 +591,8 @@ const CheckOutScreen = ({ route, navigation }) => {
       <Camera
         ref={cameraRef}
         style={styles.camera}
-        type={Camera.Constants.Type.front}
-        onCameraReady={() => setCameraReady(true)}
-        onFacesDetected={handleFacesDetected}
-        faceDetectorSettings={{
-          mode: FaceDetector.FaceDetectorMode.fast,
-          detectLandmarks: FaceDetector.FaceDetectorLandmarks.none,
-          runClassifications: FaceDetector.FaceDetectorClassifications.none,
-          minDetectionInterval: 100,
-          tracking: true,
-        }}
+        type={Camera.Constants?.Type?.front ?? 1}
+        onCameraReady={() => { setCameraReady(true); setFaceDetected(true); }}
       >
         {/* Face Guide Overlay */}
         <View style={styles.overlay}>

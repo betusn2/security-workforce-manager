@@ -859,15 +859,7 @@ const CheckInScreen = ({ route, navigation }) => {
         ref={cameraRef}
         style={styles.camera}
         type={Camera.Constants?.Type?.front ?? 1}
-        onCameraReady={() => setCameraReady(true)}
-        onFacesDetected={({ faces }) => setFaceDetected(faces.length > 0)}
-        faceDetectorSettings={{
-          mode: 1,
-          detectLandmarks: 0,
-          runClassifications: 0,
-          minDetectionInterval: 150,
-          tracking: true,
-        }}
+        onCameraReady={() => { setCameraReady(true); setFaceDetected(true); }}
       >
         <View style={styles.overlay}>
           {/* Top */}

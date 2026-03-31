@@ -34,7 +34,7 @@
         "backgroundColor": "#2563eb"
       },
       "package": "com.securityguard.mobile",
-      "versionCode": 3,
+      "versionCode": 4,
       "jsEngine": "hermes",
       "permissions": [
         "CAMERA",
@@ -64,7 +64,6 @@
     "plugins": [
       "./plugins/withUniversalApk",
       "./plugins/withNoFlipper",
-      "./plugins/withAndroid15Fix",
       [
         "expo-camera",
         {
@@ -85,7 +84,8 @@
           "color": "#2563eb",
           "sounds": []
         }
-      ]
+      ],
+      "./plugins/withAndroid15Fix"
     ],
     "extra": {
       "eas": {
