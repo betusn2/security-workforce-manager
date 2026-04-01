@@ -534,15 +534,18 @@ const CheckInScreen = ({ route, navigation }) => {
         } catch (_) {}
       }
 
-      // Filtrer les actifs (fenêtre 2h OU statut active OU flagué par backend)
-      const filtered = events.filter(ev => ev._canCheckIn !== false && isEventActive(ev));
-      const allVisible = filtered.length > 0 ? filtered : events.filter(isEventActive);
-      setActiveEvents(allVisible.length > 0 ? allVisible : events);
+      // ── NE PAS FILTRER par fenêtre de temps — le web ne filtre pas ──
+      // Montrer TOUS les événements affectés. Le backend valide au moment du check-in.
+      // Filtrer seulement les événements annulés/terminés
+      const displayEvents = events.filter(ev => 
+        ev.status !== 'cancelled' && ev.status !== 'terminated'
+      );
+      setActiveEvents(displayEvents.length > 0 ? displayEvents : events);
 
       // Auto-sélection
       let autoEvent  = passedEvent;
       let autoAssign = passedAssignment;
-      const targetEvents = allVisible.length > 0 ? allVisible : events;
+      const targetEvents = displayEvents.length > 0 ? displayEvents : events;
       if (!autoEvent && targetEvents.length === 1) {
         autoEvent  = targetEvents[0];
         autoAssign = myAssign.find(a => a.eventId === targetEvents[0].id) || null;

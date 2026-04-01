@@ -266,8 +266,27 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#2563eb' }}>
-        <ActivityIndicator size="large" color="#fff" />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1e3a8a' }}>
+        <View style={{
+          width: 100, height: 100, borderRadius: 50,
+          backgroundColor: 'rgba(255,255,255,0.12)',
+          justifyContent: 'center', alignItems: 'center', marginBottom: 20,
+        }}>
+          <View style={{
+            width: 82, height: 82, borderRadius: 41,
+            backgroundColor: '#2563eb',
+            justifyContent: 'center', alignItems: 'center',
+          }}>
+            <Ionicons name="shield-checkmark" size={44} color="#fff" />
+          </View>
+        </View>
+        <Text style={{ color: '#fff', fontSize: 22, fontWeight: 'bold', marginBottom: 6, letterSpacing: 0.5 }}>
+          Security Guard
+        </Text>
+        <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 28 }}>
+          Système de gestion sécurité
+        </Text>
+        <ActivityIndicator size="large" color="#60a5fa" />
       </View>
     );
   }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Platform,
   Alert,
   ScrollView,
+  Animated,
+  Easing,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import useAuthStore from '../services/authStore';
@@ -22,6 +24,41 @@ const LoginScreen = ({ navigation }) => {
   const [cin, setCin] = useState('');
   const [serverStatus, setServerStatus] = useState('checking'); // 'checking' | 'ready' | 'waking'
   const { loginByCin, isLoading, error, clearError } = useAuthStore();
+
+  // ── Animations ───────────────────────────────────────────────────────────
+  const fadeAnim   = useRef(new Animated.Value(0)).current;
+  const slideAnim  = useRef(new Animated.Value(40)).current;
+  const logoScale  = useRef(new Animated.Value(0.6)).current;
+  const logoPulse  = useRef(new Animated.Value(1)).current;
+  const formAnim   = useRef(new Animated.Value(0)).current;
+  const btnScale   = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    // Entrance: logo pop-in → content fade+slide
+    Animated.sequence([
+      Animated.spring(logoScale, { toValue: 1, useNativeDriver: true, tension: 80, friction: 6 }),
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 500, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 500, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(formAnim,  { toValue: 1, duration: 600, delay: 100, useNativeDriver: true }),
+      ]),
+    ]).start();
+  }, []);
+
+  // Pulse animation on logo when server is waking
+  useEffect(() => {
+    if (serverStatus === 'waking') {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(logoPulse, { toValue: 1.1, duration: 700, useNativeDriver: true }),
+          Animated.timing(logoPulse, { toValue: 1,   duration: 700, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      logoPulse.stopAnimation();
+      Animated.spring(logoPulse, { toValue: 1, useNativeDriver: true }).start();
+    }
+  }, [serverStatus]);
 
   // Réveiller le serveur au montage
   useEffect(() => {
@@ -42,55 +79,40 @@ const LoginScreen = ({ navigation }) => {
       Alert.alert('Erreur', 'Veuillez entrer votre numéro CIN');
       return;
     }
-
     clearError();
-    
-    // 🆕 Collecter device fingerprint + info (IDENTIQUE AU WEB)
-    console.log('🔑 Collection device fingerprint & info...');
+    // Animation bouton press
+    Animated.sequence([
+      Animated.timing(btnScale, { toValue: 0.94, duration: 80, useNativeDriver: true }),
+      Animated.timing(btnScale, { toValue: 1,    duration: 120, useNativeDriver: true }),
+    ]).start();
+
     const deviceFingerprint = await getDeviceFingerprint();
     const deviceInfo = await getDeviceInfo();
-    
-    console.log('📱 Device Info collected:', {
-      fingerprint: deviceFingerprint,
-      os: deviceInfo.platform,
-      model: deviceInfo.model
-    });
-    
     const userType = loginMode === 'agent' ? 'agent' : 'supervisor';
-    
-    // 🆕 Envoyer MÊMES données que le web: cin + deviceFingerprint + deviceInfo + userType
-    const result = await loginByCin(
-      cin.toUpperCase().trim(), 
-      deviceFingerprint,  // NOUVEAU
-      deviceInfo,         // NOUVEAU
-      userType
-    );
+    const result = await loginByCin(cin.toUpperCase().trim(), deviceFingerprint, deviceInfo, userType);
 
     if (!result.success) {
-      Alert.alert(
-        'Erreur de connexion',
-        result.error || 'CIN introuvable. Vérifiez votre numéro CIN.',
-        [{ text: 'OK' }]
-      );
+      Alert.alert('Erreur de connexion', result.error || 'CIN introuvable. Vérifiez votre numéro CIN.', [{ text: 'OK' }]);
     }
-    // Si succès, AppNavigator détecte isCheckInMode=true et affiche CheckIn automatiquement
   };
 
   const isAgent = loginMode === 'agent';
+  const accentColor = isAgent ? '#2563eb' : '#d97706';
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.content}>
+        <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
 
           {/* Header / Logo */}
           <View style={styles.logoContainer}>
-            <View style={styles.logo}>
-              <Ionicons name="shield-checkmark" size={42} color="#2563eb" />
-            </View>
+            <Animated.View style={{ transform: [{ scale: Animated.multiply(logoScale, logoPulse) }] }}>
+              <View style={styles.logoGlow}>
+                <View style={styles.logo}>
+                  <Ionicons name="shield-checkmark" size={50} color="#fff" />
+                </View>
+              </View>
+            </Animated.View>
             <Text style={styles.title}>Security Guard</Text>
             <Text style={styles.subtitle}>Système de pointage</Text>
           </View>
@@ -100,53 +122,45 @@ const LoginScreen = ({ navigation }) => {
             <View style={styles.serverStatus}>
               <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
               <Text style={styles.serverStatusText}>
-                {serverStatus === 'waking'
-                  ? '⏳ Démarrage du serveur (~30s)...'
-                  : '🔄 Vérification de la connexion...'}
+                {serverStatus === 'waking' ? '⏳ Démarrage du serveur (~30s)...' : '🔄 Vérification de la connexion...'}
               </Text>
             </View>
           )}
 
           {/* Sélecteur de rôle */}
-          <View style={styles.roleSelector}>
+          <Animated.View style={[styles.roleSelector, { opacity: formAnim }]}>
             <TouchableOpacity
-              style={[styles.roleCard, isAgent && styles.roleCardActive]}
+              style={[styles.roleCard, isAgent && styles.roleCardActiveAgent]}
               onPress={() => { setLoginMode('agent'); clearError(); setCin(''); }}
               activeOpacity={0.8}
             >
-              <View style={[styles.roleIconWrapper, isAgent && styles.roleIconWrapperActive]}>
+              <View style={[styles.roleIconWrapper, isAgent && styles.roleIconWrapperAgent]}>
                 <Ionicons name="shield-outline" size={28} color={isAgent ? '#fff' : '#2563eb'} />
               </View>
               <Text style={[styles.roleCardTitle, isAgent && styles.roleCardTitleActive]}>Agent</Text>
-              <Text style={[styles.roleCardSub, isAgent && styles.roleCardSubActive]}>Pointage d'entrée / sortie</Text>
+              <Text style={[styles.roleCardSub, isAgent && styles.roleCardSubActive]}>Pointage entrée / sortie</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.roleCard, !isAgent && styles.roleCardActive]}
+              style={[styles.roleCard, !isAgent && styles.roleCardActiveSupervisor]}
               onPress={() => { setLoginMode('supervisor'); clearError(); setCin(''); }}
               activeOpacity={0.8}
             >
-              <View style={[styles.roleIconWrapper, !isAgent && styles.roleIconWrapperActive]}>
-                <Ionicons name="people-outline" size={28} color={!isAgent ? '#fff' : '#2563eb'} />
+              <View style={[styles.roleIconWrapper, !isAgent && styles.roleIconWrapperSupervisor]}>
+                <Ionicons name="people-outline" size={28} color={!isAgent ? '#fff' : '#d97706'} />
               </View>
               <Text style={[styles.roleCardTitle, !isAgent && styles.roleCardTitleActive]}>Responsable</Text>
               <Text style={[styles.roleCardSub, !isAgent && styles.roleCardSubActive]}>Supervision des agents</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
 
           {/* Formulaire */}
-          <View style={styles.form}>
+          <Animated.View style={[styles.form, { opacity: formAnim, transform: [{ translateY: Animated.multiply(formAnim, new Animated.Value(-1)).interpolate({ inputRange: [-1, 0], outputRange: [0, 20] }) }] }]}>
             {/* Info rôle */}
-            <View style={styles.roleInfo}>
-              <Ionicons
-                name={isAgent ? 'shield-outline' : 'people-outline'}
-                size={18}
-                color="#2563eb"
-              />
-              <Text style={styles.roleInfoText}>
-                {isAgent
-                  ? 'Connexion par CIN — Agent de sécurité'
-                  : 'Connexion par CIN — Responsable d\'équipe'}
+            <View style={[styles.roleInfo, { backgroundColor: isAgent ? '#eff6ff' : '#fffbeb' }]}>
+              <Ionicons name={isAgent ? 'shield-outline' : 'people-outline'} size={18} color={accentColor} />
+              <Text style={[styles.roleInfoText, { color: isAgent ? '#1e40af' : '#92400e' }]}>
+                {isAgent ? 'Connexion par CIN — Agent de sécurité' : "Connexion par CIN — Responsable d'équipe"}
               </Text>
             </View>
 
@@ -160,8 +174,8 @@ const LoginScreen = ({ navigation }) => {
 
             {/* Champ CIN */}
             <Text style={styles.inputLabel}>Numéro CIN</Text>
-            <View style={styles.inputContainer}>
-              <Ionicons name="card-outline" size={22} color="#2563eb" style={styles.inputIcon} />
+            <View style={[styles.inputContainer, { borderColor: isAgent ? '#bfdbfe' : '#fde68a' }]}>
+              <Ionicons name="card-outline" size={22} color={accentColor} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Ex: A303730"
@@ -181,28 +195,28 @@ const LoginScreen = ({ navigation }) => {
             </View>
 
             {/* Bouton Pointer */}
-            <TouchableOpacity
-              style={[styles.button, isLoading && styles.buttonDisabled]}
-              onPress={handleCinLogin}
-              disabled={isLoading}
-              activeOpacity={0.85}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <View style={styles.buttonInner}>
-                  <Ionicons name="finger-print-outline" size={20} color="#fff" />
-                  <Text style={styles.buttonText}>Pointer</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            <Animated.View style={{ transform: [{ scale: btnScale }] }}>
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: accentColor, shadowColor: accentColor }, isLoading && styles.buttonDisabled]}
+                onPress={handleCinLogin}
+                disabled={isLoading}
+                activeOpacity={0.85}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <View style={styles.buttonInner}>
+                    <Ionicons name="finger-print-outline" size={22} color="#fff" />
+                    <Text style={styles.buttonText}>Se pointer</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
 
-            <Text style={styles.cinNote}>
-              En cas de problème, contactez votre administrateur.
-            </Text>
-          </View>
+            <Text style={styles.cinNote}>En cas de problème, contactez votre administrateur.</Text>
+          </Animated.View>
 
-        </View>
+        </Animated.View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -211,7 +225,7 @@ const LoginScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#1e3a8a',
   },
   scrollContent: {
     flexGrow: 1,
@@ -220,47 +234,56 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 22,
-    paddingTop: 64,
+    paddingTop: 60,
     paddingBottom: 40,
   },
-
-  // Header
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 28,
   },
-  logo: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: '#fff',
+  logoGlow: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255,255,255,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
-    shadowColor: '#000',
+    marginBottom: 14,
+    shadowColor: '#60a5fa',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  logo: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    backgroundColor: '#2563eb',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#1d4ed8',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
   },
   title: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#fff',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   subtitle: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.75)',
-    letterSpacing: 0.3,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+    letterSpacing: 0.5,
   },
-
-  // Statut serveur
   serverStatus: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 10,
     padding: 10,
     marginBottom: 14,
@@ -270,43 +293,53 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontStyle: 'italic',
   },
-
-  // Sélecteur de rôle (cartes)
   roleSelector: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 20,
+    marginBottom: 18,
   },
   roleCard: {
     flex: 1,
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 16,
     paddingVertical: 16,
     paddingHorizontal: 8,
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  roleCardActive: {
-    backgroundColor: '#fff',
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 4,
+  roleCardActiveAgent: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderColor: '#93c5fd',
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  roleCardActiveSupervisor: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderColor: '#fde68a',
+    shadowColor: '#d97706',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
   },
   roleIconWrapper: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  roleIconWrapperActive: {
+  roleIconWrapperAgent: {
     backgroundColor: '#2563eb',
+  },
+  roleIconWrapperSupervisor: {
+    backgroundColor: '#d97706',
   },
   roleCardTitle: {
     fontSize: 15,
@@ -315,40 +348,36 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   roleCardTitleActive: {
-    color: '#1d4ed8',
+    color: '#111827',
   },
   roleCardSub: {
     fontSize: 10,
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.65)',
     textAlign: 'center',
   },
   roleCardSubActive: {
     color: '#6b7280',
   },
-
-  // Formulaire
   form: {
     backgroundColor: '#fff',
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
   },
   roleInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#eff6ff',
+    borderRadius: 12,
     padding: 12,
-    borderRadius: 10,
     marginBottom: 18,
     gap: 8,
   },
   roleInfoText: {
     flex: 1,
-    color: '#1e40af',
     fontSize: 13,
     fontWeight: '500',
   },
@@ -376,12 +405,11 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
+    borderWidth: 2,
+    borderRadius: 14,
     paddingHorizontal: 14,
-    marginBottom: 18,
-    height: 54,
+    marginBottom: 20,
+    height: 56,
     backgroundColor: '#f9fafb',
   },
   inputIcon: {
@@ -389,25 +417,23 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontSize: 17,
+    fontSize: 18,
     color: '#111827',
-    fontWeight: '500',
-    letterSpacing: 1,
+    fontWeight: '600',
+    letterSpacing: 1.5,
   },
   button: {
-    backgroundColor: '#2563eb',
-    borderRadius: 14,
-    height: 54,
+    borderRadius: 16,
+    height: 56,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#2563eb',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
   },
   buttonDisabled: {
-    backgroundColor: '#93c5fd',
+    opacity: 0.6,
     shadowOpacity: 0,
     elevation: 0,
   },
