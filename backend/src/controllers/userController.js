@@ -854,9 +854,9 @@ exports.updateFacialVector = async (req, res) => {
 // Get all supervisors (supervisors and admins who can manage agents)
 exports.getSupervisors = async (req, res) => {
   try {
+    // Directeur de l'événement : peut être Admin, Responsable, ou tout utilisateur actif
     const supervisors = await User.findAll({
       where: {
-        role: { [Op.in]: ['supervisor', 'admin'] },
         status: 'active'
       },
       attributes: [
@@ -876,7 +876,7 @@ exports.getSupervisors = async (req, res) => {
         'rating',
         'overallScore'
       ],
-      order: [['firstName', 'ASC']]
+      order: [['role', 'ASC'], ['firstName', 'ASC']]
     });
 
     // Compter le nombre d'agents supervisés pour chaque superviseur

@@ -327,15 +327,59 @@ exports.loginByCin = async (req, res) => {
     let eventsToCheck = [];
 
     if (userType === 'supervisor') {
-      // Superviseur : chercher les événements où il est désigné comme superviseur
-      const supervisorEvents = await Event.findAll({
+      // Règle 1 : Directeur de l'événement (supervisorId = user.id)
+      const directorEvents = await Event.findAll({
         where: {
           supervisorId: user.id,
           status: { [Op.notIn]: ['cancelled', 'terminated'] }
         }
       });
-      // Construire des objets compatibles avec la structure attendue plus bas
-      eventsToCheck = supervisorEvents.map(e => ({ event: e }));
+
+      // Règle 2 : Responsable affecté à l'événement via zones ou assignments
+      const { Zone } = require('../models');
+      // Chercher via assignments confirmés (comme les agents)
+      const supervisorAssignments = await Assignment.findAll({
+        where: {
+          agentId: user.id,
+          status: 'confirmed'
+        },
+        include: [{
+          model: Event,
+          as: 'event',
+          required: true,
+          where: { status: { [Op.notIn]: ['cancelled', 'terminated'] } }
+        }]
+      });
+
+      // Chercher via zones (champ supervisors JSON contient l'ID du responsable)
+      const supervisorZones = await Zone.sequelize.query(
+        `SELECT DISTINCT z."eventId" FROM zones z WHERE z."deletedAt" IS NULL AND CAST(z.supervisors AS TEXT) LIKE :pattern`,
+        { replacements: { pattern: `%${user.id}%` }, type: Zone.sequelize.QueryTypes.SELECT }
+      );
+      const zoneEventIds = supervisorZones.map(z => z.eventId).filter(Boolean);
+      let zoneEvents = [];
+      if (zoneEventIds.length > 0) {
+        zoneEvents = await Event.findAll({
+          where: {
+            id: { [Op.in]: zoneEventIds },
+            status: { [Op.notIn]: ['cancelled', 'terminated'] }
+          }
+        });
+      }
+
+      // Fusionner toutes les sources sans doublons
+      const allEventIds = new Set();
+      const mergedEvents = [];
+      for (const e of directorEvents) {
+        if (!allEventIds.has(e.id)) { allEventIds.add(e.id); mergedEvents.push({ event: e }); }
+      }
+      for (const a of supervisorAssignments) {
+        if (!allEventIds.has(a.event.id)) { allEventIds.add(a.event.id); mergedEvents.push({ event: a.event }); }
+      }
+      for (const e of zoneEvents) {
+        if (!allEventIds.has(e.id)) { allEventIds.add(e.id); mergedEvents.push({ event: e }); }
+      }
+      eventsToCheck = mergedEvents;
     } else {
       // Agent : chercher via la table assignments
       const assignments = await Assignment.findAll({
@@ -369,7 +413,7 @@ exports.loginByCin = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: userType === 'supervisor'
-          ? 'Vous n\'êtes responsable d\'aucun événement actif.'
+          ? 'Vous n\'êtes directeur ni responsable d\'aucun événement actif. Vérifiez votre affectation (directeur, zone, ou assignment).'
           : 'Vous n\'avez aucune affectation confirmée.',
         code: 'NO_ASSIGNMENTS'
       });

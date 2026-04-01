@@ -914,32 +914,32 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
             </div>
           </div>
 
-          {/* Responsable / Superviseur */}
+          {/* Directeur de l'événement */}
           <div className="border rounded-lg p-4 bg-yellow-50 border-yellow-200">
             <h3 className="text-sm font-semibold text-yellow-800 mb-3 flex items-center">
               <FiShield className="mr-2" />
-              Responsable / Superviseur
+              Directeur de l'événement <span className="ml-2 text-xs font-normal text-yellow-600">(Optionnel)</span>
             </h3>
             <p className="text-xs text-yellow-700 mb-3">
-              Sélectionnez un responsable pour superviser cet événement. Un responsable peut avoir plusieurs zones, mais un agent ne peut avoir qu'une seule zone.
+              Choisissez un directeur global pour cet événement (optionnel). Ce rôle est distinct des responsables de zone affectés à l'événement. Peut être un Admin, Responsable ou tout utilisateur.
             </p>
             <div>
-              <label className="label">Choisir le responsable</label>
+              <label className="label">Directeur de l'événement <span className="text-gray-400 font-normal">(optionnel)</span></label>
               <select
                 value={formData.supervisorId}
                 onChange={(e) => setFormData({ ...formData, supervisorId: e.target.value })}
                 className="input"
                 disabled={loadingSupervisors}
               >
-                <option value="">-- Aucun responsable --</option>
+                <option value="">-- Aucun directeur --</option>
                 {supervisors.map(sup => (
                   <option key={sup.id} value={sup.id}>
-                    {sup.firstName} {sup.lastName} - {sup.employeeId}
+                    {sup.firstName} {sup.lastName} - {sup.employeeId} {sup.role === 'admin' ? '(Admin)' : sup.role === 'supervisor' ? '(Responsable)' : ''}
                   </option>
                 ))}
               </select>
               {loadingSupervisors && (
-                <p className="text-xs text-gray-500 mt-1">Chargement des superviseurs...</p>
+                <p className="text-xs text-gray-500 mt-1">Chargement...</p>
               )}
               {formData.supervisorId && (
                 <div className="mt-3 p-3 bg-white rounded-lg border border-yellow-300">
