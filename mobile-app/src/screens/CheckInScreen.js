@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -30,6 +30,7 @@ import soundEffects from '../utils/soundEffects';
 import { getDeviceFingerprint, getDeviceInfo } from '../utils/deviceFingerprint';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { startBackgroundTracking, stopBackgroundTracking } from '../services/backgroundLocationTask';
+import useAuthStore from '../services/authStore';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -59,6 +60,43 @@ const isEventActive = (event) => {
 // ─────────────────────────────────────────────────────────────
 const CheckInScreen = ({ route, navigation }) => {
   const { event: passedEvent, assignment: passedAssignment } = route.params || {};
+  const { logoutCheckIn } = useAuthStore();
+
+  // ── Header: bouton retour + déconnexion ────────────────────
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <TouchableOpacity
+          onPress={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              Alert.alert('Déconnexion', 'Voulez-vous vous déconnecter ?', [
+                { text: 'Annuler', style: 'cancel' },
+                { text: 'Déconnexion', style: 'destructive', onPress: () => logoutCheckIn && logoutCheckIn() },
+              ]);
+            }
+          }}
+          style={{ paddingHorizontal: 12, paddingVertical: 8 }}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+      ),
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={() => {
+            Alert.alert('Déconnexion', 'Voulez-vous vous déconnecter ?', [
+              { text: 'Annuler', style: 'cancel' },
+              { text: 'Déconnexion', style: 'destructive', onPress: () => logoutCheckIn && logoutCheckIn() },
+            ]);
+          }}
+          style={{ paddingHorizontal: 12, paddingVertical: 8 }}
+        >
+          <Ionicons name="log-out-outline" size={22} color="#fff" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, logoutCheckIn]);
 
   // ── States ────────────────────────────────────────────────
   const [initLoading,     setInitLoading]     = useState(true);
@@ -587,13 +625,22 @@ const CheckInScreen = ({ route, navigation }) => {
       }
     } catch (_) {}
 
-    // Demander permissions caméra + GPS en parallèle
-    await Promise.all([requestCamera(), getGPS(event)]);
+    // Demander permissions caméra + GPS en parallèle (avec try/catch pour éviter le crash)
+    try {
+      await Promise.all([requestCamera(), getGPS(event)]);
+    } catch (err) {
+      console.warn('Permission request error (non-fatal):', err?.message);
+    }
   };
 
   const requestCamera = async () => {
-    const { status } = await Camera.requestCameraPermissionsAsync();
-    setCameraPermission(status === 'granted');
+    try {
+      const { status } = await Camera.requestCameraPermissionsAsync();
+      setCameraPermission(status === 'granted');
+    } catch (err) {
+      console.warn('Camera permission error:', err?.message);
+      setCameraPermission(false);
+    }
   };
 
   // ── GPS (même formule + même géofence que web) ─────────────

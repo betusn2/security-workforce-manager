@@ -310,8 +310,8 @@ export default function App() {
         ) : isCheckInMode ? (
           /* ── Mode pointage CIN : CheckIn en premier ── */
           <>
-            <Stack.Screen name="CheckIn" component={CheckInScreen} options={{ headerShown: true, headerTitle: 'Pointage Arrivée', headerStyle: { backgroundColor: '#10b981' }, headerTintColor: '#fff' }} />
-            <Stack.Screen name="CheckOut" component={CheckOutScreen} options={{ headerShown: true, headerTitle: 'Pointage Départ', headerStyle: { backgroundColor: '#f59e0b' }, headerTintColor: '#fff' }} />
+            <Stack.Screen name="CheckIn" component={CheckInScreen} options={{ headerShown: true, headerTitle: 'Pointage', headerStyle: { backgroundColor: '#10b981' }, headerTintColor: '#fff', headerBackVisible: false, gestureEnabled: false }} />
+            <Stack.Screen name="CheckOut" component={CheckOutScreen} options={{ headerShown: true, headerTitle: 'Pointage Départ', headerStyle: { backgroundColor: '#f59e0b' }, headerTintColor: '#fff', gestureEnabled: false }} />
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="IncidentReport" component={IncidentReportScreen} options={{ headerShown: true, headerTitle: "Rapport d'incident", headerStyle: { backgroundColor: '#ef4444' }, headerTintColor: '#fff' }} />
             <Stack.Screen name="EventDetail" component={EventDetailScreen} options={{ headerShown: true, headerTitle: 'Détail événement', headerStyle: { backgroundColor: '#2563eb' }, headerTintColor: '#fff' }} />
@@ -320,7 +320,7 @@ export default function App() {
           /* ── Authentifié normal : Main (tabs) en premier ── */
           <>
             <Stack.Screen name="Main" component={MainTabs} />
-            <Stack.Screen name="CheckIn" component={CheckInScreen} options={{ headerShown: true, headerTitle: 'Pointage Arrivée', headerStyle: { backgroundColor: '#10b981' }, headerTintColor: '#fff' }} />
+            <Stack.Screen name="CheckIn" component={CheckInScreen} options={{ headerShown: true, headerTitle: 'Pointage', headerStyle: { backgroundColor: '#10b981' }, headerTintColor: '#fff' }} />
             <Stack.Screen name="CheckOut" component={CheckOutScreen} options={{ headerShown: true, headerTitle: 'Pointage Départ', headerStyle: { backgroundColor: '#f59e0b' }, headerTintColor: '#fff' }} />
             <Stack.Screen name="IncidentReport" component={IncidentReportScreen} options={{ headerShown: true, headerTitle: "Rapport d'incident", headerStyle: { backgroundColor: '#ef4444' }, headerTintColor: '#fff' }} />
             <Stack.Screen name="EventDetail" component={EventDetailScreen} options={{ headerShown: true, headerTitle: 'Détail événement', headerStyle: { backgroundColor: '#2563eb' }, headerTintColor: '#fff' }} />
