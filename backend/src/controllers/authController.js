@@ -283,7 +283,7 @@ exports.loginByCin = async (req, res) => {
       });
     }
 
-    if (userType === 'supervisor' && user.role !== 'supervisor' && user.role !== 'responsable') {
+    if (userType === 'supervisor' && user.role === 'agent') {
       await logActivity({
         userId: user.id,
         action: 'LOGIN_BY_CIN_FAILED',
@@ -296,9 +296,7 @@ exports.loginByCin = async (req, res) => {
 
       return res.status(403).json({
         success: false,
-        message: user.role === 'agent'
-          ? 'Ce CIN appartient à un agent. Utilisez la section Agents'
-          : 'Ce CIN ne correspond pas à un responsable'
+        message: 'Ce CIN appartient à un agent. Utilisez la section Agents'
       });
     }
 
@@ -353,10 +351,10 @@ exports.loginByCin = async (req, res) => {
 
       // Chercher via zones (champ supervisors JSON contient l'ID du responsable)
       const supervisorZones = await Zone.sequelize.query(
-        `SELECT DISTINCT z."eventId" FROM zones z WHERE z."deletedAt" IS NULL AND CAST(z.supervisors AS TEXT) LIKE :pattern`,
+        `SELECT DISTINCT z.event_id FROM zones z WHERE z.deleted_at IS NULL AND CAST(z.supervisors AS TEXT) LIKE :pattern`,
         { replacements: { pattern: `%${user.id}%` }, type: Zone.sequelize.QueryTypes.SELECT }
       );
-      const zoneEventIds = supervisorZones.map(z => z.eventId).filter(Boolean);
+      const zoneEventIds = supervisorZones.map(z => z.event_id).filter(Boolean);
       let zoneEvents = [];
       if (zoneEventIds.length > 0) {
         zoneEvents = await Event.findAll({

@@ -668,7 +668,7 @@ router.get('/managed-zones', authenticate, async (req, res) => {
 
     // Utiliser CAST pour compatibilité MySQL + PostgreSQL (champ supervisors peut être JSON)
     const managedZones = await Zone.sequelize.query(
-      `SELECT * FROM zones WHERE "deletedAt" IS NULL AND CAST(supervisors AS TEXT) LIKE :pattern ORDER BY name ASC`,
+      `SELECT * FROM zones WHERE deleted_at IS NULL AND CAST(supervisors AS TEXT) LIKE :pattern ORDER BY name ASC`,
       {
         replacements: { pattern: `%${supervisorUserId}%` },
         type: Zone.sequelize.QueryTypes.SELECT
@@ -710,14 +710,14 @@ router.get('/managed-events', authenticate, async (req, res) => {
 
     // 1. Zones du superviseur (CAST pour compat MySQL+PostgreSQL)
     const supervisorZones = await Zone.sequelize.query(
-      `SELECT id, "eventId", name, description, capacity, color FROM zones WHERE "deletedAt" IS NULL AND CAST(supervisors AS TEXT) LIKE :pattern`,
+      `SELECT id, event_id, name, description, capacity, color FROM zones WHERE deleted_at IS NULL AND CAST(supervisors AS TEXT) LIKE :pattern`,
       {
         replacements: { pattern: `%${supervisorUserId}%` },
         type: Zone.sequelize.QueryTypes.SELECT
       }
     );
 
-    const eventIds = [...new Set(supervisorZones.map(z => z.eventId).filter(Boolean))];
+    const eventIds = [...new Set(supervisorZones.map(z => z.event_id).filter(Boolean))];
 
     if (eventIds.length === 0) {
       return res.json({ success: true, events: [] });
@@ -738,7 +738,7 @@ router.get('/managed-events', authenticate, async (req, res) => {
 
     // 3. Attacher les zones à chaque événement
     for (const event of managedEvents) {
-      event.zones = supervisorZones.filter(z => z.eventId === event.id);
+      event.zones = supervisorZones.filter(z => z.event_id === event.id);
       // Calculer statut dynamique côté JS (évite SQL dialect incompatible)
       const now = new Date();
       const start = new Date(event.startDate);
