@@ -815,6 +815,7 @@ const EventDetails = () => {
                   const inPerimeter = isAgentInPerimeter(assignment.agentId);
                   
                   return (
+                    <>
                     <tr 
                       key={assignment.id} 
                       className="hover:bg-gray-50 transition-colors cursor-pointer"
@@ -961,6 +962,7 @@ const EventDetails = () => {
                         />
                       </td>
                     </tr>
+                    </>
                   );
                 })}
               </tbody>
