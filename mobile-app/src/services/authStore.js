@@ -47,11 +47,16 @@ const useAuthStore = create((set, get) => ({
         userType 
       });
       
-      const { user, checkInToken } = loginResponse.data.data;
+      const { user, checkInToken, accessToken: cinAccessToken, validEvents } = loginResponse.data.data;
 
       // Stocker le token check-in
       await SecureStore.setItemAsync('checkInToken', checkInToken);
       await SecureStore.setItemAsync('checkInUser', JSON.stringify(user));
+      
+      // Stocker validEvents pour que CheckInScreen les utilise
+      if (validEvents && Array.isArray(validEvents)) {
+        await SecureStore.setItemAsync('validEvents', JSON.stringify(validEvents));
+      }
 
       console.log('✅ Login CIN réussi:', {
         userId: user.id,
@@ -101,6 +106,7 @@ const useAuthStore = create((set, get) => ({
   logoutCheckIn: async () => {
     await SecureStore.deleteItemAsync('checkInToken');
     await SecureStore.deleteItemAsync('checkInUser');
+    await SecureStore.deleteItemAsync('validEvents');
     set({ user: null, isAuthenticated: false, isCheckInMode: false });
     navigateToLogin();
   },

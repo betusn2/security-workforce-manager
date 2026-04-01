@@ -13,11 +13,14 @@ import {
   Dimensions,
   RefreshControl,
   Linking,
+  Animated,
+  Easing,
 } from 'react-native';
 import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
 import * as Battery from 'expo-battery';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as SecureStore from 'expo-secure-store';
 import MapView, { Marker, Circle } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { attendanceAPI, assignmentsAPI, eventsAPI, usersAPI, incidentsAPI } from '../services/api';
@@ -112,6 +115,48 @@ const CheckInScreen = ({ route, navigation }) => {
   const locationIntervalRef = useRef(null);
   const batterySubscription = useRef(null);
   const clockIntervalRef = useRef(null);
+
+  // ── Animations ────────────────────────────────────────────
+  const fadeAnim    = useRef(new Animated.Value(0)).current;
+  const slideAnim   = useRef(new Animated.Value(30)).current;
+  const pulseAnim   = useRef(new Animated.Value(1)).current;
+  const tabSlideAnim = useRef(new Animated.Value(0)).current;
+  const btnScale    = useRef(new Animated.Value(1)).current;
+
+  const startEntranceAnimation = () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1, duration: 500, useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const startPulseAnimation = () => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.12, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1,    duration: 800, useNativeDriver: true }),
+      ])
+    ).start();
+  };
+
+  const animateBtnPress = (cb) => {
+    Animated.sequence([
+      Animated.timing(btnScale, { toValue: 0.95, duration: 80, useNativeDriver: true }),
+      Animated.timing(btnScale, { toValue: 1,    duration: 120, useNativeDriver: true }),
+    ]).start(cb);
+  };
+
+  const switchTab = (tab) => {
+    Animated.timing(tabSlideAnim, {
+      toValue: tab === 'info' ? 0 : 1,
+      duration: 250, easing: Easing.inOut(Easing.ease), useNativeDriver: false,
+    }).start();
+    setActiveTab(tab);
+  };
 
   // ── 1. INIT : mêmes appels API que web ─────────────────────
   useEffect(() => { initData(); }, []);
@@ -432,13 +477,12 @@ const CheckInScreen = ({ route, navigation }) => {
     try {
       setInitLoading(true);
 
-      // ── Charger le profil utilisateur depuis AsyncStorage ──
+      // ── Charger le profil utilisateur depuis SecureStore ──
       try {
-        const userDataStr = await AsyncStorage.getItem('checkInUser');
+        const userDataStr = await SecureStore.getItemAsync('checkInUser');
         if (userDataStr) {
           const userData = JSON.parse(userDataStr);
           setUserProfile(userData);
-          // Charger le superviseur si disponible
           if (userData.supervisorId) {
             const supRes = await usersAPI.getById(userData.supervisorId);
             setSupervisor(supRes.data?.data || null);
@@ -446,34 +490,70 @@ const CheckInScreen = ({ route, navigation }) => {
         }
       } catch (_) {}
 
-      // Charger mes affectations confirmées (identique web assignmentsAPI.getMyAssignments)
-      const assignRes  = await assignmentsAPI.getMyAssignments({ status: 'confirmed' });
-      const myAssign   = assignRes.data.data || [];
-      setAssignments(myAssign);
-
-      // Charger les événements liés (identique web: Promise.all sur eventIds)
-      const eventIds = [...new Set(myAssign.map(a => a.eventId).filter(Boolean))];
+      // ── Essayer d'abord validEvents depuis SecureStore (calculé par le backend) ──
       let events = [];
-      if (eventIds.length > 0) {
-        const responses = await Promise.all(eventIds.map(id => eventsAPI.getById(id)));
-        events = responses.map(r => r.data?.data).filter(Boolean);
+      let myAssign = [];
+      try {
+        const validEventsStr = await SecureStore.getItemAsync('validEvents');
+        if (validEventsStr) {
+          const validEvents = JSON.parse(validEventsStr);
+          if (Array.isArray(validEvents) && validEvents.length > 0) {
+            // Charger les détails complets des événements
+            const responses = await Promise.all(
+              validEvents.map(ve => eventsAPI.getById(ve.eventId).catch(() => null))
+            );
+            events = responses
+              .filter(Boolean)
+              .map(r => r.data?.data)
+              .filter(Boolean)
+              .map(ev => {
+                const ve = validEvents.find(v => v.eventId === ev.id);
+                return { ...ev, _canCheckIn: ve?.canCheckIn, _canCheckOut: ve?.canCheckOut, _isDuringEvent: ve?.isDuringEvent };
+              });
+          }
+        }
+      } catch (_) {}
+
+      // ── Fallback: charger depuis les affectations ──
+      if (events.length === 0) {
+        const assignRes = await assignmentsAPI.getMyAssignments({ status: 'confirmed' });
+        myAssign = assignRes.data.data || [];
+        setAssignments(myAssign);
+
+        const eventIds = [...new Set(myAssign.map(a => a.eventId).filter(Boolean))];
+        if (eventIds.length > 0) {
+          const responses = await Promise.all(eventIds.map(id => eventsAPI.getById(id).catch(() => null)));
+          events = responses.map(r => r.data?.data).filter(Boolean);
+        }
+      } else {
+        // Charger les assignments quand même pour les infos de zone
+        try {
+          const assignRes = await assignmentsAPI.getMyAssignments({ status: 'confirmed' });
+          myAssign = assignRes.data.data || [];
+          setAssignments(myAssign);
+        } catch (_) {}
       }
 
-      // Filtrer uniquement les actifs (fenêtre 2h, même que web computeEventStatus)
-      const filtered = events.filter(isEventActive);
-      setActiveEvents(filtered);
+      // Filtrer les actifs (fenêtre 2h OU statut active OU flagué par backend)
+      const filtered = events.filter(ev => ev._canCheckIn !== false && isEventActive(ev));
+      const allVisible = filtered.length > 0 ? filtered : events.filter(isEventActive);
+      setActiveEvents(allVisible.length > 0 ? allVisible : events);
 
-      // Auto-sélection (même que web: si 1 seul événement ou passé en params)
+      // Auto-sélection
       let autoEvent  = passedEvent;
       let autoAssign = passedAssignment;
-      if (!autoEvent && filtered.length === 1) {
-        autoEvent  = filtered[0];
-        autoAssign = myAssign.find(a => a.eventId === filtered[0].id) || null;
+      const targetEvents = allVisible.length > 0 ? allVisible : events;
+      if (!autoEvent && targetEvents.length === 1) {
+        autoEvent  = targetEvents[0];
+        autoAssign = myAssign.find(a => a.eventId === targetEvents[0].id) || null;
       }
 
       if (autoEvent) {
         await selectEvent(autoEvent, autoAssign || myAssign.find(a => a.eventId === autoEvent.id));
       }
+
+      startEntranceAnimation();
+      startPulseAnimation();
     } catch (err) {
       console.error('CheckIn init error:', err);
       Alert.alert('Erreur', 'Impossible de charger les événements');
@@ -741,24 +821,33 @@ const CheckInScreen = ({ route, navigation }) => {
     </View>
   );
 
-  const renderTabBar = () => (
-    <View style={styles.tabBar}>
-      <TouchableOpacity
-        style={[styles.tabBtn, activeTab === 'info' && styles.tabBtnActive]}
-        onPress={() => setActiveTab('info')}
-      >
-        <Ionicons name="information-circle-outline" size={16} color={activeTab === 'info' ? '#1e3a5f' : '#94a3b8'} />
-        <Text style={[styles.tabBtnText, activeTab === 'info' && styles.tabBtnTextActive]}>Informations</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.tabBtn, activeTab === 'pointage' && styles.tabBtnActive]}
-        onPress={() => setActiveTab('pointage')}
-      >
-        <Ionicons name="scan-outline" size={16} color={activeTab === 'pointage' ? '#1e3a5f' : '#94a3b8'} />
-        <Text style={[styles.tabBtnText, activeTab === 'pointage' && styles.tabBtnTextActive]}>Pointage</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  const renderTabBar = () => {
+    const indicatorLeft = tabSlideAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['0%', '50%'],
+    });
+    return (
+      <View style={styles.tabBar}>
+        <Animated.View style={[styles.tabIndicator, { left: indicatorLeft }]} />
+        <TouchableOpacity
+          style={styles.tabBtn}
+          onPress={() => switchTab('info')}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="information-circle-outline" size={16} color={activeTab === 'info' ? '#1e3a5f' : '#94a3b8'} />
+          <Text style={[styles.tabBtnText, activeTab === 'info' && styles.tabBtnTextActive]}>Informations</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.tabBtn}
+          onPress={() => switchTab('pointage')}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="scan-outline" size={16} color={activeTab === 'pointage' ? '#1e3a5f' : '#94a3b8'} />
+          <Text style={[styles.tabBtnText, activeTab === 'pointage' && styles.tabBtnTextActive]}>Pointage</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   // ── INFORMATIONS TAB ─────────────────────────────────────
   const renderInfoTab = () => {
@@ -1146,22 +1235,33 @@ const CheckInScreen = ({ route, navigation }) => {
         {/* ── Indicateurs de validation ───────────────────── */}
         <View style={styles.validationRow}>
           <View style={styles.validationItem}>
-            <View style={[styles.validIcon, faceDetected ? styles.validOk : styles.validPending]}>
+            <Animated.View style={[styles.validIcon, faceDetected ? styles.validOk : styles.validPending,
+              faceDetected && { transform: [{ scale: pulseAnim }] }]}>
               <Ionicons name="person" size={18} color={faceDetected ? '#fff' : '#64748b'} />
-            </View>
+            </Animated.View>
             <Text style={styles.validLabel}>Visage</Text>
+            <Text style={[styles.validStatus, { color: faceDetected ? '#10b981' : '#64748b' }]}>
+              {faceDetected ? '✓' : '—'}
+            </Text>
           </View>
+          <View style={styles.validSep} />
           <View style={styles.validationItem}>
-            <View style={[styles.validIcon, location ? styles.validOk : styles.validPending]}>
+            <Animated.View style={[styles.validIcon, location ? styles.validOk : styles.validPending,
+              location && { transform: [{ scale: pulseAnim }] }]}>
               <Ionicons name="location" size={18} color={location ? '#fff' : '#64748b'} />
-            </View>
+            </Animated.View>
             <Text style={styles.validLabel}>Position</Text>
+            <Text style={[styles.validStatus, { color: location ? '#10b981' : '#64748b' }]}>
+              {location ? '✓' : '—'}
+            </Text>
           </View>
+          <View style={styles.validSep} />
           <View style={styles.validationItem}>
             <View style={[styles.validIcon, styles.validOk]}>
               <Ionicons name="phone-portrait" size={18} color="#fff" />
             </View>
             <Text style={styles.validLabel}>Appareil</Text>
+            <Text style={[styles.validStatus, { color: '#10b981' }]}>✓</Text>
           </View>
         </View>
 
@@ -1180,28 +1280,36 @@ const CheckInScreen = ({ route, navigation }) => {
         )}
 
         {/* ── Boutons Entrée / Sortie ────────────────────── */}
-        <View style={styles.entryExitRow}>
+        <Animated.View style={[styles.entryExitRow, { transform: [{ scale: btnScale }] }]}>
           <TouchableOpacity
             style={[styles.entryBtn, (!canCheckIn || isSubmitting) && styles.entryBtnDisabled]}
-            onPress={() => submitCheckIn('in')}
+            onPress={() => animateBtnPress(() => submitCheckIn('in'))}
             disabled={!canCheckIn || isSubmitting}
+            activeOpacity={0.85}
           >
             {isSubmitting
               ? <ActivityIndicator color="#fff" size="small" />
-              : <><Ionicons name="log-in-outline" size={20} color="#fff" /><Text style={styles.entryBtnText}>Entrée</Text></>
+              : <>
+                  <Ionicons name="log-in-outline" size={22} color="#fff" />
+                  <Text style={styles.entryBtnText}>Entrée</Text>
+                </>
             }
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.exitBtn, (!canCheckOut || isSubmitting) && styles.exitBtnDisabled]}
-            onPress={() => submitCheckIn('out')}
+            onPress={() => animateBtnPress(() => submitCheckIn('out'))}
             disabled={!canCheckOut || isSubmitting}
+            activeOpacity={0.85}
           >
             {isSubmitting
               ? <ActivityIndicator color="#fff" size="small" />
-              : <><Ionicons name="log-out-outline" size={20} color="#fff" /><Text style={styles.exitBtnText}>Sortie</Text></>
+              : <>
+                  <Ionicons name="log-out-outline" size={22} color="#fff" />
+                  <Text style={styles.exitBtnText}>Sortie</Text>
+                </>
             }
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
         <View style={{ height: 24 }} />
       </ScrollView>
@@ -1216,8 +1324,12 @@ const CheckInScreen = ({ route, navigation }) => {
     return (
       <View style={styles.loadingScreen}>
         <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <View style={styles.loadingLogo}>
+          <Ionicons name="shield-checkmark" size={48} color="#3b82f6" />
+        </View>
+        <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 24 }} />
         <Text style={styles.loadingText}>Chargement des affectations...</Text>
+        <Text style={styles.loadingSubText}>Connexion au serveur</Text>
       </View>
     );
   }
@@ -1271,7 +1383,9 @@ const CheckInScreen = ({ route, navigation }) => {
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
 
       {/* Clock */}
-      {renderClock()}
+      <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+        {renderClock()}
+      </Animated.View>
 
       {/* Status badges */}
       {renderTopBadges()}
@@ -1280,7 +1394,9 @@ const CheckInScreen = ({ route, navigation }) => {
       {renderTabBar()}
 
       {/* Tab content */}
-      {activeTab === 'info' ? renderInfoTab() : renderPointageTab()}
+      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+        {activeTab === 'info' ? renderInfoTab() : renderPointageTab()}
+      </Animated.View>
     </View>
   );
 };
@@ -1289,6 +1405,11 @@ const CheckInScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#0f172a' },
   loadingScreen: { flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' },
+  loadingLogo: {
+    width: 80, height: 80, borderRadius: 40, backgroundColor: '#1e293b',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: '#3b82f620',
+  },
   emptyScreen: { flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center', padding: 32 },
 
   // ── Clock ──────────────────────────────────────────────────
@@ -1316,10 +1437,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b',
     borderRadius: 10,
     padding: 3,
+    position: 'relative',
+  },
+  tabIndicator: {
+    position: 'absolute',
+    top: 3, bottom: 3,
+    width: '50%',
+    backgroundColor: '#fff',
+    borderRadius: 8,
   },
   tabBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 9, borderRadius: 8, gap: 5,
+    paddingVertical: 9, borderRadius: 8, gap: 5, zIndex: 1,
   },
   tabBtnActive: { backgroundColor: '#fff' },
   tabBtnText: { fontSize: 13, fontWeight: '600', color: '#94a3b8' },
@@ -1469,13 +1598,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#334155',
     marginBottom: 10,
-    paddingVertical: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
   },
   validationItem: { flex: 1, alignItems: 'center', gap: 6 },
-  validIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  validSep: { width: 1, backgroundColor: '#334155', marginVertical: 8 },
+  validIcon: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
   validOk: { backgroundColor: '#10b981' },
   validPending: { backgroundColor: '#334155' },
-  validLabel: { fontSize: 11, color: '#94a3b8', fontWeight: '500' },
+  validLabel: { fontSize: 11, color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  validStatus: { fontSize: 13, fontWeight: '700' },
 
   // ── Auth Message ───────────────────────────────────────────
   authMessage: {
@@ -1489,16 +1621,20 @@ const styles = StyleSheet.create({
   entryExitRow: { flexDirection: 'row', gap: 10 },
   entryBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#475569', borderRadius: 12, paddingVertical: 15, gap: 7,
+    backgroundColor: '#10b981', borderRadius: 14, paddingVertical: 17, gap: 8,
+    shadowColor: '#10b981', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 8,
+    elevation: 6,
   },
-  entryBtnDisabled: { backgroundColor: '#334155' },
-  entryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  entryBtnDisabled: { backgroundColor: '#1e293b', shadowOpacity: 0, elevation: 0 },
+  entryBtnText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
   exitBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#475569', borderRadius: 12, paddingVertical: 15, gap: 7,
+    backgroundColor: '#f59e0b', borderRadius: 14, paddingVertical: 17, gap: 8,
+    shadowColor: '#f59e0b', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 8,
+    elevation: 6,
   },
-  exitBtnDisabled: { backgroundColor: '#334155' },
-  exitBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  exitBtnDisabled: { backgroundColor: '#1e293b', shadowOpacity: 0, elevation: 0 },
+  exitBtnText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
 
   // ── Select Event ───────────────────────────────────────────
   selectTitle: { fontSize: 18, fontWeight: '700', color: '#f1f5f9', marginBottom: 6 },
@@ -1515,7 +1651,8 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 13, color: '#64748b', textAlign: 'center', marginTop: 8, marginBottom: 20 },
   backBtn: { backgroundColor: '#2563eb', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 },
   backBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  loadingText: { marginTop: 12, color: '#94a3b8', fontSize: 15 },
+  loadingText: { marginTop: 12, color: '#94a3b8', fontSize: 15, fontWeight: '600' },
+  loadingSubText: { marginTop: 6, color: '#475569', fontSize: 12 },
 });
 
 export default CheckInScreen;
