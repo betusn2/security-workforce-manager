@@ -243,7 +243,7 @@ exports.loginByCin = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ where: { cin: cin.trim() } });
+    const user = await User.findOne({ where: { cin: cin.toUpperCase().trim() } });
 
     if (!user) {
       await logActivity({
