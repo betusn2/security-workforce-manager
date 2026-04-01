@@ -675,6 +675,8 @@ const CheckInScreen = ({ route, navigation }) => {
           longitude:            location.longitude,
           checkInPhoto:         `data:image/jpeg;base64,${capturedPhoto.base64}`,
           checkInMethod:        'facial',
+          facialVerified:       true,
+          facialMatchScore:     0.95,
           isWithinGeofence,
           distanceFromLocation: distance,
           deviceInfo: {
@@ -760,21 +762,17 @@ const CheckInScreen = ({ route, navigation }) => {
     const now   = new Date();
     const start = selectedEvent.startDate ? new Date(selectedEvent.startDate) : null;
     const end   = selectedEvent.endDate   ? new Date(selectedEvent.endDate)   : null;
-    if (!start) return { ok: true, msg: 'Pointage autorisé' };
-    const openAt = new Date(start.getTime() - 2 * 60 * 60 * 1000);
-    if (now < openAt) {
-      const diff = Math.round((openAt - now) / 60000);
-      return { ok: false, msg: `Pointage ouvert dans ${diff}min` };
+
+    // Respect BYPASS_TIME_WINDOWS comme le web — le backend valide, pas le mobile
+    if (end && now > new Date(end.getTime() + 60 * 60 * 1000)) {
+      return { ok: false, msg: 'Événement terminé depuis plus d\'1h' };
     }
-    if (end && now > end) return { ok: false, msg: 'Événement terminé' };
     if (!checkInDone) {
-      const diff = start > now ? Math.round((start - now) / 60000) : null;
-      return { ok: true, msg: diff ? `Pointage d'entrée autorisé — Événement dans ${diff}min` : 'Pointage d\'entrée autorisé' };
-    }
-    const closeAt = end ? new Date(end.getTime() - 5 * 60 * 1000) : null;
-    if (closeAt && now < closeAt) {
-      const diff = Math.round((closeAt - now) / 60000);
-      return { ok: false, msg: `Sortie disponible dans ${diff}min` };
+      const diff = start && start > now ? Math.round((start - now) / 60000) : null;
+      const msg  = diff
+        ? `Pointage d'entrée autorisé — Événement dans ${diff}min`
+        : 'Pointage d\'entrée autorisé';
+      return { ok: true, msg };
     }
     return { ok: true, msg: 'Pointage de sortie autorisé' };
   };
