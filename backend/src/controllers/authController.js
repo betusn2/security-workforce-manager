@@ -351,7 +351,7 @@ exports.loginByCin = async (req, res) => {
 
       // Chercher via zones (champ supervisors JSON contient l'ID du responsable)
       const supervisorZones = await Zone.sequelize.query(
-        `SELECT DISTINCT z.event_id FROM zones z WHERE z.deleted_at IS NULL AND CAST(z.supervisors AS TEXT) LIKE :pattern`,
+        `SELECT DISTINCT z.event_id FROM zones z WHERE z.deleted_at IS NULL AND CAST(z.supervisors AS CHAR) LIKE :pattern`,
         { replacements: { pattern: `%${user.id}%` }, type: Zone.sequelize.QueryTypes.SELECT }
       );
       const zoneEventIds = supervisorZones.map(z => z.event_id).filter(Boolean);
