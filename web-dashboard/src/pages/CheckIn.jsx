@@ -388,16 +388,15 @@ const CheckIn = () => {
                 .map(res => res.data?.data)
                 .filter(Boolean);
 
-              // 🔥 FILTRER SEULEMENT ÉVÉNEMENTS ACTIFS (fenêtre check-in ouverte)
-              // ❌ Exclure: scheduled (avant 2h), completed, cancelled, terminated
+              // Utiliser le statut DB (déjà validé par le backend) — ne pas recalculer
+              // le statut côté client car checkOutTime='00:00' donne une date erronée
               const filteredEvents = events.filter(event => {
-                const status = computeEventStatus(event);
-                // Agent peut SEULEMENT accéder pendant la fenêtre de check-in (2h avant → fin)
-                return status === 'active';
+                const dbStatus = event.status?.toLowerCase();
+                return !['cancelled', 'terminated', 'completed'].includes(dbStatus);
               }).sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
               
               setTodayEvents(filteredEvents);
-              console.log('✅ Filtered events:', filteredEvents.length);
+              console.log('✅ Filtered events (agent):', filteredEvents.length);
 
               // 🔥 Récupérer la zone depuis l'assignment confirmé
               const confirmedAssignment = assignments.find(a => a.status === 'confirmed');
@@ -496,16 +495,17 @@ const CheckIn = () => {
                 console.log('Event names:', events.map(e => e.name).join(', '));
               }
               
-              // 🔥 FILTRER SEULEMENT ÉVÉNEMENTS ACTIFS (fenêtre check-in ouverte)
-              // ❌ Exclure: scheduled (avant 2h), completed, cancelled, terminated
+              // Utiliser le statut DB (déjà validé par le backend)
               const filteredEvents = events.filter(event => {
-                const status = computeEventStatus(event);
-                // Agent peut SEULEMENT accéder pendant la fenêtre de check-in (2h avant → fin)
-                return status === 'active';
+                const dbStatus = event.status?.toLowerCase();
+                return !['cancelled', 'terminated', 'completed'].includes(dbStatus);
               }).sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
               
-              console.log('✅ Events after filtering:', filteredEvents.length);
-              setTodayEvents(filteredEvents);
+              console.log('✅ Events after filtering (supervisor):', filteredEvents.length);
+              // Seulement écraser si on a trouvé des événements (ne pas effacer ceux chargés via assignments)
+              if (filteredEvents.length > 0) {
+                setTodayEvents(filteredEvents);
+              }
             } else {
               console.warn('⚠️ Events response not successful:', managedEventsResponse.data?.message);
             }
