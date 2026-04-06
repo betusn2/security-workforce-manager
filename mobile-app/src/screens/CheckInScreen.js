@@ -605,8 +605,12 @@ const CheckInScreen = ({ route, navigation }) => {
 
   // ── 2. Sélectionner un événement ──────────────────────────
   const selectEvent = async (event, assignment) => {
+    if (!event) {
+      console.warn('selectEvent: event is null/undefined, ignoring');
+      return;
+    }
     setSelectedEvent(event);
-    setSelectedAssign(assignment);
+    setSelectedAssign(assignment || null);
     setZone(assignment?.zone || assignment?.Zone || null);
 
     // Vérifier déjà pointé (même comportement que web: auto-redirect checkout)
@@ -1411,15 +1415,18 @@ const CheckInScreen = ({ route, navigation }) => {
   }
 
   // ── Aucun événement actif ────────────────────────────────
-  if (!selectedEvent && activeEvents.length === 0) {
+  if (!selectedEvent && activeEvents.length === 0 && !initLoading) {
     return (
       <View style={styles.emptyScreen}>
         <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
         <Ionicons name="calendar-outline" size={64} color="#475569" />
         <Text style={styles.emptyTitle}>Aucun événement actif</Text>
-        <Text style={styles.emptyText}>Pas d'événement ouvert au pointage pour le moment.</Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.navigate('Home')}>
-          <Text style={styles.backBtnText}>Retour</Text>
+        <Text style={styles.emptyText}>
+          Vous n'avez pas d'affectation confirmée à un événement actif.{'\n\n'}
+          Vérifiez auprès de votre responsable que votre affectation est bien confirmée.
+        </Text>
+        <TouchableOpacity style={styles.backBtn} onPress={() => logoutCheckIn ? logoutCheckIn() : navigation.navigate('Home')}>
+          <Text style={styles.backBtnText}>Se déconnecter</Text>
         </TouchableOpacity>
       </View>
     );

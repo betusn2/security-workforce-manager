@@ -379,7 +379,7 @@ exports.loginByCin = async (req, res) => {
       }
       eventsToCheck = mergedEvents;
     } else {
-      // Agent : chercher via la table assignments
+      // Agent : chercher via la table assignments (avec filtre event status)
       const assignments = await Assignment.findAll({
         where: {
           agentId: user.id,
@@ -388,31 +388,54 @@ exports.loginByCin = async (req, res) => {
         include: [{
           model: Event,
           as: 'event',
-          required: true
+          required: true,
+          where: { status: { [Op.notIn]: ['cancelled', 'terminated'] } }
         }]
       });
       eventsToCheck = assignments;
     }
 
     if (eventsToCheck.length === 0) {
+      // Vérifier si l'utilisateur a DES affectations (même non confirmées) pour donner un meilleur message
+      let anyAssignments = [];
+      try {
+        anyAssignments = await Assignment.findAll({
+          where: { agentId: user.id },
+          include: [{ model: Event, as: 'event', required: true }],
+          limit: 1
+        });
+      } catch (_) {}
+
+      const hasUnconfirmedAssignments = anyAssignments.length > 0;
+
       await logActivity({
         userId: user.id,
         action: 'LOGIN_BY_CIN_FAILED',
         entityType: 'auth',
         entityId: user.id,
-        description: userType === 'supervisor'
-          ? 'Connexion CIN refusée - aucun événement supervisé actif'
-          : 'Connexion CIN refusée - aucune affectation confirmée',
+        description: hasUnconfirmedAssignments
+          ? 'Connexion CIN refusée - affectations non confirmées'
+          : userType === 'supervisor'
+            ? 'Connexion CIN refusée - aucun événement supervisé actif'
+            : 'Connexion CIN refusée - aucune affectation',
         req,
         status: 'failure',
-        errorMessage: 'Aucune affectation'
+        errorMessage: hasUnconfirmedAssignments ? 'Affectation non confirmée' : 'Aucune affectation'
       });
+
+      if (hasUnconfirmedAssignments) {
+        return res.status(403).json({
+          success: false,
+          message: 'Votre affectation à cet événement n\'est pas encore confirmée. Contactez votre administrateur pour qu\'il confirme votre affectation.',
+          code: 'NOT_CONFIRMED'
+        });
+      }
 
       return res.status(403).json({
         success: false,
         message: userType === 'supervisor'
-          ? 'Vous n\'êtes directeur ni responsable d\'aucun événement actif. Vérifiez votre affectation (directeur, zone, ou assignment).'
-          : 'Vous n\'avez aucune affectation confirmée.',
+          ? 'Aucun événement actif trouvé. Vérifiez que vous êtes bien affecté et confirmé à un événement en cours.'
+          : 'Aucun événement actif. Vous n\'avez pas d\'affectation confirmée à un événement en cours.',
         code: 'NO_ASSIGNMENTS'
       });
     }

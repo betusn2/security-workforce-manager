@@ -39,6 +39,7 @@ const CheckInLogin = () => {
   // États
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState('');
   const [userPreview, setUserPreview] = useState(null);
   const [deviceInfo, setDeviceInfo] = useState(null);
   const [showAppBanner, setShowAppBanner] = useState(true);
@@ -329,6 +330,7 @@ const CheckInLogin = () => {
     } else {
       setUserPreview(null);
       setError('');
+      setErrorCode('');
     }
   }, [cin, profileType]);
 
@@ -337,6 +339,7 @@ const CheckInLogin = () => {
     setProfileType(type);
     setStep('login');
     setError('');
+    setErrorCode('');
     setCin('');
     setEmail('');
     setPassword('');
@@ -426,6 +429,7 @@ const CheckInLogin = () => {
 
       // Afficher le message d'erreur détaillé
       setError(message);
+      setErrorCode(errorCode || '');
 
       // Affichage de toasts selon le type d'erreur
       if (errorCode === 'OUTSIDE_TIME_WINDOW') {
@@ -687,9 +691,11 @@ const CheckInLogin = () => {
                       <div>
                         <p className="font-medium">{error}</p>
                         <p className="text-xs text-red-600 mt-2">
-                          {profileType === 'agent' && '⚠️ Assurez-vous d\'être connecté via la section "Agents" et d\'être affecté à un événement confirmé aujourd\'hui ou dans les 2 prochaines heures.'}
-                          {profileType === 'supervisor' && '⚠️ Assurez-vous d\'être connecté via la section "Responsables" et d\'être affecté à un événement confirmé aujourd\'hui ou dans les 2 prochaines heures.'}
-                          {!profileType && 'Vous devez être affecté à un événement confirmé pour pouvoir effectuer un pointage.'}
+                          {errorCode === 'NOT_CONFIRMED' && '⏳ Demandez à votre administrateur de confirmer votre affectation dans la gestion des événements.'}
+                          {errorCode === 'NO_ASSIGNMENTS' && profileType === 'agent' && '📋 Vérifiez auprès de votre responsable que vous êtes bien affecté et confirmé à un événement actif.'}
+                          {errorCode === 'NO_ASSIGNMENTS' && profileType === 'supervisor' && '📋 Vérifiez que vous êtes bien affecté comme directeur, responsable de zone, ou via une affectation confirmée à un événement actif.'}
+                          {!errorCode && profileType === 'agent' && '⚠️ Assurez-vous d\'être connecté via la section "Agents" avec un CIN valide et une affectation confirmée.'}
+                          {!errorCode && profileType === 'supervisor' && '⚠️ Assurez-vous d\'être connecté via la section "Responsables" avec un CIN valide.'}
                         </p>
                       </div>
                     </div>
