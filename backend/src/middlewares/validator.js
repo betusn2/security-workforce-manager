@@ -44,7 +44,7 @@ const userValidation = {
       .isLength({ min: 4, max: 20 }).withMessage('Le CIN doit contenir entre 4 et 20 caractères'),
     body('role')
       .optional()
-      .isIn(['agent', 'supervisor', 'admin']).withMessage('Rôle invalide'),
+      .isIn(['agent', 'supervisor', 'admin', 'user']).withMessage('Rôle invalide'),
     body('supervisorId')
       .optional({ nullable: true, checkFalsy: true })
       .custom((value) => {
@@ -72,7 +72,7 @@ const userValidation = {
       .isEmail().withMessage('Email invalide'),
     body('role')
       .optional()
-      .isIn(['agent', 'supervisor', 'admin']).withMessage('Rôle invalide'),
+      .isIn(['agent', 'supervisor', 'admin', 'user']).withMessage('Rôle invalide'),
     body('status')
       .optional()
       .isIn(['active', 'inactive', 'suspended']).withMessage('Statut invalide')
