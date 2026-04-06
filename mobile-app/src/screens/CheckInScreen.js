@@ -313,7 +313,7 @@ const CheckInScreen = ({ route, navigation }) => {
       socketService.on('auth:error', (error) => {
         console.error('❌ Erreur auth Socket.IO:', error);
         setIsSocketAuthenticated(false);
-        Alert.alert('Erreur Socket.IO', error.message);
+        // Ne pas afficher d'Alert — erreur non-fatale pour le pointage
       });
       
       socketService.on('tracking:position_ack', (data) => {
@@ -366,47 +366,52 @@ const CheckInScreen = ({ route, navigation }) => {
     }
   };
 
-  // ── GPS Tracking Automatique (même que web: toutes les 5s) ───
+  // ── GPS Tracking Automatique — watchPositionAsync (évite les appels concurrents) ───
+  const locationSubscriptionRef = useRef(null);
+
   const startLocationTracking = async () => {
     try {
-      // Vérifier permission
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         console.log('⚠️ Permission GPS refusée');
         return;
       }
-      
-      // Position immédiate
-      const initialLoc = await Location.getCurrentPositionAsync({ 
-        accuracy: Location.Accuracy.High 
-      });
-      setLocation(initialLoc.coords);
-      await sendLocationUpdate(initialLoc.coords);
-      
-      // Puis toutes les 5 secondes (comme le web)
-      locationIntervalRef.current = setInterval(async () => {
-        try {
-          const loc = await Location.getCurrentPositionAsync({ 
-            accuracy: Location.Accuracy.High 
-          });
+
+      // Arrêter tout abonnement précédent
+      if (locationSubscriptionRef.current) {
+        locationSubscriptionRef.current.remove();
+        locationSubscriptionRef.current = null;
+      }
+
+      // watchPositionAsync: un seul flux GPS, pas d'appels concurrents
+      locationSubscriptionRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced, // moins agressif qu'High, évite les crashs
+          timeInterval: 10000,   // au moins 10s entre updates (pas 5s)
+          distanceInterval: 20,  // ou si déplacé de 20m
+        },
+        async (loc) => {
           setLocation(loc.coords);
+          setGpsAccuracy(loc.coords.accuracy);
           await sendLocationUpdate(loc.coords);
-        } catch (error) {
-          console.error('Erreur GPS:', error);
         }
-      }, 5000); // 5 secondes
-      
-      console.log('📍 GPS tracking démarré (intervalle: 5s)');
+      );
+
+      console.log('📍 GPS tracking démarré (watchPositionAsync)');
     } catch (error) {
       console.error('Erreur démarrage GPS tracking:', error);
     }
   };
-  
+
   const stopLocationTracking = () => {
+    if (locationSubscriptionRef.current) {
+      locationSubscriptionRef.current.remove();
+      locationSubscriptionRef.current = null;
+      console.log('📍 GPS tracking arrêté');
+    }
     if (locationIntervalRef.current) {
       clearInterval(locationIntervalRef.current);
       locationIntervalRef.current = null;
-      console.log('📍 GPS tracking arrêté');
     }
   };
 
@@ -629,12 +634,23 @@ const CheckInScreen = ({ route, navigation }) => {
       }
     } catch (_) {}
 
-    // Demander permissions caméra + GPS en parallèle (avec try/catch pour éviter le crash)
-    try {
-      await Promise.all([requestCamera(), getGPS(event)]);
-    } catch (err) {
-      console.warn('Permission request error (non-fatal):', err?.message);
+    // Ne demander le GPS que si on n'a pas encore de position (watchPositionAsync s'en charge sinon)
+    if (!location) {
+      try {
+        await getGPS(event);
+      } catch (err) {
+        console.warn('GPS initial error (non-fatal):', err?.message);
+      }
+    } else if (event?.latitude && event?.longitude) {
+      // Recalculer la distance avec la position actuelle
+      const dist = calculateDistance(
+        location.latitude, location.longitude,
+        parseFloat(event.latitude), parseFloat(event.longitude)
+      );
+      setDistance(Math.round(dist));
+      setIsWithinGeofence(dist <= (event.geoRadius || 200));
     }
+    // requestCamera() est lazy — uniquement quand l'utilisateur appuie sur le bouton caméra
   };
 
   const requestCamera = async () => {
@@ -647,13 +663,13 @@ const CheckInScreen = ({ route, navigation }) => {
     }
   };
 
-  // ── GPS (même formule + même géofence que web) ─────────────
+  // ── GPS ponctuel — utilisé uniquement si watchPosition n'a pas encore de position ─
   const getGPS = async (event) => {
     setLocationLoading(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') { setLocationLoading(false); return; }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       setLocation(loc.coords);
       setGpsAccuracy(loc.coords.accuracy);
       // Reverse geocode
