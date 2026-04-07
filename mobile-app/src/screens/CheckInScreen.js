@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
+import NetInfo from '@react-native-community/netinfo';
 import * as Battery from 'expo-battery';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as SecureStore from 'expo-secure-store';
@@ -147,6 +148,7 @@ const CheckInScreen = ({ route, navigation }) => {
   const [enrichedDeviceInfo,     setEnrichedDeviceInfo]     = useState(null);
   const [isSocketAuthenticated,  setIsSocketAuthenticated]  = useState(false);
   const [isSocketConnected,      setIsSocketConnected]      = useState(false);
+  const [isInternetReachable,    setIsInternetReachable]    = useState(true); // real network status
   const [userId,                 setUserId]                 = useState(null);
 
   const cameraRef = useRef(null);
@@ -198,6 +200,17 @@ const CheckInScreen = ({ route, navigation }) => {
 
   // ── 1. INIT : mêmes appels API que web ─────────────────────
   useEffect(() => { initData(); }, []);
+
+  // ── Suivi connectivité internet réelle ────────────────────
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsInternetReachable(state.isConnected && state.isInternetReachable !== false);
+    });
+    NetInfo.fetch().then(state => {
+      setIsInternetReachable(state.isConnected && state.isInternetReachable !== false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // ── Live clock (comme le web) ─────────────────────────────
   useEffect(() => {
@@ -579,19 +592,19 @@ const CheckInScreen = ({ route, navigation }) => {
 
       // ── NE PAS FILTRER par fenêtre de temps — le web ne filtre pas ──
       // Montrer TOUS les événements affectés. Le backend valide au moment du check-in.
-      // Filtrer seulement les événements annulés/terminés
-      const displayEvents = events.filter(ev => 
-        ev.status !== 'cancelled' && ev.status !== 'terminated'
-      );
-      setActiveEvents(displayEvents.length > 0 ? displayEvents : events);
+      // Filtrer les événements terminés/annulés — ne jamais afficher un événement terminé
+      const displayEvents = events.filter(ev => {
+        const s = (ev.status || '').toLowerCase();
+        return s !== 'cancelled' && s !== 'terminated' && s !== 'completed' && s !== 'termine';
+      });
+      setActiveEvents(displayEvents); // pas de fallback — si vide, écran "aucun événement" s'affiche
 
-      // Auto-sélection
+      // Auto-sélection uniquement sur événements valides
       let autoEvent  = passedEvent;
       let autoAssign = passedAssignment;
-      const targetEvents = displayEvents.length > 0 ? displayEvents : events;
-      if (!autoEvent && targetEvents.length === 1) {
-        autoEvent  = targetEvents[0];
-        autoAssign = myAssign.find(a => a.eventId === targetEvents[0].id) || null;
+      if (!autoEvent && displayEvents.length === 1) {
+        autoEvent  = displayEvents[0];
+        autoAssign = myAssign.find(a => a.eventId === displayEvents[0].id) || null;
       }
 
       if (autoEvent) {
@@ -876,9 +889,9 @@ const CheckInScreen = ({ route, navigation }) => {
           <Text style={styles.badgeText}>{batteryLevel}%</Text>
         </View>
       )}
-      <View style={[styles.badge, { backgroundColor: isSocketAuthenticated ? '#10b981' : isSocketConnected ? '#f59e0b' : '#64748b' }]}>
+      <View style={[styles.badge, { backgroundColor: !isInternetReachable ? '#ef4444' : isSocketAuthenticated ? '#10b981' : '#f59e0b' }]}>
         <Ionicons name="wifi" size={11} color="#fff" />
-        <Text style={styles.badgeText}>{isSocketAuthenticated ? 'Temps réel' : isSocketConnected ? 'Connexion...' : 'Hors ligne'}</Text>
+        <Text style={styles.badgeText}>{!isInternetReachable ? 'Hors ligne' : isSocketAuthenticated ? 'Temps réel' : 'En ligne'}</Text>
       </View>
       {location && (
         <View style={[styles.badge, { backgroundColor: isWithinGeofence === false ? '#ef4444' : '#10b981' }]}>
@@ -1078,10 +1091,16 @@ const CheckInScreen = ({ route, navigation }) => {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.eventRowName}>{ev.name}</Text>
                     {ev.location && <Text style={styles.eventRowLoc}>{ev.location}</Text>}
-                    {ev.startDate && (
+                    {(ev.checkInTime || ev.startDate) && (
                       <Text style={styles.eventRowTime}>
-                        {new Date(ev.startDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                        {ev.endDate ? ` – ${new Date(ev.endDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                        {ev.checkInTime
+                          ? ev.checkInTime.substring(0, 5)
+                          : new Date(ev.startDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                        {(ev.checkOutTime || ev.endDate)
+                          ? ` – ${ev.checkOutTime
+                              ? ev.checkOutTime.substring(0, 5)
+                              : new Date(ev.endDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+                          : ''}
                       </Text>
                     )}
                     {asg?.zone?.name && <Text style={styles.eventRowZone}>Zone : {asg.zone.name}</Text>}
@@ -1422,10 +1441,11 @@ const CheckInScreen = ({ route, navigation }) => {
       <View style={styles.emptyScreen}>
         <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
         <Ionicons name="calendar-outline" size={64} color="#475569" />
-        <Text style={styles.emptyTitle}>Aucun événement actif</Text>
+        <Text style={styles.emptyTitle}>Aucun événement en cours</Text>
         <Text style={styles.emptyText}>
-          Vous n'avez pas d'affectation confirmée à un événement actif.{'\n\n'}
-          Vérifiez auprès de votre responsable que votre affectation est bien confirmée.
+          Aucun événement actif ne vous est affecté pour le moment.{'\n\n'}
+          Les événements terminés ne sont pas accessibles.{'\n'}
+          Vérifiez auprès de votre responsable qu'un événement actif vous est bien affecté et confirmé.
         </Text>
         <TouchableOpacity style={styles.backBtn} onPress={() => logoutCheckIn ? logoutCheckIn() : navigation.navigate('Home')}>
           <Text style={styles.backBtnText}>Se déconnecter</Text>
