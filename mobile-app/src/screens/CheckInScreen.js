@@ -21,7 +21,7 @@ import * as Location from 'expo-location';
 import * as Battery from 'expo-battery';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as SecureStore from 'expo-secure-store';
-import MapView, { Marker, Circle } from 'react-native-maps';
+// MapView removed — requires Google Maps API key which crashes the app without one
 import { Ionicons } from '@expo/vector-icons';
 import { attendanceAPI, assignmentsAPI, eventsAPI, usersAPI, incidentsAPI } from '../services/api';
 import socketService from '../services/socketService';
@@ -979,42 +979,28 @@ const CheckInScreen = ({ route, navigation }) => {
 
           {location ? (
             <>
-              {/* Mini Map */}
-              <MapView
-                style={styles.miniMap}
-                region={{
-                  latitude: location.latitude,
-                  longitude: location.longitude,
-                  latitudeDelta: 0.008,
-                  longitudeDelta: 0.008,
-                }}
-                scrollEnabled={false}
-                zoomEnabled={false}
-                pitchEnabled={false}
-                rotateEnabled={false}
-              >
-                <Marker
-                  coordinate={{ latitude: location.latitude, longitude: location.longitude }}
-                  title="Ma position"
-                  pinColor="#2563eb"
-                />
-                {selectedEvent?.latitude && selectedEvent?.longitude && (
-                  <>
-                    <Marker
-                      coordinate={{ latitude: parseFloat(selectedEvent.latitude), longitude: parseFloat(selectedEvent.longitude) }}
-                      title={selectedEvent.name}
-                      pinColor="#10b981"
-                    />
-                    <Circle
-                      center={{ latitude: parseFloat(selectedEvent.latitude), longitude: parseFloat(selectedEvent.longitude) }}
-                      radius={selectedEvent.geoRadius || 200}
-                      fillColor="rgba(16,185,129,0.12)"
-                      strokeColor="#10b981"
-                      strokeWidth={1.5}
-                    />
-                  </>
+              {/* GPS Position — carte désactivée (pas de Google Maps API key) */}
+              <View style={styles.gpsCoordCard}>
+                <View style={styles.gpsCoordRow}>
+                  <Ionicons name="navigate" size={14} color="#10b981" />
+                  <Text style={styles.gpsCoordLabel}>LAT</Text>
+                  <Text style={styles.gpsCoordValue}>{location.latitude.toFixed(6)}</Text>
+                  <Ionicons name="navigate" size={14} color="#3b82f6" style={{ marginLeft: 12 }} />
+                  <Text style={styles.gpsCoordLabel}>LNG</Text>
+                  <Text style={styles.gpsCoordValue}>{location.longitude.toFixed(6)}</Text>
+                </View>
+                {gpsAccuracy != null && (
+                  <View style={styles.gpsAccuracyRow}>
+                    <Ionicons name="radio-button-on" size={12} color={gpsAccuracy < 20 ? '#10b981' : gpsAccuracy < 50 ? '#f59e0b' : '#ef4444'} />
+                    <Text style={[styles.gpsCoordLabel, { marginLeft: 4 }]}>Précision: {Math.round(gpsAccuracy)}m</Text>
+                    {selectedEvent?.latitude && selectedEvent?.longitude && (
+                      <Text style={[styles.gpsCoordLabel, { marginLeft: 12, color: isWithinGeofence ? '#10b981' : '#f59e0b' }]}>
+                        Distance site: {distance}m {isWithinGeofence ? '✓' : '⚠'}
+                      </Text>
+                    )}
+                  </View>
                 )}
-              </MapView>
+              </View>
 
               {/* Distance + précision badges */}
               <View style={styles.mapStatsRow}>
@@ -1559,7 +1545,15 @@ const styles = StyleSheet.create({
   infoCellValue: { fontSize: 13, color: '#e2e8f0', fontWeight: '500' },
 
   // ── Mini Map ───────────────────────────────────────────────
-  miniMap: { height: 160, borderRadius: 10, marginBottom: 10, overflow: 'hidden' },
+  miniMap: { height: 0, overflow: 'hidden' }, // kept for compat — map removed (no Google Maps API key)
+  gpsCoordCard: {
+    backgroundColor: '#0f172a', borderRadius: 10, padding: 12, marginBottom: 10,
+    borderWidth: 1, borderColor: '#1e3a5f',
+  },
+  gpsCoordRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
+  gpsCoordLabel: { fontSize: 10, color: '#64748b', textTransform: 'uppercase', marginLeft: 4 },
+  gpsCoordValue: { fontSize: 12, color: '#94a3b8', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginLeft: 2 },
+  gpsAccuracyRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, flexWrap: 'wrap' },
   mapStatsRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   mapStat: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5,

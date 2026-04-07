@@ -3,8 +3,8 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
   ScrollView, Alert, Dimensions
 } from 'react-native';
-import MapView, { Marker, Callout, Circle } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
+// MapView (react-native-maps) removed — requires Google Maps API key which crashes without one
 import { trackingAPI, eventsAPI } from '../services/api';
 import socketService from '../services/socketService';
 import useAuthStore from '../services/authStore';
@@ -90,25 +90,11 @@ export default function LiveTrackingScreen({ navigation }) {
   const centerOnAgent = (pos) => {
     if (!pos.latitude || !pos.longitude) return;
     setSelectedAgent(pos);
-    mapRef.current?.animateToRegion({
-      latitude: pos.latitude,
-      longitude: pos.longitude,
-      latitudeDelta: 0.005,
-      longitudeDelta: 0.005,
-    }, 500);
+    // mapRef removed (no Google Maps API key) — no-op
   };
 
   const fitAllMarkers = () => {
-    if (filteredPositions.length === 0) return;
-    const coords = filteredPositions
-      .filter(p => p.latitude && p.longitude)
-      .map(p => ({ latitude: p.latitude, longitude: p.longitude }));
-    if (coords.length > 0) {
-      mapRef.current?.fitToCoordinates(coords, {
-        edgePadding: { top: 80, right: 40, bottom: 160, left: 40 },
-        animated: true,
-      });
-    }
+    // mapRef removed (no Google Maps API key) — no-op
   };
 
   const getAgentColor = (pos) => ROLE_COLORS[pos.role] || '#6b7280';
@@ -170,55 +156,21 @@ export default function LiveTrackingScreen({ navigation }) {
         </View>
       ) : (
         <View style={{ flex: 1 }}>
-          <MapView
-            ref={mapRef}
-            style={styles.map}
-            initialRegion={{
-              latitude: 33.5731,
-              longitude: -7.5898,
-              latitudeDelta: 0.1,
-              longitudeDelta: 0.1,
-            }}
-            showsUserLocation={true}
-            showsMyLocationButton={false}
-          >
-            {filteredPositions.map((pos, idx) => {
-              if (!pos.latitude || !pos.longitude) return null;
-              const color = getAgentColor(pos);
-              const statusColor = getStatusColor(pos);
-              return (
-                <Marker
-                  key={pos.userId || idx}
-                  coordinate={{ latitude: pos.latitude, longitude: pos.longitude }}
-                  onPress={() => centerOnAgent(pos)}
-                >
-                  <View style={[styles.markerContainer]}>
-                    <View style={[styles.marker, { backgroundColor: color }]}>
-                      <Ionicons name="person" size={14} color="#fff" />
-                    </View>
-                    <View style={[styles.markerStatus, { backgroundColor: statusColor }]} />
-                  </View>
-                  <Callout tooltip onPress={() => setSelectedAgent(pos)}>
-                    <View style={styles.callout}>
-                      <Text style={styles.calloutName}>
-                        {pos.userName || pos.user?.firstName || 'Agent'}
-                      </Text>
-                      <Text style={styles.calloutRole}>
-                        {pos.role === 'supervisor' ? 'Responsable' : 'Agent'}
-                      </Text>
-                      {pos.batteryLevel != null && (
-                        <Text style={styles.calloutMeta}>🔋 {pos.batteryLevel}%</Text>
-                      )}
-                      <Text style={styles.calloutMeta}>⏱ {formatTime(pos.updatedAt)}</Text>
-                    </View>
-                  </Callout>
-                </Marker>
-              );
-            })}
-          </MapView>
+          {/* Carte désactivée — remplacée par liste des positions GPS */}
+          <View style={styles.map}>
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1e293b' }}>
+              <Ionicons name="map-outline" size={48} color="#475569" />
+              <Text style={{ color: '#64748b', fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+                Carte non disponible{'\n'}(Google Maps API key requise)
+              </Text>
+              <Text style={{ color: '#475569', fontSize: 11, marginTop: 4 }}>
+                Voir la liste des agents ci-dessous
+              </Text>
+            </View>
+          </View>
 
           {/* Bouton centrer */}
-          <TouchableOpacity style={styles.fitBtn} onPress={fitAllMarkers}>
+          <TouchableOpacity style={styles.fitBtn} onPress={() => {}}>
             <Ionicons name="expand" size={20} color="#2563eb" />
           </TouchableOpacity>
 
