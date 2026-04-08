@@ -193,6 +193,8 @@ exports.verifyFace = async (req, res) => {
         return res.json({
           success: true,
           verified: false,
+          faceDetected: false,
+          confidence: 0,
           message: 'Aucun visage détecté',
           errorCode: 'NO_FACE',
         });

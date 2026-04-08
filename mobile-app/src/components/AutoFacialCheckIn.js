@@ -249,18 +249,24 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
     try {
       if (!cameraRef.current) throw new Error('Caméra non disponible');
 
-      // Prendre la photo
+      // Attendre que la caméra soit prête (Android)
+      if (!cameraReady.current) {
+        await new Promise(resolve => setTimeout(resolve, 700));
+      }
+
+      // Prendre la photo — NE PAS utiliser skipProcessing sur Android
+      // (évite les images tournées 90° qui bloquent la détection CompreFace)
       const raw = await cameraRef.current.takePictureAsync({
-        quality: 0.7,
+        quality: 0.92,
         base64: false,
-        skipProcessing: Platform.OS === 'android',
       });
 
-      // Redimensionner (640px max) pour économiser bande passante
+      // Redimensionner à 800px (résolution suffisante pour CompreFace)
+      // compress: 0.88 conserve la qualité faciale nécessaire
       const compressed = await ImageManipulator.manipulateAsync(
         raw.uri,
-        [{ resize: { width: 640 } }],
-        { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        [{ resize: { width: 800 } }],
+        { compress: 0.88, format: ImageManipulator.SaveFormat.JPEG, base64: true }
       );
 
       setPhase('verifying');
@@ -286,6 +292,11 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
       const pct       = typeof rawScore === 'number'
         ? (rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore))
         : 0;
+
+      // Cas spécial : aucun visage détecté dans l'image
+      if (data?.errorCode === 'NO_FACE' || (!data?.faceDetected && pct === 0)) {
+        setErrorMsg('Aucun visage détecté — repositionnez-vous et améliorez l\'éclairage.');
+      }
 
       setScore(pct);
       setVerified(pct >= MIN_SCORE);

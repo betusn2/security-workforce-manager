@@ -128,7 +128,7 @@ class CompreFaceService {
       });
 
       const response = await axios.post(
-        `${this.recognitionUrl}/recognize?limit=${limit}&prediction_count=1&det_prob_threshold=0.8`,
+        `${this.recognitionUrl}/recognize?limit=${limit}&prediction_count=1&det_prob_threshold=0.6`,
         formData,
         {
           headers: {
