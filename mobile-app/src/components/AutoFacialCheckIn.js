@@ -214,6 +214,12 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
   const cameraReady = useRef(false);
   const countdownRef = useRef(null);
 
+  // Refs pour éviter les stale closures (useCallback avec [] deps)
+  const userIdRef   = useRef(userId);
+  const attemptsRef = useRef(0);
+  useEffect(() => { userIdRef.current = userId; }, [userId]);
+  useEffect(() => { attemptsRef.current = attempts; }, [attempts]);
+
   // ── 1. Demander permission caméra dès le montage ──────────────────────
   useEffect(() => {
     (async () => {
@@ -281,9 +287,23 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
 
   // ── 4. Vérification côté backend ─────────────────────────────────────
   const verifyFace = useCallback(async (compressed) => {
+    // Lire depuis les refs pour avoir les valeurs ACTUELLES (évite stale closure)
+    const currentUserId  = userIdRef.current;
+    const currentAttempts = attemptsRef.current;
+
+    console.log('[FacialVerif] userId=', currentUserId, 'attempts=', currentAttempts);
+
+    if (!currentUserId) {
+      console.error('[FacialVerif] userId null — impossible de vérifier');
+      setErrorMsg('Session expirée — veuillez vous reconnecter.');
+      setScore(0);
+      setPhase('result');
+      return;
+    }
+
     try {
       const res = await facialAPI.verifyCheckin({
-        userId,
+        userId: currentUserId,
         image: `data:image/jpeg;base64,${compressed.base64}`,
       });
 
@@ -292,6 +312,8 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
       const pct       = typeof rawScore === 'number'
         ? (rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore))
         : 0;
+
+      console.log('[FacialVerif] score=', pct, 'faceDetected=', data?.faceDetected, 'errorCode=', data?.errorCode);
 
       // Cas spécial : aucun visage détecté dans l'image
       if (data?.errorCode === 'NO_FACE' || (!data?.faceDetected && pct === 0)) {
@@ -307,8 +329,9 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
         setTimeout(() => onSuccess(pct, compressed), 1500);
       } else {
         // Échec — préparer re-tentative
-        const newAttempts = attempts + 1;
+        const newAttempts = currentAttempts + 1;
         setAttempts(newAttempts);
+        attemptsRef.current = newAttempts;
         if (newAttempts >= MAX_ATTEMPTS) {
           setPhase('blocked');
           setTimeout(() => onMaxAttempts?.(), 2000);
@@ -317,8 +340,10 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
       }
     } catch (err) {
       console.error('Erreur vérification faciale:', err);
-      const newAttempts = attempts + 1;
+      console.error('Response data:', err.response?.data);
+      const newAttempts = currentAttempts + 1;
       setAttempts(newAttempts);
+      attemptsRef.current = newAttempts;
       const msg = err.response?.data?.message || 'Vérification impossible. Vérifiez votre connexion.';
       setErrorMsg(msg);
       setScore(0);
@@ -328,7 +353,7 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
         setTimeout(() => onMaxAttempts?.(), 2000);
       }
     }
-  }, [userId, attempts, onSuccess, onMaxAttempts]);
+  }, [onSuccess, onMaxAttempts]);
 
   // ── Retry ────────────────────────────────────────────────────────────
   const handleRetry = useCallback(() => {
