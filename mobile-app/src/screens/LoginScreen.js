@@ -19,6 +19,7 @@ import { wakeUpServer } from '../services/api';
 import { getDeviceFingerprint, getDeviceInfo } from '../utils/deviceFingerprint';
 import { API_URL } from '../config';
 import { requestBatteryOptimizationExclusion } from '../services/batteryOptimizationService';
+import soundEffects from '../utils/soundEffects';
 
 const LoginScreen = ({ navigation }) => {
   const [loginMode, setLoginMode] = useState('agent'); // 'agent' ou 'supervisor'
@@ -81,6 +82,8 @@ const LoginScreen = ({ navigation }) => {
       return;
     }
     clearError();
+    // Retour haptique bouton
+    soundEffects.playLoginStart();
     // Animation bouton press
     Animated.sequence([
       Animated.timing(btnScale, { toValue: 0.94, duration: 80, useNativeDriver: true }),
@@ -93,8 +96,10 @@ const LoginScreen = ({ navigation }) => {
     const result = await loginByCin(cin.toUpperCase().trim(), deviceFingerprint, deviceInfo, userType);
 
     if (!result.success) {
+      soundEffects.playLoginError();
       Alert.alert('Erreur de connexion', result.error || 'CIN introuvable. Vérifiez votre numéro CIN.', [{ text: 'OK' }]);
     } else {
+      soundEffects.playLoginSuccess();
       // Demander exclusion optimisation batterie après connexion réussie
       requestBatteryOptimizationExclusion();
     }
@@ -135,7 +140,7 @@ const LoginScreen = ({ navigation }) => {
           <Animated.View style={[styles.roleSelector, { opacity: formAnim }]}>
             <TouchableOpacity
               style={[styles.roleCard, isAgent && styles.roleCardActiveAgent]}
-              onPress={() => { setLoginMode('agent'); clearError(); setCin(''); }}
+              onPress={() => { setLoginMode('agent'); clearError(); setCin(''); soundEffects.playSelection(); }}
               activeOpacity={0.8}
             >
               <View style={[styles.roleIconWrapper, isAgent && styles.roleIconWrapperAgent]}>
@@ -147,7 +152,7 @@ const LoginScreen = ({ navigation }) => {
 
             <TouchableOpacity
               style={[styles.roleCard, !isAgent && styles.roleCardActiveSupervisor]}
-              onPress={() => { setLoginMode('supervisor'); clearError(); setCin(''); }}
+              onPress={() => { setLoginMode('supervisor'); clearError(); setCin(''); soundEffects.playSelection(); }}
               activeOpacity={0.8}
             >
               <View style={[styles.roleIconWrapper, !isAgent && styles.roleIconWrapperSupervisor]}>

@@ -772,7 +772,7 @@ const CheckInScreen = ({ route, navigation }) => {
             ...enrichedDeviceInfo,
           },
         });
-        soundEffects.playValidation();
+        soundEffects.playCheckIn();
         if (userId && selectedEvent?.id) {
           // ── Sauvegarder données événement pour géofence en background ──
           await AsyncStorage.setItem('currentEventData', JSON.stringify({
@@ -809,7 +809,7 @@ const CheckInScreen = ({ route, navigation }) => {
             checkOutPhoto: `data:image/jpeg;base64,${capturedPhoto.base64}`,
             checkOutMethod: 'facial',
           });
-          soundEffects.playValidation();
+          soundEffects.playCheckOut();
           Alert.alert('✅ Départ enregistré', 'Votre sortie a été enregistrée.', [
             { text: 'OK', onPress: () => navigation.navigate('Home') },
           ]);

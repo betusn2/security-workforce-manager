@@ -20,14 +20,14 @@
  * Fonctionnement en PREMIER PLAN via ce service (polling)
  */
 
-import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
 import * as Battery from 'expo-battery';
 import * as Network from 'expo-network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform, AppState } from 'react-native';
+import { AppState } from 'react-native';
 import axios from 'axios';
 import { API_URL } from '../config';
+import { scheduleLocalNotification } from './notificationService';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const BATTERY_LOW_THRESHOLD      = 20;  // %
@@ -66,23 +66,16 @@ async function setCooldown(key) {
 }
 
 /**
- * Envoyer notification locale
+ * Envoyer notification locale — délègue au service centralisé avec type de canal
  */
-async function sendLocalNotification({ title, body, priority = 'high', color = '#ef4444', data = {} }) {
+async function sendLocalNotification({ title, body, priority = 'high', type = 'default', data = {} }) {
   try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        sound: true,
-        priority: priority === 'urgent'
-          ? Notifications.AndroidNotificationPriority.MAX
-          : Notifications.AndroidNotificationPriority.HIGH,
-        color,
-        data,
-        vibrate: priority === 'urgent' ? [0, 300, 100, 300, 100, 600] : [0, 250, 100, 250],
-      },
-      trigger: null, // immédiate
+    await scheduleLocalNotification({
+      title,
+      body,
+      data,
+      type,
+      urgent: priority === 'urgent',
     });
   } catch (e) {
     console.warn('⚠️ Notification locale:', e.message);
@@ -127,7 +120,7 @@ async function checkBattery(userId, eventId) {
         await setCooldown(KEYS.lastBattCritAlert);
         const title = `🔋 Batterie CRITIQUE — ${pct}%`;
         const body  = `URGENT : Batterie à ${pct}%. Branchez votre chargeur IMMÉDIATEMENT pour maintenir le suivi.`;
-        await sendLocalNotification({ title, body, priority: 'urgent', color: '#dc2626' });
+        await sendLocalNotification({ title, body, priority: 'urgent', type: 'battery_critical' });
         await sendBackendAlert({
           type: 'battery_critical', message: body,
           data: { batteryLevel: pct, batteryCharging: false },
@@ -143,7 +136,7 @@ async function checkBattery(userId, eventId) {
         await setCooldown(KEYS.lastBattLowAlert);
         const title = `🔋 Batterie faible — ${pct}%`;
         const body  = `Batterie à ${pct}%. Veuillez charger votre téléphone pour maintenir le suivi GPS.`;
-        await sendLocalNotification({ title, body, priority: 'high', color: '#f59e0b' });
+        await sendLocalNotification({ title, body, priority: 'high', type: 'battery_low' });
         await sendBackendAlert({
           type: 'battery_low', message: body,
           data: { batteryLevel: pct, batteryCharging: false },
@@ -207,7 +200,7 @@ async function checkGeofenceEarlyDeparture(userId, eventId) {
         const title = '⚠️ Sortie de zone détectée';
         const body  = `Vous avez quitté l'événement avant l'heure de fin (${timeLeft}). Distance: ${dist}m.`;
 
-        await sendLocalNotification({ title, body, priority: 'urgent', color: '#ef4444' });
+        await sendLocalNotification({ title, body, priority: 'urgent', type: 'geofence_early_exit' });
         await sendBackendAlert({
           type: 'geofence_early_exit', message: body,
           data: { distanceFromEvent: dist, eventRadius: radius, timeBeforeEnd: timeLeft },
@@ -220,7 +213,7 @@ async function checkGeofenceEarlyDeparture(userId, eventId) {
         title: '✅ Retour en zone',
         body: 'Vous êtes revenu dans votre zone de travail.',
         priority: 'normal',
-        color: '#10b981',
+        type: 'checkin_success',
       });
     }
   } catch (e) {
@@ -239,7 +232,7 @@ async function checkGpsEnabled(userId) {
           title: '📍 GPS désactivé',
           body: 'Le GPS est désactivé sur votre appareil. Activez-le pour continuer le suivi de sécurité.',
           priority: 'urgent',
-          color: '#f59e0b',
+          type: 'gps_disabled',
         });
         await sendBackendAlert({
           type: 'gps_disabled',
@@ -265,7 +258,7 @@ async function checkNetwork(userId) {
           title: '📡 Internet désactivé',
           body: 'Connexion internet perdue. Les positions seront synchronisées dès la reconnexion.',
           priority: 'high',
-          color: '#6366f1',
+          type: 'network_disabled',
         });
       }
     }
@@ -290,7 +283,7 @@ async function checkInactivity(userId, eventId) {
           title: '⏰ Pas d\'activité détectée',
           body: `Aucun mouvement depuis ${mins} minutes. Êtes-vous encore en poste ?`,
           priority: 'high',
-          color: '#8b5cf6',
+          type: 'inactivity',
         });
         await sendBackendAlert({
           type: 'inactivity',
@@ -372,7 +365,7 @@ export async function triggerLateCheckinAlert(userId, eventId, minutesLate) {
   const title = '⏰ Retard de pointage';
   const body  = `Vous avez ${minutesLate} minute(s) de retard pour votre pointage d'arrivée.`;
 
-  await sendLocalNotification({ title, body, priority: 'high', color: '#f59e0b' });
+  await sendLocalNotification({ title, body, priority: 'high', type: 'checkin_late' });
   await sendBackendAlert({
     type: 'late_checkin',
     message: body,
@@ -388,7 +381,7 @@ export async function triggerLateCheckinAlert(userId, eventId, minutesLate) {
 export async function triggerRebootAlert(userId) {
   const title = '📱 Téléphone redémarré';
   const body  = 'Le suivi GPS a été relancé automatiquement après le redémarrage.';
-  await sendLocalNotification({ title, body, priority: 'normal', color: '#3b82f6' });
+  await sendLocalNotification({ title, body, priority: 'normal', type: 'default' });
 }
 
 export default {

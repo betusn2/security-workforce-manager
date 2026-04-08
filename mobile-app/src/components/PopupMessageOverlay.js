@@ -28,6 +28,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
+import * as Haptics from 'expo-haptics';
 import socketService from '../services/socketService';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -77,9 +78,20 @@ export default function PopupMessageOverlay() {
       Animated.timing(opacityAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
     ]).start();
 
-    // Vibration
+    // Vibration + haptics selon priorité
     const pattern = VIBRATION_PATTERNS[msg.priority] || VIBRATION_PATTERNS.normal;
-    Vibration.vibrate(pattern);
+    if (Platform.OS === 'android') {
+      Vibration.vibrate(pattern);
+    } else {
+      // iOS : haptics natifs
+      if (msg.priority === 'urgent') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      } else if (msg.priority === 'high') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      } else {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+    }
 
     // Shake si urgent
     if (msg.priority === 'urgent') {

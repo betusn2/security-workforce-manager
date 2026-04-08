@@ -1,11 +1,12 @@
 /**
- * 🎭 AUTO FACIAL CHECK-IN COMPONENT
+ * 🎭 AUTO FACIAL CHECK-IN COMPONENT — v2 (Guide Temps Réel)
  * ===================================================
  * Reconnaissance Faciale AUTOMATIQUE — 0 clic requis.
+ * Interface guidée en temps réel comme la version web.
  *
  * Workflow :
  *  1. Ouvre caméra frontale automatiquement
- *  2. Affiche cadre de guidage visage
+ *  2. Affiche cadre OVALE de guidage avec messages dynamiques
  *  3. Compte à rebours 3 → 0 → capture automatique
  *  4. Envoie photo au backend /api/face-recognition/verify
  *  5. Affiche score avec couleur (vert/orange/rouge)
@@ -14,10 +15,10 @@
  *  8. Si 3 échecs     → bloque et appelle onMaxAttempts
  *
  * Props :
- *   userId      : ID de l'utilisateur
- *   onSuccess   : (score, photo) => void
+ *   userId        : ID de l'utilisateur
+ *   onSuccess     : (score, photo) => void
  *   onMaxAttempts : () => void
- *   onCancel    : () => void
+ *   onCancel      : () => void
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -36,19 +37,32 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
 import { facialAPI } from '../services/api';
 
-const { width: W, height: H } = Dimensions.get('window');
+const { width: W } = Dimensions.get('window');
 
-// ── Config ───────────────────────────────────────────────────────────────
-const COUNTDOWN_SEC   = 3;   // compte à rebours avant capture
-const MIN_SCORE       = 50;  // score minimum pour valider (%)
-const MAX_ATTEMPTS    = 3;   // tentatives max avant blocage
-const RETRY_DELAY_MS  = 2000; // délai avant nouvelle tentative
+// ── Config ────────────────────────────────────────────────────────────────
+const COUNTDOWN_SEC  = 3;
+const MIN_SCORE      = 50;
+const MAX_ATTEMPTS   = 3;
+const RETRY_DELAY_MS = 2000;
 
-// ── Score card ───────────────────────────────────────────────────────────
-function ScoreCard({ score, status }) {
+// ── Oval frame dimensions ─────────────────────────────────────────────────
+const OVAL_W = Math.min(W * 0.52, 190);
+const OVAL_H = Math.round(OVAL_W * 1.32);
+
+// ── Guidance phases (1 par seconde du compte à rebours) ───────────────────
+// phaseIdx = COUNTDOWN_SEC - countdown (clamped 0-3)
+const GUIDE_PHASES = [
+  { color: '#ef4444', icon: 'scan-outline',      msg: "Placez votre visage dans l'ovale"  },  // countdown=3
+  { color: '#f59e0b', icon: 'eye-outline',        msg: 'Centrez et regardez la caméra'     },  // countdown=2
+  { color: '#eab308', icon: 'body-outline',       msg: 'Restez parfaitement immobile...'   },  // countdown=1
+  { color: '#10b981', icon: 'checkmark-circle',   msg: 'Parfait ! Capture automatique...'  },  // countdown=0
+];
+
+// ── Score Card ────────────────────────────────────────────────────────────
+function ScoreCard({ score }) {
   const color = score >= 70 ? '#10b981' : score >= MIN_SCORE ? '#f59e0b' : '#ef4444';
   const icon  = score >= MIN_SCORE ? 'checkmark-circle' : 'close-circle';
-  const label = score >= 70 ? 'Excellente correspondance'
+  const label = score >= 70  ? 'Excellente correspondance'
               : score >= MIN_SCORE ? 'Correspondance acceptable'
               : 'Correspondance insuffisante';
   return (
@@ -64,62 +78,126 @@ function ScoreCard({ score, status }) {
   );
 }
 
-// ── Face guide overlay ───────────────────────────────────────────────────
+// ── Face Guide Overlay — Real-time (ovale + guidage) ─────────────────────
 function FaceGuide({ countdown, isCapturing }) {
-  const pulse = useRef(new Animated.Value(1)).current;
-  const borderOpacity = useRef(new Animated.Value(1)).current;
+  const pulseAnim   = useRef(new Animated.Value(1)).current;
+  const glowAnim    = useRef(new Animated.Value(0.5)).current;
+  const msgOpacity  = useRef(new Animated.Value(1)).current;
+  const flashAnim   = useRef(new Animated.Value(1)).current;
 
+  // phaseIdx: 0=rouge, 1=orange, 2=jaune, 3=vert (capture)
+  const phaseIdx = isCapturing ? 3 : Math.max(0, Math.min(3, COUNTDOWN_SEC - countdown));
+  const phase    = GUIDE_PHASES[phaseIdx];
+
+  // Pulse de l'ovale
   useEffect(() => {
     const anim = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.04, duration: 700, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1,    duration: 700, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.03, duration: 650, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1,    duration: 650, useNativeDriver: true }),
       ])
     );
     anim.start();
     return () => anim.stop();
   }, []);
 
+  // Clignotement du halo au moment de la capture (phase 3)
+  useEffect(() => {
+    if (phaseIdx === 3) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowAnim, { toValue: 1,   duration: 280, useNativeDriver: true }),
+          Animated.timing(glowAnim, { toValue: 0.3, duration: 280, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      glowAnim.setValue(0.5);
+    }
+  }, [phaseIdx]);
+
+  // Flash lors de la capture
   useEffect(() => {
     if (isCapturing) {
       Animated.sequence([
-        Animated.timing(borderOpacity, { toValue: 0, duration: 100, useNativeDriver: true }),
-        Animated.timing(borderOpacity, { toValue: 1, duration: 100, useNativeDriver: true }),
-        Animated.timing(borderOpacity, { toValue: 0, duration: 100, useNativeDriver: true }),
-        Animated.timing(borderOpacity, { toValue: 1, duration: 100, useNativeDriver: true }),
+        Animated.timing(flashAnim, { toValue: 0.15, duration: 80,  useNativeDriver: true }),
+        Animated.timing(flashAnim, { toValue: 1,    duration: 200, useNativeDriver: true }),
       ]).start();
     }
   }, [isCapturing]);
 
-  return (
-    <View style={styles.guideContainer}>
-      <Animated.View
-        style={[
-          styles.faceGuide,
-          {
-            transform: [{ scale: pulse }],
-            opacity: borderOpacity,
-          },
-        ]}
-      >
-        {/* Coins du cadre */}
-        <View style={[styles.corner, styles.cornerTL]} />
-        <View style={[styles.corner, styles.cornerTR]} />
-        <View style={[styles.corner, styles.cornerBL]} />
-        <View style={[styles.corner, styles.cornerBR]} />
+  // Fondu du message lors d'un changement de phase
+  useEffect(() => {
+    Animated.sequence([
+      Animated.timing(msgOpacity, { toValue: 0,   duration: 120, useNativeDriver: true }),
+      Animated.timing(msgOpacity, { toValue: 1,   duration: 220, useNativeDriver: true }),
+    ]).start();
+  }, [phaseIdx]);
 
-        {/* Compte à rebours */}
-        {countdown > 0 && (
-          <Animated.Text style={styles.countdown}>{countdown}</Animated.Text>
-        )}
-        {countdown === 0 && !isCapturing && (
-          <Ionicons name="camera" size={36} color="#10b981" />
-        )}
-        {isCapturing && (
-          <ActivityIndicator size="large" color="#fff" />
-        )}
-      </Animated.View>
-    </View>
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, { opacity: flashAnim }]} pointerEvents="none">
+      {/* ── Bande sombre HAUT ── */}
+      <View style={[styles.darkBand, { flex: 1 }]} />
+
+      {/* ── Rangée centrale : noir | ovale | noir ── */}
+      <View style={{ flexDirection: 'row', height: OVAL_H }}>
+        <View style={styles.darkBand} />
+
+        {/* Ovale avec halo coloré */}
+        <Animated.View style={[
+          styles.ovalOuter,
+          { borderColor: phase.color, transform: [{ scale: pulseAnim }] }
+        ]}>
+          {/* Anneau intérieur en glow */}
+          <Animated.View style={[
+            styles.ovalGlow,
+            { borderColor: phase.color, opacity: glowAnim }
+          ]} />
+
+          {/* Contenu central de l'ovale */}
+          {!isCapturing && countdown > 0 && (
+            <Text style={[styles.countdownNum, { color: '#fff' }]}>{countdown}</Text>
+          )}
+          {!isCapturing && countdown === 0 && (
+            <Ionicons name="camera" size={32} color="#10b981" />
+          )}
+          {isCapturing && (
+            <ActivityIndicator size="large" color="#fff" />
+          )}
+        </Animated.View>
+
+        <View style={[styles.darkBand, { flex: 1 }]} />
+      </View>
+
+      {/* ── Bande sombre BAS + messages de guidage ── */}
+      <View style={[styles.darkBand, styles.bottomGuidance]}>
+        {/* Message de guidage animé */}
+        <Animated.View style={[styles.guidanceRow, { opacity: msgOpacity }]}>
+          <Ionicons name={phase.icon} size={15} color={phase.color} style={{ marginRight: 6 }} />
+          <Text style={[styles.guidanceMsg, { color: phase.color }]}>{phase.msg}</Text>
+        </Animated.View>
+
+        {/* Points de progression par phase */}
+        <View style={styles.phaseDotsRow}>
+          {GUIDE_PHASES.map((p, i) => (
+            <View
+              key={i}
+              style={[
+                styles.phaseDot,
+                {
+                  backgroundColor: i <= phaseIdx ? p.color : 'rgba(255,255,255,0.18)',
+                  width: i === phaseIdx ? 18 : 8,
+                },
+              ]}
+            />
+          ))}
+        </View>
+
+        {/* Conseil luminosité */}
+        <Text style={styles.lightingTip}>
+          Bonne lumière • Distance 30-60 cm • Visage dégagé
+        </Text>
+      </View>
+    </Animated.View>
   );
 }
 
@@ -297,31 +375,43 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
           />
           <FaceGuide countdown={countdown} isCapturing={phase === 'capturing'} />
 
-          {/* Barre info dessus */}
+          {/* ── Barre supérieure : titre + statut ── */}
           <View style={styles.infoBar}>
-            <Ionicons name="scan-outline" size={16} color="#fff" />
-            <Text style={styles.infoBarText}>
-              {phase === 'countdown'
-                ? `Capture automatique dans ${countdown}s...`
-                : phase === 'capturing'
-                ? 'Capture en cours...'
-                : 'Préparation...'}
+            <View style={styles.infoBarLeft}>
+              <Ionicons name="person-circle-outline" size={18} color="#93c5fd" />
+              <Text style={styles.infoBarTitle}>Reconnaissance Faciale</Text>
+            </View>
+            <View style={styles.infoBarRight}>
+              <View style={[styles.statusDot, {
+                backgroundColor: phase === 'capturing' ? '#f59e0b'
+                               : phase === 'countdown'  ? '#10b981'
+                               : '#64748b',
+              }]} />
+              <Text style={styles.infoBarStatus}>
+                {phase === 'capturing' ? 'Capture...'
+                : phase === 'countdown' ? `${countdown}s`
+                : 'Prêt'}
+              </Text>
+            </View>
+          </View>
+
+          {/* ── Barre tentatives (bas) ── */}
+          <View style={styles.attemptsBar}>
+            <View style={styles.attemptDotsRow}>
+              {Array.from({ length: MAX_ATTEMPTS }).map((_, i) => (
+                <View key={i} style={[styles.attemptDot, i < attempts && styles.attemptDotUsed]} />
+              ))}
+            </View>
+            <Text style={styles.attemptsText}>
+              {MAX_ATTEMPTS - attempts} tentative{MAX_ATTEMPTS - attempts > 1 ? 's' : ''} restante{MAX_ATTEMPTS - attempts > 1 ? 's' : ''}
             </Text>
           </View>
 
-          {/* Tentatives restantes */}
-          <View style={styles.attemptsBar}>
-            {Array.from({ length: MAX_ATTEMPTS }).map((_, i) => (
-              <View
-                key={i}
-                style={[styles.attemptDot, i < attempts && styles.attemptDotUsed]}
-              />
-            ))}
-            <Text style={styles.attemptsText}>{MAX_ATTEMPTS - attempts} tentative(s) restante(s)</Text>
-          </View>
-
-          {/* Bouton annuler */}
-          <TouchableOpacity style={styles.floatCancel} onPress={() => { clearInterval(countdownRef.current); onCancel?.(); }}>
+          {/* ── Bouton annuler ── */}
+          <TouchableOpacity
+            style={styles.floatCancel}
+            onPress={() => { clearInterval(countdownRef.current); onCancel?.(); }}
+          >
             <Ionicons name="close-circle" size={28} color="rgba(255,255,255,0.8)" />
           </TouchableOpacity>
         </View>
@@ -373,103 +463,176 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
   );
 }
 
-const GUIDE_SIZE = Math.min(W * 0.6, 220);
-
 const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#0f172a' },
 
-  // Caméra
+  // ── Caméra ──────────────────────────────────────────────────────────
   cameraContainer: { flex: 1, position: 'relative' },
   camera:          { flex: 1 },
 
-  // Guide visage
-  guideContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
+  // ── Overlay dark + ovale ────────────────────────────────────────────
+  darkBand: {
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    // width fill via flexDirection row context or flex:1
   },
-  faceGuide: {
-    width: GUIDE_SIZE,
-    height: GUIDE_SIZE * 1.25,
-    borderRadius: GUIDE_SIZE * 0.5,
-    justifyContent: 'center',
+  bottomGuidance: {
+    flex: 1.4,
     alignItems: 'center',
-    position: 'relative',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 6,
   },
-  corner: {
-    position: 'absolute',
-    width: 24,
-    height: 24,
-    borderColor: '#10b981',
+  ovalOuter: {
+    width: OVAL_W,
+    height: OVAL_H,
+    borderRadius: OVAL_H,           // très grand → vraie ellipse
     borderWidth: 3,
+    borderColor: '#ef4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'visible',
   },
-  cornerTL: { top: 0,  left: 0,  borderRightWidth: 0, borderBottomWidth: 0, borderTopLeftRadius: 6 },
-  cornerTR: { top: 0,  right: 0, borderLeftWidth: 0,  borderBottomWidth: 0, borderTopRightRadius: 6 },
-  cornerBL: { bottom: 0, left: 0,  borderRightWidth: 0, borderTopWidth: 0,   borderBottomLeftRadius: 6 },
-  cornerBR: { bottom: 0, right: 0, borderLeftWidth: 0,  borderTopWidth: 0,   borderBottomRightRadius: 6 },
-  countdown: {
-    fontSize: 56,
+  ovalGlow: {
+    position: 'absolute',
+    width: OVAL_W + 14,
+    height: OVAL_H + 14,
+    borderRadius: OVAL_H + 14,
+    borderWidth: 2,
+    borderColor: '#ef4444',
+    opacity: 0.5,
+  },
+
+  // Chiffre du compte à rebours
+  countdownNum: {
+    fontSize: 52,
     fontWeight: '900',
     color: '#fff',
-    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowColor: 'rgba(0,0,0,0.85)',
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 10,
+    textShadowRadius: 8,
+    letterSpacing: 2,
   },
 
-  // Barre info
+  // ── Messages de guidage ──────────────────────────────────────────────
+  guidanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    marginTop: 4,
+  },
+  guidanceMsg: {
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
+
+  // Points de phase
+  phaseDotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    marginTop: 6,
+  },
+  phaseDot: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+
+  // Conseil luminosité
+  lightingTip: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 10,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+
+  // ── Barre supérieure (info) ──────────────────────────────────────────
   infoBar: {
     position: 'absolute',
-    top: 16,
+    top: 0,
     left: 0,
     right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingVertical: 8,
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(0,0,0,0.68)',
+    paddingVertical: 9,
+    paddingHorizontal: 14,
   },
-  infoBarText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  infoBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  infoBarTitle: {
+    color: '#e2e8f0',
+    fontSize: 13,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
+  infoBarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  infoBarStatus: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 12,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
 
-  // Tentatives
+  // ── Barre tentatives ────────────────────────────────────────────────
   attemptsBar: {
     position: 'absolute',
-    bottom: 60,
+    bottom: 8,
     left: 0,
     right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 8,
+    gap: 10,
+    paddingVertical: 6,
+  },
+  attemptDotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   attemptDot:     { width: 12, height: 12, borderRadius: 6, backgroundColor: '#10b981' },
   attemptDotUsed: { backgroundColor: '#ef4444' },
-  attemptsText:   { color: 'rgba(255,255,255,0.8)', fontSize: 12 },
+  attemptsText:   { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
 
-  // Bouton annuler flottant
-  floatCancel: { position: 'absolute', top: 16, right: 16 },
+  // ── Bouton annuler flottant ──────────────────────────────────────────
+  floatCancel: { position: 'absolute', top: 12, right: 12 },
 
-  // Vérification
+  // ── Vérification en cours ───────────────────────────────────────────
   verifyingContainer: {
     flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16, padding: 32,
   },
   verifyingText:    { color: '#fff', fontSize: 18, fontWeight: '600', textAlign: 'center' },
-  verifyingSubText: { color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center' },
+  verifyingSubText: { color: 'rgba(255,255,255,0.55)', fontSize: 13, textAlign: 'center' },
 
-  // Résultat
+  // ── Résultat ─────────────────────────────────────────────────────────
   resultContainer: {
-    flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, gap: 16,
+    flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, gap: 14,
   },
   scoreCard: {
     width: '100%', maxWidth: 320,
     backgroundColor: '#1e293b',
     borderRadius: 16, borderWidth: 2,
-    padding: 24, alignItems: 'center', gap: 8,
+    padding: 22, alignItems: 'center', gap: 8,
   },
   scoreValue: { fontSize: 52, fontWeight: '900' },
-  scoreLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
+  scoreLabel: { color: 'rgba(255,255,255,0.55)', fontSize: 13 },
   scoreDesc:  { fontSize: 14, fontWeight: '600', textAlign: 'center' },
   scoreBar:   { width: '100%', height: 8, borderRadius: 4, marginTop: 8, overflow: 'hidden' },
   scoreBarFill: { height: 8, borderRadius: 4 },
@@ -477,7 +640,7 @@ const styles = StyleSheet.create({
   errorText: { color: '#fca5a5', fontSize: 13, textAlign: 'center', paddingHorizontal: 16 },
 
   retrySection: { alignItems: 'center', gap: 8 },
-  retryInfo:    { color: 'rgba(255,255,255,0.7)', fontSize: 13 },
+  retryInfo:    { color: 'rgba(255,255,255,0.65)', fontSize: 13 },
   retryBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: '#2563eb', borderRadius: 10,
@@ -489,18 +652,18 @@ const styles = StyleSheet.create({
   successText:    { color: '#10b981', fontSize: 16, fontWeight: '700' },
 
   cancelSmall: { marginTop: 8 },
-  cancelSmallText: { color: 'rgba(255,255,255,0.4)', fontSize: 12, textDecorationLine: 'underline' },
+  cancelSmallText: { color: 'rgba(255,255,255,0.35)', fontSize: 12, textDecorationLine: 'underline' },
 
-  // Permission refusée
+  // ── Permission refusée ───────────────────────────────────────────────
   permissionContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16, padding: 32, backgroundColor: '#0f172a' },
   permissionTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  permissionText:  { color: 'rgba(255,255,255,0.7)', fontSize: 14, textAlign: 'center' },
+  permissionText:  { color: 'rgba(255,255,255,0.65)', fontSize: 14, textAlign: 'center' },
 
-  // Bloqué
+  // ── Bloqué ───────────────────────────────────────────────────────────
   blockedContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 32, backgroundColor: '#0f172a' },
   blockedTitle:     { color: '#ef4444', fontSize: 24, fontWeight: '900' },
   blockedText:      { color: '#fff', fontSize: 16, fontWeight: '600', textAlign: 'center' },
-  blockedSubText:   { color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center' },
+  blockedSubText:   { color: 'rgba(255,255,255,0.55)', fontSize: 13, textAlign: 'center' },
 
   cancelBtn: {
     marginTop: 16, backgroundColor: '#374151', borderRadius: 10,

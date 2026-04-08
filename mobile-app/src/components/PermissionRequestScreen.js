@@ -237,7 +237,7 @@ export default function PermissionRequestScreen({ onDone }) {
             showsVerticalScrollIndicator={false}
             style={{ flex: 1, opacity: fadeAnim }}
           >
-            <View style={{ transform: [{ translateY: slideAnim }] }}>
+            <Animated.View style={{ transform: [{ translateY: slideAnim }] }}>
               <AppLogo size="medium" color="#60a5fa" textColor="#ffffff" />
 
               <Text style={styles.welcomeTitle}>Autorisations requises</Text>
@@ -257,7 +257,7 @@ export default function PermissionRequestScreen({ onDone }) {
                   </View>
                 </View>
               ))}
-            </View>
+            </Animated.View>
           </Animated.ScrollView>
 
           {/* Bouton FIXE en bas — toujours visible */}

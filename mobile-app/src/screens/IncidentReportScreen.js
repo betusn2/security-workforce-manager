@@ -17,6 +17,7 @@ import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
+import soundEffects from '../utils/soundEffects';
 
 const IncidentReportScreen = ({ route, navigation }) => {
   const { event } = route.params || {};
@@ -199,6 +200,7 @@ const IncidentReportScreen = ({ route, navigation }) => {
       const response = await api.post('/incidents', incidentData);
 
       if (response.data.success) {
+        soundEffects.playIncident();
         Alert.alert(
           'Incident signale',
           'Votre signalement a ete enregistre avec succes.',
@@ -212,6 +214,7 @@ const IncidentReportScreen = ({ route, navigation }) => {
       }
     } catch (error) {
       console.error('Submit error:', error);
+      soundEffects.playRejection();
       Alert.alert(
         'Erreur',
         error.response?.data?.message || 'Erreur lors du signalement'
