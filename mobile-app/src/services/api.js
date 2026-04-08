@@ -145,6 +145,12 @@ export const trackingAPI = {
   getAgentHistory: (agentId, params) => api.get(`/tracking/${agentId}/history`, { params }),
 };
 
+export const supervisorAPI = {
+  createAgent: (data) => api.post('/supervisor/create-agent', data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+};
+
 export const notificationsAPI = {
   getMy: (params) => api.get('/notifications/my-notifications', { params }),
   getUnreadCount: () => api.get('/notifications/unread-count'),

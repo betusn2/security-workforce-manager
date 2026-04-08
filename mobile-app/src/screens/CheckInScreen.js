@@ -8,6 +8,9 @@ import {
   ActivityIndicator,
   Image,
   ScrollView,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
   Platform,
   StatusBar,
   Dimensions,
@@ -21,10 +24,11 @@ import * as Location from 'expo-location';
 import NetInfo from '@react-native-community/netinfo';
 import * as Battery from 'expo-battery';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 // MapView removed — requires Google Maps API key which crashes the app without one
 import { Ionicons } from '@expo/vector-icons';
-import { attendanceAPI, assignmentsAPI, eventsAPI, usersAPI, incidentsAPI } from '../services/api';
+import { attendanceAPI, assignmentsAPI, eventsAPI, usersAPI, incidentsAPI, supervisorAPI } from '../services/api';
 import socketService from '../services/socketService';
 import deviceInfoService from '../services/deviceInfoService';
 import soundEffects from '../utils/soundEffects';
@@ -156,6 +160,13 @@ const CheckInScreen = ({ route, navigation }) => {
   const [isSocketConnected,      setIsSocketConnected]      = useState(false);
   const [isInternetReachable,    setIsInternetReachable]    = useState(true); // real network status
   const [userId,                 setUserId]                 = useState(null);
+
+  // ── Supervisor: create agent modal ────────────────────────
+  const [showCreateAgentModal, setShowCreateAgentModal] = useState(false);
+  const [agentForm,    setAgentForm]    = useState({ nom: '', prenom: '', telephone: '', cin: '' });
+  const [agentCinUri,  setAgentCinUri]  = useState(null);
+  const [agentFaceUri, setAgentFaceUri] = useState(null);
+  const [agentCreating,setAgentCreating]= useState(false);
 
   const cameraRef = useRef(null);
   const locationIntervalRef = useRef(null);
@@ -843,6 +854,54 @@ const CheckInScreen = ({ route, navigation }) => {
     navigation.navigate('IncidentReport', { event: selectedEvent });
   };
 
+  // ── Créer un agent (Responsable) ─────────────────────────
+  const submitCreateAgent = async () => {
+    if (!agentForm.nom || !agentForm.prenom || !agentForm.telephone || !agentForm.cin) {
+      Alert.alert('Champs manquants', 'Veuillez remplir tous les champs obligatoires.');
+      return;
+    }
+    if (!agentCinUri) {
+      Alert.alert('Photo CIN manquante', 'Prenez en photo la pièce d\'identité de l\'agent.');
+      return;
+    }
+    if (!agentFaceUri) {
+      Alert.alert('Photo visage manquante', 'Prenez une photo du visage de l\'agent.');
+      return;
+    }
+    const zoneId = selectedAssign?.zoneId || selectedAssign?.zone?.id;
+    if (!zoneId) {
+      Alert.alert('Zone requise', 'Aucune zone associée à votre affectation. Sélectionnez un événement avec zone assignée.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('nom', agentForm.nom.trim());
+    formData.append('prenom', agentForm.prenom.trim());
+    formData.append('telephone', agentForm.telephone.trim());
+    formData.append('cin', agentForm.cin.trim().toUpperCase());
+    formData.append('supervisorId', String(userId || userProfile?.id));
+    formData.append('selectedZones', JSON.stringify([zoneId]));
+    formData.append('eventId', String(selectedEvent?.id || ''));
+    formData.append('autoAssign', 'true');
+    formData.append('cinPhoto', { uri: agentCinUri, type: 'image/jpeg', name: 'cin.jpg' });
+    formData.append('facialPhoto', { uri: agentFaceUri, type: 'image/jpeg', name: 'face.jpg' });
+
+    setAgentCreating(true);
+    try {
+      await supervisorAPI.createAgent(formData);
+      Alert.alert('✅ Agent créé', `${agentForm.prenom} ${agentForm.nom} a été créé et assigné avec succès!`);
+      setShowCreateAgentModal(false);
+      setAgentForm({ nom: '', prenom: '', telephone: '', cin: '' });
+      setAgentCinUri(null);
+      setAgentFaceUri(null);
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Erreur lors de la création de l\'agent.';
+      Alert.alert('Erreur', msg);
+    } finally {
+      setAgentCreating(false);
+    }
+  };
+
   // ── Fenêtre d'autorisation ───────────────────────────────
   const getAuthMessage = () => {
     if (!selectedEvent) return null;
@@ -1187,6 +1246,15 @@ const CheckInScreen = ({ route, navigation }) => {
             <Text style={styles.subLabel}>Fonctionnalités disponibles</Text>
           </View>
           <View style={styles.actionsRow}>
+            {userProfile?.role === 'supervisor' && (
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: '#10b981' }]}
+                onPress={() => setShowCreateAgentModal(true)}
+              >
+                <Ionicons name="person-add" size={20} color="#fff" />
+                <Text style={styles.actionBtnText}>Créer un Agent</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.actionBtn} onPress={reportIncident}>
               <Ionicons name="warning" size={20} color="#fff" />
               <Text style={styles.actionBtnText}>Signaler Incident</Text>
@@ -1209,6 +1277,7 @@ const CheckInScreen = ({ route, navigation }) => {
     const canCheckOut = !!location && !!capturedPhoto &&  checkInDone && authInfo?.ok;
 
     return (
+      <>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={styles.tabContent}
@@ -1354,6 +1423,43 @@ const CheckInScreen = ({ route, navigation }) => {
           </View>
         )}
 
+        {/* ── Actions Responsable (superviseur seulement) ── */}
+        {userProfile?.role === 'supervisor' && (
+          <View style={styles.supervisorActionsCard}>
+            <View style={styles.supervisorActionsHeader}>
+              <View style={[styles.iconCircle, { backgroundColor: '#f59e0b22' }]}>
+                <Ionicons name="shield-checkmark" size={18} color="#f59e0b" />
+              </View>
+              <View style={{ marginLeft: 10, flex: 1 }}>
+                <Text style={styles.cardTitle}>Actions Responsable</Text>
+                <Text style={styles.cardSubVal}>Gestion terrain</Text>
+              </View>
+            </View>
+            <View style={styles.supervisorBtnsRow}>
+              <TouchableOpacity
+                style={[styles.createAgentBtn, !(faceDetected && location) && styles.createAgentBtnDisabled]}
+                disabled={!(faceDetected && location)}
+                onPress={() => setShowCreateAgentModal(true)}
+              >
+                <Ionicons name="person-add" size={20} color="#fff" />
+                <Text style={styles.supervisorBtnText}>Créer un Agent</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.incidentBtnSup} onPress={reportIncident}>
+                <Ionicons name="warning" size={20} color="#fff" />
+                <Text style={styles.supervisorBtnText}>Signaler Incident</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.supervisorInfoRow}>
+              <Ionicons name="information-circle-outline" size={14} color="#94a3b8" />
+              <Text style={styles.supervisorInfoText}>
+                {faceDetected && location
+                  ? 'Validation complète ✓ Vous pouvez recruter des agents et signaler des incidents'
+                  : 'Complétez Visage ✓ et Position ✓ pour activer la création d\'agent.'}
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* ── Boutons Entrée / Sortie ────────────────────── */}
         <Animated.View style={[styles.entryExitRow, { transform: [{ scale: btnScale }] }]}>
           <TouchableOpacity
@@ -1388,11 +1494,155 @@ const CheckInScreen = ({ route, navigation }) => {
 
         <View style={{ height: 24 }} />
       </ScrollView>
+
+      {/* ── Modal Créer un Agent ───────────────────────────── */}
+      <Modal
+        visible={showCreateAgentModal}
+        animationType="slide"
+        onRequestClose={() => setShowCreateAgentModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1, backgroundColor: '#0f172a' }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          {/* Header */}
+          <View style={styles.caModalHeader}>
+            <View style={[styles.iconCircle, { backgroundColor: '#2563eb22' }]}>
+              <Ionicons name="person-add" size={20} color="#2563eb" />
+            </View>
+            <View style={{ marginLeft: 12, flex: 1 }}>
+              <Text style={styles.caModalTitle}>Créer un Agent</Text>
+              <Text style={styles.caModalSub}>Recrutement sur le terrain</Text>
+            </View>
+            <TouchableOpacity onPress={() => setShowCreateAgentModal(false)}>
+              <Ionicons name="close-circle" size={28} color="#64748b" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+            {/* Nom / Prénom */}
+            <View style={styles.caInputRow}>
+              <TextInput
+                style={[styles.caTextInput, { flex: 1 }]}
+                placeholder="Nom de famille"
+                placeholderTextColor="#475569"
+                value={agentForm.nom}
+                onChangeText={v => setAgentForm(f => ({ ...f, nom: v }))}
+                autoCapitalize="words"
+              />
+              <TextInput
+                style={[styles.caTextInput, { flex: 1 }]}
+                placeholder="Prénom"
+                placeholderTextColor="#475569"
+                value={agentForm.prenom}
+                onChangeText={v => setAgentForm(f => ({ ...f, prenom: v }))}
+                autoCapitalize="words"
+              />
+            </View>
+
+            {/* Téléphone */}
+            <Text style={styles.caInputLabel}>Téléphone *</Text>
+            <TextInput
+              style={styles.caTextInput}
+              placeholder="+212 6XX XXX XXX"
+              placeholderTextColor="#475569"
+              value={agentForm.telephone}
+              onChangeText={v => setAgentForm(f => ({ ...f, telephone: v }))}
+              keyboardType="phone-pad"
+            />
+
+            {/* CIN */}
+            <Text style={styles.caInputLabel}>Numéro CIN *</Text>
+            <TextInput
+              style={styles.caTextInput}
+              placeholder="Ex: BK517312"
+              placeholderTextColor="#475569"
+              value={agentForm.cin}
+              onChangeText={v => setAgentForm(f => ({ ...f, cin: v.toUpperCase() }))}
+              autoCapitalize="characters"
+            />
+
+            {/* Photo CIN */}
+            <Text style={styles.caInputLabel}>Photo de la CIN *</Text>
+            <TouchableOpacity
+              style={styles.caPhotoBtn}
+              onPress={async () => {
+                const res = await ImagePicker.launchImageLibraryAsync({
+                  mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                  quality: 0.6,
+                });
+                if (!res.canceled) setAgentCinUri(res.assets[0].uri);
+              }}
+            >
+              {agentCinUri ? (
+                <Image source={{ uri: agentCinUri }} style={{ width: '100%', height: 120, borderRadius: 8 }} resizeMode="cover" />
+              ) : (
+                <>
+                  <Ionicons name="cloud-upload-outline" size={28} color="#64748b" />
+                  <Text style={styles.caPhotoText}>Appuyez pour télécharger la photo de la CIN</Text>
+                  <Text style={{ color: '#475569', fontSize: 11 }}>JPG, PNG (max. 10MB)</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {/* Photo Faciale */}
+            <Text style={styles.caInputLabel}>Photo faciale (Reconnaissance) *</Text>
+            <TouchableOpacity
+              style={styles.caPhotoBtn}
+              onPress={async () => {
+                const res = await ImagePicker.launchCameraAsync({
+                  cameraType: ImagePicker.CameraType.front,
+                  quality: 0.7,
+                });
+                if (!res.canceled) setAgentFaceUri(res.assets[0].uri);
+              }}
+            >
+              {agentFaceUri ? (
+                <>
+                  <Image source={{ uri: agentFaceUri }} style={{ width: '100%', height: 140, borderRadius: 8 }} resizeMode="cover" />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <Text style={{ color: '#10b981', fontSize: 12, fontWeight: '600' }}>Photo capturée</Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="camera-outline" size={28} color="#64748b" />
+                  <Text style={styles.caPhotoText}>Ouvrir la caméra frontale pour capturer le visage</Text>
+                  <Text style={{ color: '#475569', fontSize: 11 }}>La reconnaissance faciale sera automatique</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {/* Info box */}
+            <View style={styles.caInfoBox}>
+              <Text style={styles.caInfoTitle}>Information importante</Text>
+              <Text style={styles.caInfoItem}>• L'agent créé sera automatiquement associé à votre compte responsable</Text>
+              <Text style={styles.caInfoItem}>• Il pourra accéder à l'application avec son numéro de téléphone</Text>
+              <Text style={styles.caInfoItem}>• Il sera automatiquement confirmé pour l'événement en cours</Text>
+              <Text style={styles.caInfoItem}>• Il sera assigné à la zone de l'événement actif</Text>
+            </View>
+
+            {/* Submit */}
+            <TouchableOpacity
+              style={[styles.caSubmitBtn, agentCreating && { opacity: 0.7 }]}
+              onPress={submitCreateAgent}
+              disabled={agentCreating}
+            >
+              {agentCreating
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <>
+                    <Ionicons name="person-add" size={18} color="#fff" />
+                    <Text style={styles.caSubmitBtnText}>Créer l'agent</Text>
+                  </>
+              }
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+      </>
     );
   };
-
-  // ────────────────────────────────────────────────────────────
-  //  RENDER MAIN
   // ────────────────────────────────────────────────────────────
 
   if (initLoading) {
@@ -1740,6 +1990,56 @@ const styles = StyleSheet.create({
   backBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   loadingText: { marginTop: 12, color: '#94a3b8', fontSize: 15, fontWeight: '600' },
   loadingSubText: { marginTop: 6, color: '#475569', fontSize: 12 },
+
+  // ── Actions Responsable (Pointage tab) ─────────────────────
+  supervisorActionsCard: {
+    backgroundColor: '#1e293b', borderRadius: 14, padding: 14,
+    marginBottom: 10, borderWidth: 1, borderColor: '#f59e0b33',
+  },
+  supervisorActionsHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  supervisorBtnsRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  createAgentBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#10b981', borderRadius: 12, paddingVertical: 14, gap: 8,
+  },
+  createAgentBtnDisabled: { backgroundColor: '#334155' },
+  incidentBtnSup: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#f97316', borderRadius: 12, paddingVertical: 14, gap: 8,
+  },
+  supervisorBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  supervisorInfoRow: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
+  supervisorInfoText: { flex: 1, fontSize: 11, color: '#94a3b8', lineHeight: 15 },
+
+  // ── Modal Créer un Agent ───────────────────────────────────
+  caModalHeader: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e293b',
+    padding: 16, borderBottomWidth: 1, borderBottomColor: '#334155',
+  },
+  caModalTitle: { fontSize: 17, fontWeight: '700', color: '#f1f5f9' },
+  caModalSub: { fontSize: 12, color: '#64748b', marginTop: 1 },
+  caInputRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  caInputLabel: { fontSize: 12, color: '#94a3b8', fontWeight: '600', marginBottom: 6, marginTop: 4 },
+  caTextInput: {
+    backgroundColor: '#1e293b', borderRadius: 10, borderWidth: 1, borderColor: '#334155',
+    paddingHorizontal: 14, paddingVertical: 12, color: '#f1f5f9', fontSize: 14, marginBottom: 10,
+  },
+  caPhotoBtn: {
+    backgroundColor: '#1e293b', borderRadius: 10, borderWidth: 1, borderColor: '#334155',
+    padding: 20, alignItems: 'center', marginBottom: 14, gap: 8,
+  },
+  caPhotoText: { color: '#64748b', fontSize: 13, textAlign: 'center' },
+  caInfoBox: {
+    backgroundColor: '#1e3a5f33', borderRadius: 10, borderWidth: 1, borderColor: '#2563eb22',
+    padding: 14, marginBottom: 16, gap: 4,
+  },
+  caInfoTitle: { color: '#93c5fd', fontSize: 13, fontWeight: '700', marginBottom: 4 },
+  caInfoItem: { color: '#94a3b8', fontSize: 11, lineHeight: 16 },
+  caSubmitBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#2563eb', borderRadius: 12, paddingVertical: 15, gap: 8,
+  },
+  caSubmitBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });
 
 export default CheckInScreen;
