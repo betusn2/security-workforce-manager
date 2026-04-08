@@ -1305,27 +1305,7 @@ const CheckInScreen = ({ route, navigation }) => {
               : 'Pointage sécurisé par reconnaissance faciale automatique'}
           </Text>
 
-          {/* Auto Facial CheckIn — plein ecran modal avec auto-soumission */}
-          {autoFacialActive && (
-            <View style={[StyleSheet.absoluteFill, { zIndex: 999, elevation: 20 }]}>
-              <AutoFacialCheckIn
-                userId={userId || userProfile?.id}
-                onSuccess={(score, photo) => {
-                  setFacialScore(score);
-                  setCapturedPhoto(photo);
-                  setFaceDetected(true);
-                  setAutoFacialActive(false);
-                  // Auto-soumission immediate apres verification faciale >= 50%
-                  setTimeout(() => submitCheckIn('in', photo, score), 400);
-                }}
-                onMaxAttempts={() => {
-                  setFacialBlocked(true);
-                  setAutoFacialActive(false);
-                }}
-                onCancel={() => setAutoFacialActive(false)}
-              />
-            </View>
-          )}
+          {/* AutoFacialCheckIn est maintenant au niveau racine (fullscreen) */}
 
           {/* Résultat photo capturée */}
           {!autoFacialActive && capturedPhoto && (
@@ -1730,6 +1710,27 @@ const CheckInScreen = ({ route, navigation }) => {
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         {activeTab === 'info' ? renderInfoTab() : renderPointageTab()}
       </Animated.View>
+
+      {/* AutoFacialCheckIn FULLSCREEN — niveau racine pour couvrir tout l'ecran */}
+      {autoFacialActive && (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 999, elevation: 20 }]}>
+          <AutoFacialCheckIn
+            userId={userId || userProfile?.id}
+            onSuccess={(score, photo) => {
+              setFacialScore(score);
+              setCapturedPhoto(photo);
+              setFaceDetected(true);
+              setAutoFacialActive(false);
+              setTimeout(() => submitCheckIn('in', photo, score), 400);
+            }}
+            onMaxAttempts={() => {
+              setFacialBlocked(true);
+              setAutoFacialActive(false);
+            }}
+            onCancel={() => setAutoFacialActive(false)}
+          />
+        </View>
+      )}
     </View>
   );
 };
