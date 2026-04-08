@@ -32,6 +32,7 @@ import { getDeviceFingerprint, getDeviceInfo } from '../utils/deviceFingerprint'
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { startBackgroundTracking, stopBackgroundTracking } from '../services/backgroundLocationTask';
 import useAuthStore from '../services/authStore';
+import AutoFacialCheckIn from '../components/AutoFacialCheckIn';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -124,6 +125,11 @@ const CheckInScreen = ({ route, navigation }) => {
   const [faceDetected,     setFaceDetected]     = useState(false);
   const [capturedPhoto,    setCapturedPhoto]    = useState(null);
   const [verifyMode,       setVerifyMode]       = useState(false);
+
+  // 🎭 Auto Facial Recognition
+  const [autoFacialActive,  setAutoFacialActive]  = useState(false);
+  const [facialScore,       setFacialScore]       = useState(null);
+  const [facialBlocked,     setFacialBlocked]     = useState(false);
 
   // Location (même que web)
   const [location,         setLocation]         = useState(null);
@@ -756,7 +762,7 @@ const CheckInScreen = ({ route, navigation }) => {
           checkInPhoto:         `data:image/jpeg;base64,${capturedPhoto.base64}`,
           checkInMethod:        'facial',
           facialVerified:       true,
-          facialMatchScore:     0.95,
+          facialMatchScore:     facialScore != null ? facialScore / 100 : 0.95,
           isWithinGeofence,
           distanceFromLocation: distance,
           deviceInfo: {
@@ -1207,101 +1213,96 @@ const CheckInScreen = ({ route, navigation }) => {
         contentContainerStyle={styles.tabContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Section Photo de vérification ──────────────── */}
+        {/* ── Section Photo de vérification — AUTOMATIQUE ──────────────── */}
         <View style={styles.card}>
           <View style={styles.cameraCardHeader}>
-            <Ionicons name="camera" size={32} color="#64748b" />
-            <Text style={styles.cameraCardTitle}>Photo de vérification</Text>
-            {cameraActive || capturedPhoto ? (
+            <Ionicons name="scan" size={32} color="#3b82f6" />
+            <Text style={styles.cameraCardTitle}>Reconnaissance Faciale</Text>
+            {capturedPhoto ? (
               <View style={styles.camAvailBadge}>
                 <Ionicons name="ellipse" size={8} color="#10b981" />
-                <Text style={styles.camAvailText}>Caméra disponible</Text>
+                <Text style={styles.camAvailText}>Vérifié {facialScore && `(${facialScore}%)`}</Text>
               </View>
             ) : null}
           </View>
-          <Text style={styles.cameraCardSub}>Activez la caméra pour vérifier votre identité</Text>
+          <Text style={styles.cameraCardSub}>
+            {facialBlocked
+              ? '🔒 Accès bloqué — Nombre de tentatives dépassé'
+              : capturedPhoto
+              ? `Identité confirmée — Score ${facialScore ?? '—'}%`
+              : 'Pointage sécurisé par reconnaissance faciale automatique'}
+          </Text>
 
-          {/* Camera view or preview */}
-          {cameraActive ? (
-            <View style={styles.cameraInlineWrap}>
-              <Camera
-                ref={cameraRef}
-                style={styles.cameraInline}
-                type={Camera.Constants?.Type?.front ?? 1}
-                onCameraReady={() => { setCameraReady(true); setFaceDetected(true); }}
-              >
-                {/* Oval guide overlay */}
-                <View style={styles.camOverlay}>
-                  <View style={styles.camTop}><Text style={styles.camInstruct}>Placez votre visage dans le cadre</Text></View>
-                  <View style={styles.camMiddle}>
-                    <View style={styles.camSide} />
-                    <View style={[styles.camOval, { borderColor: faceDetected ? '#10b981' : '#fff' }]}>
-                      {faceDetected && (
-                        <View style={styles.camOvalCheck}><Ionicons name="checkmark" size={14} color="#fff" /></View>
-                      )}
-                    </View>
-                    <View style={styles.camSide} />
-                  </View>
-                  <View style={styles.camBottom}>
-                    <TouchableOpacity
-                      style={[styles.captureBtn, (!cameraReady) && { backgroundColor: '#374151' }]}
-                      onPress={capturePhoto}
-                      disabled={!cameraReady}
-                    >
-                      <Ionicons name="camera" size={28} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </Camera>
+          {/* Auto Facial CheckIn en plein écran (modal overlay) */}
+          {autoFacialActive && (
+            <View style={{ height: 380, borderRadius: 12, overflow: 'hidden', marginTop: 8 }}>
+              <AutoFacialCheckIn
+                userId={userId}
+                onSuccess={(score, photo) => {
+                  setFacialScore(score);
+                  setCapturedPhoto(photo);
+                  setFaceDetected(true);
+                  setAutoFacialActive(false);
+                }}
+                onMaxAttempts={() => {
+                  setFacialBlocked(true);
+                  setAutoFacialActive(false);
+                }}
+                onCancel={() => setAutoFacialActive(false)}
+              />
             </View>
-          ) : capturedPhoto ? (
+          )}
+
+          {/* Résultat photo capturée */}
+          {!autoFacialActive && capturedPhoto && (
             <View style={styles.photoPreviewWrap}>
               <Image source={{ uri: capturedPhoto.uri }} style={styles.photoPreview} />
-              <View style={[styles.photoBadge, { backgroundColor: '#10b981' }]}>
+              <View style={[styles.photoBadge, {
+                backgroundColor: facialScore >= 70 ? '#10b981' : facialScore >= 50 ? '#f59e0b' : '#ef4444',
+              }]}>
                 <Ionicons name="checkmark" size={12} color="#fff" />
-                <Text style={styles.photoBadgeText}>Visage vérifié</Text>
+                <Text style={styles.photoBadgeText}>
+                  Score {facialScore ?? '—'}%
+                </Text>
               </View>
-            </View>
-          ) : (
-            <View style={styles.cameraPlaceholder}>
-              <Ionicons name="camera-outline" size={48} color="#475569" />
             </View>
           )}
 
-          {/* Activer / Vérifier buttons */}
-          {!capturedPhoto && (
-            <View style={styles.camBtnRow}>
-              <TouchableOpacity
-                style={[styles.camBtnPrimary, cameraActive && { backgroundColor: '#475569' }]}
-                onPress={cameraActive ? () => setCameraActive(false) : activateCamera}
-              >
-                <Ionicons name={cameraActive ? 'close' : 'videocam'} size={16} color="#fff" />
-                <Text style={styles.camBtnText}>{cameraActive ? 'Annuler' : 'Activer'}</Text>
-              </TouchableOpacity>
-              {cameraActive && (
-                <TouchableOpacity
-                  style={[styles.camBtnSecondary, (!cameraReady) && { opacity: 0.5 }]}
-                  onPress={capturePhoto}
-                  disabled={!cameraReady}
-                >
-                  <Ionicons name="checkmark-circle-outline" size={16} color="#2563eb" />
-                  <Text style={styles.camBtnSecText}>Vérifier</Text>
-                </TouchableOpacity>
-              )}
+          {/* Placeholder si pas encore lancé */}
+          {!autoFacialActive && !capturedPhoto && !facialBlocked && (
+            <View style={styles.cameraPlaceholder}>
+              <Ionicons name="scan-outline" size={48} color="#475569" />
+              <Text style={{ color: '#64748b', fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+                Appuyez sur "Lancer" pour démarrer la vérification automatique
+              </Text>
             </View>
           )}
-          {capturedPhoto && (
-            <TouchableOpacity style={styles.retakeLink} onPress={() => { setCapturedPhoto(null); setFaceDetected(false); }}>
-              <Ionicons name="refresh-outline" size={14} color="#64748b" />
-              <Text style={styles.retakeLinkText}>Réessayer la vérification</Text>
-            </TouchableOpacity>
+
+          {/* Bouton Lancer / Recommencer */}
+          {!autoFacialActive && !facialBlocked && (
+            <View style={styles.camBtnRow}>
+              <TouchableOpacity
+                style={styles.camBtnPrimary}
+                onPress={() => {
+                  setCapturedPhoto(null);
+                  setFaceDetected(false);
+                  setFacialScore(null);
+                  setAutoFacialActive(true);
+                }}
+              >
+                <Ionicons name={capturedPhoto ? 'refresh' : 'scan'} size={16} color="#fff" />
+                <Text style={styles.camBtnText}>
+                  {capturedPhoto ? 'Recommencer' : 'Lancer la vérification'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           )}
 
           {/* Tips */}
           <View style={styles.tipsList}>
-            <Text style={styles.tipsItem}>• Assurez-vous que votre caméra est bien connectée et autorisée</Text>
-            <Text style={styles.tipsItem}>• Positionnez-vous dans un endroit bien éclairé</Text>
-            <Text style={styles.tipsItem}>• Score minimum requis : correspondance visage</Text>
+            <Text style={styles.tipsItem}>• Score minimum requis : 50% de correspondance</Text>
+            <Text style={styles.tipsItem}>• Maximum 3 tentatives de vérification</Text>
+            <Text style={styles.tipsItem}>• Bonne lumière et visage centré</Text>
           </View>
         </View>
 

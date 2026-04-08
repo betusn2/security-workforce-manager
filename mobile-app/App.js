@@ -53,11 +53,19 @@ import useAuthStore from './src/services/authStore';
 import { navigationRef } from './src/services/navigationRef';
 import socketService from './src/services/socketService';
 import useTracking from './src/services/useTracking';
+import { initNotificationService, setupNotificationHandler } from './src/services/notificationService';
 import {
   startBackgroundTracking,
   stopBackgroundTracking,
   syncPendingPositions,
 } from './src/services/backgroundLocationTask';
+import { hasPermissionsBeenRequested } from './src/services/permissionManager';
+import {
+  startIntelligentAlertsService,
+  stopIntelligentAlertsService,
+} from './src/services/intelligentAlertsService';
+import AppLogo from './src/components/AppLogo';
+import PermissionRequestScreen from './src/components/PermissionRequestScreen';
 
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
@@ -80,6 +88,7 @@ import LiveTrackingScreen from './src/screens/LiveTrackingScreen';
 import BadgesScreen from './src/screens/BadgesScreen';
 import HelpScreen from './src/screens/HelpScreen';
 import TrackingStatusBanner from './src/components/TrackingStatusBanner';
+import PopupMessageOverlay from './src/components/PopupMessageOverlay';
 
 // Écran placeholder pour fonctionnalités bientôt disponibles
 const ComingSoonScreen = ({ navigation, route }) => (
@@ -102,6 +111,9 @@ const ComingSoonScreen = ({ navigation, route }) => (
 
 
 // ── Configuration des notifications ────────────────────────────────────────
+// Utilise notificationService pour la gestion centralisée
+setupNotificationHandler();
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -189,6 +201,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
   const [currentEventId, setCurrentEventId] = useState(null);
+  const [permissionsRequested, setPermissionsRequested] = useState(true); // true = skip screen by default
   const notificationResponseListener = useRef(null);
 
   // 🔌 Connexion Socket.IO + capture caméra sur demande
@@ -196,6 +209,10 @@ export default function App() {
 
   useEffect(() => {
     const initAuth = async () => {
+      // Vérifier si les permissions ont déjà été demandées
+      const alreadyRequested = await hasPermissionsBeenRequested();
+      setPermissionsRequested(alreadyRequested);
+
       await checkAuth();
       setIsLoading(false);
     };
@@ -228,6 +245,9 @@ export default function App() {
     if (isAuthenticated && user?.id) {
       socketService.connect(user.id, user.role, currentEventId);
 
+      // Enregistrer le token push notification sur le serveur
+      initNotificationService().catch(console.warn);
+
       // Stocker le token pour la tâche background
       const storeToken = async () => {
         const token = await AsyncStorage.getItem('accessToken')
@@ -239,16 +259,19 @@ export default function App() {
       };
       storeToken();
 
-      // Démarrer le tracking GPS background seulement pour agents/responsables (pas admin)
+      // Démarrer le tracking GPS background + alertes intelligentes (agents/superviseurs)
       if (user?.role !== 'admin') {
         startBackgroundTracking(user.id, currentEventId);
+        startIntelligentAlertsService(user.id, currentEventId);
       } else {
         stopBackgroundTracking(); // s'assurer qu'il est arrêté pour admin
+        stopIntelligentAlertsService();
       }
 
     } else {
       socketService.disconnect();
       stopBackgroundTracking();
+      stopIntelligentAlertsService();
     }
   }, [isAuthenticated, user?.id, user?.role, currentEventId]);
 
@@ -266,28 +289,22 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1e3a8a' }}>
-        <View style={{
-          width: 100, height: 100, borderRadius: 50,
-          backgroundColor: 'rgba(255,255,255,0.12)',
-          justifyContent: 'center', alignItems: 'center', marginBottom: 20,
-        }}>
-          <View style={{
-            width: 82, height: 82, borderRadius: 41,
-            backgroundColor: '#2563eb',
-            justifyContent: 'center', alignItems: 'center',
-          }}>
-            <Ionicons name="shield-checkmark" size={44} color="#fff" />
-          </View>
-        </View>
-        <Text style={{ color: '#fff', fontSize: 22, fontWeight: 'bold', marginBottom: 6, letterSpacing: 0.5 }}>
-          Security Guard
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a', padding: 32 }}>
+        <AppLogo size="large" color="#60a5fa" textColor="#ffffff" animated={true} />
+        <ActivityIndicator size="large" color="#60a5fa" style={{ marginTop: 40 }} />
+        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, marginTop: 12, letterSpacing: 1 }}>
+          Chargement en cours…
         </Text>
-        <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 28 }}>
-          Système de gestion sécurité
-        </Text>
-        <ActivityIndicator size="large" color="#60a5fa" />
       </View>
+    );
+  }
+
+  // Écran d'autorisation (premier lancement uniquement)
+  if (!permissionsRequested) {
+    return (
+      <PermissionRequestScreen
+        onDone={() => setPermissionsRequested(true)}
+      />
     );
   }
 
@@ -295,6 +312,8 @@ export default function App() {
     <ErrorBoundary>
     <NavigationContainer ref={navigationRef}>
       <StatusBar style="light" />
+      {/* Popup plein écran pour messages admin depuis le dashboard Web */}
+      <PopupMessageOverlay />
       {isAuthenticated && <TrackingStatusBanner />}
       {isOffline && (
         <View style={{ backgroundColor: '#ef4444', paddingVertical: 6, alignItems: 'center' }}>

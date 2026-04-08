@@ -183,6 +183,27 @@ class SocketService {
         this._triggerHandler('screenshot_request', data);
       });
 
+      // 💬 MESSAGES ADMIN → MOBILE (popup plein écran)
+      this.socket.on('admin:message', (data) => {
+        console.log('💬 Message admin reçu:', data?.title || data?.message);
+        this._triggerHandler('admin:message', data);
+      });
+
+      this.socket.on('message:popup', (data) => {
+        console.log('🚨 Popup message reçu:', data?.title);
+        this._triggerHandler('message:popup', data);
+      });
+
+      this.socket.on('admin:urgent_alert', (data) => {
+        console.log('🚨 Alerte urgente reçue:', data?.title);
+        this._triggerHandler('admin:urgent_alert', { ...data, priority: 'urgent' });
+      });
+
+      // Batterie et statut agent (feedback du serveur)
+      this.socket.on('agent:status_ack', (data) => {
+        this._triggerHandler('agent_status_ack', data);
+      });
+
     } catch (error) {
       console.error('Erreur connexion Socket.IO:', error);
     }

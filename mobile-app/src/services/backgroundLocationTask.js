@@ -136,27 +136,57 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
       timeout: 8000,
     });
 
-    // ─── Notification locale si sortie de zone ─────────────────────────────
+    // ─── Notification sortie de zone + détection sortie anticipée ──────────
     if (eventLat && eventLng && !isWithinGeofence) {
       const lastZoneStatus = await AsyncStorage.getItem('lastGeofenceStatus');
-      // N'envoyer la notification que si le statut a changé (entré/sorti)
       if (lastZoneStatus !== 'outside') {
         await AsyncStorage.setItem('lastGeofenceStatus', 'outside');
+
+        // Vérifier si sortie AVANT la fin de l'événement
+        let isEarlyDeparture = false;
+        let timeLeftMsg = '';
+        try {
+          const evStr = await AsyncStorage.getItem('currentEventData');
+          if (evStr) {
+            const ev = JSON.parse(evStr);
+            const endDate = ev.endDate ? new Date(ev.endDate) : null;
+            const now = new Date();
+            if (endDate && now < endDate) {
+              isEarlyDeparture = true;
+              const minsLeft = Math.round((endDate - now) / 60000);
+              timeLeftMsg = ` — encore ${minsLeft} min avant la fin`;
+              // Envoyer alerte sortie anticipée au backend
+              try {
+                await axios.post(`${API_URL}/tracking/alert`, {
+                  type: 'geofence_early_exit',
+                  message: `Sortie anticipée de la zone (${distanceFromEvent}m)${timeLeftMsg}`,
+                  userId, eventId,
+                  distanceFromEvent, latitude, longitude,
+                  timestamp: new Date().toISOString(),
+                }, { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 });
+              } catch {}
+            }
+          }
+        } catch {}
+
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: '⚠️ Sortie de zone',
-            body: `Vous êtes à ${distanceFromEvent}m de votre zone de travail (limite: ${eventRadius}m). Retournez dans la zone.`,
+            title: isEarlyDeparture ? '🚨 Sortie anticipée détectée' : '⚠️ Sortie de zone',
+            body: isEarlyDeparture
+              ? `Vous avez quitté votre zone avant la fin de l'événement${timeLeftMsg}. Distance: ${distanceFromEvent}m.`
+              : `Vous êtes à ${distanceFromEvent}m de votre zone (limite: ${eventRadius}m). Retournez dans la zone.`,
             sound: true,
-            priority: Notifications.AndroidNotificationPriority.HIGH,
+            priority: isEarlyDeparture
+              ? Notifications.AndroidNotificationPriority.MAX
+              : Notifications.AndroidNotificationPriority.HIGH,
             color: '#ef4444',
           },
-          trigger: null, // immédiate
+          trigger: null,
         });
       }
     } else if (eventLat && eventLng && isWithinGeofence) {
       const lastZoneStatus = await AsyncStorage.getItem('lastGeofenceStatus');
       if (lastZoneStatus === 'outside') {
-        // Agent revenu dans la zone
         await AsyncStorage.setItem('lastGeofenceStatus', 'inside');
         await Notifications.scheduleNotificationAsync({
           content: {
@@ -171,25 +201,58 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
       }
     }
 
-    // ─── Alerte batterie critique ──────────────────────────────────────────
-    if (batteryLevel !== null && batteryLevel <= 15 && !batteryCharging) {
-      const lastBattWarn = await AsyncStorage.getItem('lastBatteryWarning');
+    // Sauvegarder dernière position pour l'inactivité (intelligentAlertsService)
+    await AsyncStorage.setItem('lastKnownLat', String(latitude));
+    await AsyncStorage.setItem('lastKnownLng', String(longitude));
+    await AsyncStorage.setItem('alert_last_activity_ts', String(Date.now()));
+
+    // ─── Alertes batterie : 20% (faible) et 10% (critique) ────────────────
+    if (batteryLevel !== null && !batteryCharging) {
       const now = Date.now();
-      // Alerte max 1 fois par 15 minutes
-      if (!lastBattWarn || now - parseInt(lastBattWarn) > 15 * 60 * 1000) {
-        await AsyncStorage.setItem('lastBatteryWarning', String(now));
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: `🔋 Batterie ${batteryLevel <= 5 ? 'critique' : 'faible'} — ${batteryLevel}%`,
-            body: batteryLevel <= 5
-              ? 'Batterie critique ! Connectez votre chargeur immédiatement.'
-              : `Batterie à ${batteryLevel}%. Branchez votre téléphone bientôt.`,
-            sound: true,
-            priority: Notifications.AndroidNotificationPriority.HIGH,
-            color: '#ef4444',
-          },
-          trigger: null,
-        });
+      const COOLDOWN_CRIT = 10 * 60 * 1000;  // 10 min pour critique
+      const COOLDOWN_LOW  = 20 * 60 * 1000;  // 20 min pour faible
+
+      if (batteryLevel <= 10) {
+        const lastCrit = await AsyncStorage.getItem('alert_batt_crit_ts');
+        if (!lastCrit || now - parseInt(lastCrit) > COOLDOWN_CRIT) {
+          await AsyncStorage.setItem('alert_batt_crit_ts', String(now));
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: `🔋 Batterie CRITIQUE — ${batteryLevel}%`,
+              body: `URGENT : Batterie à ${batteryLevel}%. Branchez votre chargeur IMMÉDIATEMENT pour maintenir le suivi GPS.`,
+              sound: true,
+              priority: Notifications.AndroidNotificationPriority.MAX,
+              color: '#dc2626',
+              vibrate: [0, 300, 100, 300, 100, 600],
+            },
+            trigger: null,
+          });
+          // Signaler au backend
+          try {
+            await axios.post(`${API_URL}/tracking/alert`, {
+              type: 'battery_critical',
+              message: `Batterie critique : ${batteryLevel}%`,
+              userId, eventId: eventId || null,
+              data: { batteryLevel, batteryCharging: false },
+              timestamp: new Date().toISOString(),
+            }, { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 });
+          } catch {}
+        }
+      } else if (batteryLevel <= 20) {
+        const lastLow = await AsyncStorage.getItem('alert_batt_low_ts');
+        if (!lastLow || now - parseInt(lastLow) > COOLDOWN_LOW) {
+          await AsyncStorage.setItem('alert_batt_low_ts', String(now));
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: `🔋 Batterie faible — ${batteryLevel}%`,
+              body: `Batterie à ${batteryLevel}%. Pensez à brancher votre chargeur pour maintenir le suivi GPS.`,
+              sound: true,
+              priority: Notifications.AndroidNotificationPriority.HIGH,
+              color: '#f59e0b',
+            },
+            trigger: null,
+          });
+        }
       }
     }
 

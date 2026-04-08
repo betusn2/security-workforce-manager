@@ -18,6 +18,7 @@ import useAuthStore from '../services/authStore';
 import { wakeUpServer } from '../services/api';
 import { getDeviceFingerprint, getDeviceInfo } from '../utils/deviceFingerprint';
 import { API_URL } from '../config';
+import { requestBatteryOptimizationExclusion } from '../services/batteryOptimizationService';
 
 const LoginScreen = ({ navigation }) => {
   const [loginMode, setLoginMode] = useState('agent'); // 'agent' ou 'supervisor'
@@ -93,6 +94,9 @@ const LoginScreen = ({ navigation }) => {
 
     if (!result.success) {
       Alert.alert('Erreur de connexion', result.error || 'CIN introuvable. Vérifiez votre numéro CIN.', [{ text: 'OK' }]);
+    } else {
+      // Demander exclusion optimisation batterie après connexion réussie
+      requestBatteryOptimizationExclusion();
     }
   };
 

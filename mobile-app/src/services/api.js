@@ -153,4 +153,41 @@ export const notificationsAPI = {
   sendToAll: (data) => api.post('/notifications/send-all', data),
 };
 
+/**
+ * Reconnaissance Faciale
+ * Utilise les endpoints /api/face-recognition/* du backend
+ */
+export const facialAPI = {
+  /**
+   * Vérifier un visage lors du pointage (check-in CIN)
+   * POST /api/face-recognition/verify
+   * { userId, photo: 'data:image/jpeg;base64,...' }
+   */
+  verifyCheckin: (data) => api.post('/face-recognition/verify', data),
+
+  /**
+   * Identifier qui est sur la photo (sans userId connu)
+   * POST /api/face-recognition/identify
+   */
+  identify: (data) => api.post('/face-recognition/identify', data),
+
+  /**
+   * Enregistrer le vecteur facial d'un utilisateur
+   * POST /api/face-recognition/register
+   */
+  register: (data) => api.post('/face-recognition/register', data),
+
+  /**
+   * Détecter visages sur une image
+   * POST /api/face-recognition/detect
+   */
+  detect: (data) => api.post('/face-recognition/detect', data),
+
+  /**
+   * Statut enregistrement d'un utilisateur
+   * GET /api/face-recognition/registration/:userId
+   */
+  getRegistration: (userId) => api.get(`/face-recognition/registration/${userId}`),
+};
+
 export default api;

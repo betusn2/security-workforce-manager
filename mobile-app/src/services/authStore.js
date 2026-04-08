@@ -1,7 +1,35 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
+import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from './api';
 import { navigateToLogin } from './navigationRef';
+
+// ── Démarrer la localisation immédiatement après login CIN ────────────────
+async function _autoStartGPS(userId) {
+  try {
+    // Demander permission GPS premier plan
+    const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+    if (fgStatus !== 'granted') return;
+
+    // Demander permission GPS arrière-plan (Android 10+)
+    const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync().catch(() => ({ status: 'denied' }));
+    console.log(`📍 GPS permissions: fg=${fgStatus}, bg=${bgStatus}`);
+
+    // Récupérer position actuelle et la stocker
+    const loc = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+    await AsyncStorage.setItem('lastKnownLat', String(loc.coords.latitude));
+    await AsyncStorage.setItem('lastKnownLng', String(loc.coords.longitude));
+    await AsyncStorage.setItem('lastGpsTimestamp', String(loc.timestamp));
+    await AsyncStorage.setItem('userId', String(userId));
+
+    console.log(`✅ GPS initial: ${loc.coords.latitude.toFixed(5)}, ${loc.coords.longitude.toFixed(5)}`);
+  } catch (err) {
+    console.warn('⚠️ Auto GPS init failed (non-fatal):', err?.message);
+  }
+}
 
 const useAuthStore = create((set, get) => ({
   user: null,
@@ -63,6 +91,9 @@ const useAuthStore = create((set, get) => ({
         role: user.role,
         hasToken: !!checkInToken
       });
+
+      // 📍 Démarrer GPS automatiquement dès la connexion
+      _autoStartGPS(user.id);
 
       // Toujours rediriger vers CheckIn après login CIN (comme le web /checkin)
       // Le CheckIn screen gère lui-même la vérification des événements disponibles

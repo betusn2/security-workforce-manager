@@ -57,13 +57,20 @@
         "android.permission.CHANGE_NETWORK_STATE",
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.WAKE_LOCK",
-        "android.permission.RECEIVE_BOOT_COMPLETED"
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+        "android.permission.BATTERY_STATS",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "allowBackup": false
     },
     "plugins": [
       "./plugins/withUniversalApk",
       "./plugins/withNoFlipper",
+      "./plugins/withBootReceiver",
       [
         "expo-camera",
         {
