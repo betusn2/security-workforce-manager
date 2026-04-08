@@ -30,14 +30,13 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Dimensions,
-  Platform,
 } from 'react-native';
 import { Camera, CameraType } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
 import { facialAPI } from '../services/api';
 
-const { width: W } = Dimensions.get('window');
+const { width: W, height: H } = Dimensions.get('window');
 
 // ── Config ────────────────────────────────────────────────────────────────
 const COUNTDOWN_SEC  = 3;
@@ -45,17 +44,16 @@ const MIN_SCORE      = 50;
 const MAX_ATTEMPTS   = 3;
 const RETRY_DELAY_MS = 2000;
 
-// ── Oval frame dimensions ─────────────────────────────────────────────────
-const OVAL_W = Math.min(W * 0.52, 190);
-const OVAL_H = Math.round(OVAL_W * 1.32);
+// Ovale centré, adapté à l'écran
+const OVAL_W = Math.round(W * 0.62);
+const OVAL_H = Math.round(OVAL_W * 1.3);
 
-// ── Guidance phases (1 par seconde du compte à rebours) ───────────────────
-// phaseIdx = COUNTDOWN_SEC - countdown (clamped 0-3)
+// ── Phases de guidage ─────────────────────────────────────────────────────
 const GUIDE_PHASES = [
-  { color: '#ef4444', icon: 'scan-outline',      msg: "Placez votre visage dans l'ovale"  },  // countdown=3
-  { color: '#f59e0b', icon: 'eye-outline',        msg: 'Centrez et regardez la caméra'     },  // countdown=2
-  { color: '#eab308', icon: 'body-outline',       msg: 'Restez parfaitement immobile...'   },  // countdown=1
-  { color: '#10b981', icon: 'checkmark-circle',   msg: 'Parfait ! Capture automatique...'  },  // countdown=0
+  { color: '#ef4444', icon: 'scan-outline',     msg: "Placez votre visage dans le cadre"  },
+  { color: '#f59e0b', icon: 'eye-outline',       msg: 'Centrez et regardez la caméra'      },
+  { color: '#eab308', icon: 'body-outline',      msg: 'Restez parfaitement immobile...'    },
+  { color: '#10b981', icon: 'checkmark-circle',  msg: 'Parfait ! Capture en cours...'      },
 ];
 
 // ── Score Card ────────────────────────────────────────────────────────────
@@ -67,7 +65,7 @@ function ScoreCard({ score }) {
               : 'Correspondance insuffisante';
   return (
     <View style={[styles.scoreCard, { borderColor: color }]}>
-      <Ionicons name={icon} size={40} color={color} />
+      <Ionicons name={icon} size={44} color={color} />
       <Text style={[styles.scoreValue, { color }]}>{score}%</Text>
       <Text style={styles.scoreLabel}>Score de correspondance</Text>
       <Text style={[styles.scoreDesc, { color }]}>{label}</Text>
@@ -78,36 +76,33 @@ function ScoreCard({ score }) {
   );
 }
 
-// ── Face Guide Overlay — Real-time (ovale + guidage) ─────────────────────
+// ── Face Guide Overlay centré ─────────────────────────────────────────────
 function FaceGuide({ countdown, isCapturing }) {
-  const pulseAnim   = useRef(new Animated.Value(1)).current;
-  const glowAnim    = useRef(new Animated.Value(0.5)).current;
-  const msgOpacity  = useRef(new Animated.Value(1)).current;
-  const flashAnim   = useRef(new Animated.Value(1)).current;
+  const pulseAnim  = useRef(new Animated.Value(1)).current;
+  const glowAnim   = useRef(new Animated.Value(0.5)).current;
+  const msgOpacity = useRef(new Animated.Value(1)).current;
+  const flashAnim  = useRef(new Animated.Value(1)).current;
 
-  // phaseIdx: 0=rouge, 1=orange, 2=jaune, 3=vert (capture)
   const phaseIdx = isCapturing ? 3 : Math.max(0, Math.min(3, COUNTDOWN_SEC - countdown));
   const phase    = GUIDE_PHASES[phaseIdx];
 
-  // Pulse de l'ovale
   useEffect(() => {
     const anim = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.03, duration: 650, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1,    duration: 650, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.04, duration: 700, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1,    duration: 700, useNativeDriver: true }),
       ])
     );
     anim.start();
     return () => anim.stop();
   }, []);
 
-  // Clignotement du halo au moment de la capture (phase 3)
   useEffect(() => {
     if (phaseIdx === 3) {
       Animated.loop(
         Animated.sequence([
-          Animated.timing(glowAnim, { toValue: 1,   duration: 280, useNativeDriver: true }),
-          Animated.timing(glowAnim, { toValue: 0.3, duration: 280, useNativeDriver: true }),
+          Animated.timing(glowAnim, { toValue: 1,   duration: 300, useNativeDriver: true }),
+          Animated.timing(glowAnim, { toValue: 0.2, duration: 300, useNativeDriver: true }),
         ])
       ).start();
     } else {
@@ -115,88 +110,89 @@ function FaceGuide({ countdown, isCapturing }) {
     }
   }, [phaseIdx]);
 
-  // Flash lors de la capture
   useEffect(() => {
     if (isCapturing) {
       Animated.sequence([
-        Animated.timing(flashAnim, { toValue: 0.15, duration: 80,  useNativeDriver: true }),
-        Animated.timing(flashAnim, { toValue: 1,    duration: 200, useNativeDriver: true }),
+        Animated.timing(flashAnim, { toValue: 0.1, duration: 80,  useNativeDriver: true }),
+        Animated.timing(flashAnim, { toValue: 1,   duration: 250, useNativeDriver: true }),
       ]).start();
     }
   }, [isCapturing]);
 
-  // Fondu du message lors d'un changement de phase
   useEffect(() => {
     Animated.sequence([
-      Animated.timing(msgOpacity, { toValue: 0,   duration: 120, useNativeDriver: true }),
-      Animated.timing(msgOpacity, { toValue: 1,   duration: 220, useNativeDriver: true }),
+      Animated.timing(msgOpacity, { toValue: 0, duration: 100, useNativeDriver: true }),
+      Animated.timing(msgOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start();
   }, [phaseIdx]);
 
+  // Vignette hors-ovale : 4 zones sombres (haut, bas, gauche, droite)
+  // Chaque zone est positionnée de façon absolue autour de l'ovale centré
+  const ovalTop  = (H - OVAL_H) / 2 - 60; // décalé légèrement vers le haut
+  const ovalLeft = (W - OVAL_W) / 2;
+
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { opacity: flashAnim }]} pointerEvents="none">
-      {/* ── Bande sombre HAUT ── */}
-      <View style={[styles.darkBand, { flex: 1 }]} />
 
-      {/* ── Rangée centrale : noir | ovale | noir ── */}
-      <View style={{ flexDirection: 'row', height: OVAL_H }}>
-        <View style={styles.darkBand} />
+      {/* Zone sombre HAUT */}
+      <View style={[styles.vigZone, { top: 0, left: 0, right: 0, height: ovalTop }]} />
 
-        {/* Ovale avec halo coloré */}
-        <Animated.View style={[
-          styles.ovalOuter,
-          { borderColor: phase.color, transform: [{ scale: pulseAnim }] }
-        ]}>
-          {/* Anneau intérieur en glow */}
-          <Animated.View style={[
-            styles.ovalGlow,
-            { borderColor: phase.color, opacity: glowAnim }
-          ]} />
-
-          {/* Contenu central de l'ovale */}
-          {!isCapturing && countdown > 0 && (
-            <Text style={[styles.countdownNum, { color: '#fff' }]}>{countdown}</Text>
-          )}
-          {!isCapturing && countdown === 0 && (
-            <Ionicons name="camera" size={32} color="#10b981" />
-          )}
-          {isCapturing && (
-            <ActivityIndicator size="large" color="#fff" />
-          )}
-        </Animated.View>
-
-        <View style={[styles.darkBand, { flex: 1 }]} />
-      </View>
-
-      {/* ── Bande sombre BAS + messages de guidage ── */}
-      <View style={[styles.darkBand, styles.bottomGuidance]}>
-        {/* Message de guidage animé */}
+      {/* Zone sombre BAS */}
+      <View style={[styles.vigZone, {
+        top: ovalTop + OVAL_H, left: 0, right: 0, bottom: 0,
+        justifyContent: 'flex-start', alignItems: 'center', paddingTop: 14,
+      }]}>
+        {/* Message de guidage */}
         <Animated.View style={[styles.guidanceRow, { opacity: msgOpacity }]}>
-          <Ionicons name={phase.icon} size={15} color={phase.color} style={{ marginRight: 6 }} />
+          <Ionicons name={phase.icon} size={16} color={phase.color} style={{ marginRight: 6 }} />
           <Text style={[styles.guidanceMsg, { color: phase.color }]}>{phase.msg}</Text>
         </Animated.View>
 
-        {/* Points de progression par phase */}
+        {/* Dots de phase */}
         <View style={styles.phaseDotsRow}>
           {GUIDE_PHASES.map((p, i) => (
-            <View
-              key={i}
-              style={[
-                styles.phaseDot,
-                {
-                  backgroundColor: i <= phaseIdx ? p.color : 'rgba(255,255,255,0.18)',
-                  width: i === phaseIdx ? 18 : 8,
-                },
-              ]}
-            />
+            <View key={i} style={[
+              styles.phaseDot,
+              { backgroundColor: i <= phaseIdx ? p.color : 'rgba(255,255,255,0.2)', width: i === phaseIdx ? 20 : 8 },
+            ]} />
           ))}
         </View>
 
-        {/* Conseil luminosité */}
-        <Text style={styles.lightingTip}>
-          Bonne lumière • Distance 30-60 cm • Visage dégagé
-        </Text>
+        <Text style={styles.lightingTip}>Bonne lumière • 30-60 cm • Visage dégagé</Text>
       </View>
+
+      {/* Zone sombre GAUCHE */}
+      <View style={[styles.vigZone, { top: ovalTop, left: 0, width: ovalLeft, height: OVAL_H }]} />
+
+      {/* Zone sombre DROITE */}
+      <View style={[styles.vigZone, { top: ovalTop, right: 0, left: ovalLeft + OVAL_W, height: OVAL_H }]} />
+
+      {/* Cadre ovale centré */}
+      <Animated.View style={[
+        styles.ovalOuter,
+        {
+          position: 'absolute',
+          top: ovalTop, left: ovalLeft,
+          width: OVAL_W, height: OVAL_H,
+          borderColor: phase.color,
+          transform: [{ scale: pulseAnim }],
+        },
+      ]}>
+        {/* Anneau halo */}
+        <Animated.View style={[
+          styles.ovalGlow,
+          { borderColor: phase.color, opacity: glowAnim },
+        ]} />
+
+        {/* Compteur ou icône */}
+        {!isCapturing && countdown > 0 && (
+          <Text style={styles.countdownNum}>{countdown}</Text>
+        )}
+        {!isCapturing && countdown === 0 && (
+          <Ionicons name="camera" size={36} color="#10b981" />
+        )}
+        {isCapturing && <ActivityIndicator size="large" color="#fff" />}
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -341,11 +337,29 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
     } catch (err) {
       console.error('Erreur vérification faciale:', err);
       console.error('Response data:', err.response?.data);
+
+      const errorCode = err.response?.data?.errorCode;
+      const debugMsg  = err.response?.data?.debug || '';
+
+      // SERVICE_UNAVAILABLE = serveur en démarrage → retry auto sans consommer une tentative
+      if (err.response?.status === 503 || errorCode === 'SERVICE_UNAVAILABLE') {
+        setErrorMsg('Serveur en cours de démarrage… Nouvelle tentative dans 5s');
+        setScore(null);
+        setPhase('result');
+        setTimeout(() => {
+          setScore(null);
+          setErrorMsg('');
+          setPhase('init');
+          setTimeout(() => startCountdown(), 500);
+        }, 5000);
+        return;
+      }
+
       const newAttempts = currentAttempts + 1;
       setAttempts(newAttempts);
       attemptsRef.current = newAttempts;
       const msg = err.response?.data?.message || 'Vérification impossible. Vérifiez votre connexion.';
-      setErrorMsg(msg);
+      setErrorMsg(debugMsg ? `${msg} (${debugMsg})` : msg);
       setScore(0);
       setPhase('result');
       if (newAttempts >= MAX_ATTEMPTS) {
@@ -404,10 +418,9 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
         <View style={styles.cameraContainer}>
           <Camera
             ref={cameraRef}
-            style={styles.camera}
+            style={StyleSheet.absoluteFill}
             type={CameraType.front}
             onCameraReady={() => { cameraReady.current = true; }}
-            ratio="4:3"
           />
           <FaceGuide countdown={countdown} isCapturing={phase === 'capturing'} />
 
@@ -503,51 +516,39 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#0f172a' },
 
   // ── Caméra ──────────────────────────────────────────────────────────
-  cameraContainer: { flex: 1, position: 'relative' },
-  camera:          { flex: 1 },
+  cameraContainer: { flex: 1, position: 'relative', backgroundColor: '#000' },
 
-  // ── Overlay dark + ovale ────────────────────────────────────────────
-  darkBand: {
-    backgroundColor: 'rgba(0,0,0,0.62)',
-    // width fill via flexDirection row context or flex:1
+  // ── Vignette zones sombres (positionnées absolument autour de l'ovale) ──
+  vigZone: {
+    position: 'absolute',
+    backgroundColor: 'rgba(0,0,0,0.65)',
   },
-  bottomGuidance: {
-    flex: 1.4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    gap: 6,
-  },
+
+  // ── Ovale centré ────────────────────────────────────────────────────
   ovalOuter: {
-    width: OVAL_W,
-    height: OVAL_H,
-    borderRadius: OVAL_H,           // très grand → vraie ellipse
+    borderRadius: 1000,
     borderWidth: 3,
-    borderColor: '#ef4444',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'visible',
   },
   ovalGlow: {
     position: 'absolute',
-    width: OVAL_W + 14,
-    height: OVAL_H + 14,
-    borderRadius: OVAL_H + 14,
-    borderWidth: 2,
-    borderColor: '#ef4444',
+    width: OVAL_W + 18,
+    height: OVAL_H + 18,
+    borderRadius: 1000,
+    borderWidth: 2.5,
     opacity: 0.5,
   },
 
   // Chiffre du compte à rebours
   countdownNum: {
-    fontSize: 52,
+    fontSize: 64,
     fontWeight: '900',
     color: '#fff',
-    textShadowColor: 'rgba(0,0,0,0.85)',
+    textShadowColor: 'rgba(0,0,0,0.9)',
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
-    letterSpacing: 2,
+    textShadowRadius: 10,
   },
 
   // ── Messages de guidage ──────────────────────────────────────────────
@@ -555,12 +556,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    marginTop: 4,
+    paddingHorizontal: 12,
   },
   guidanceMsg: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '800',
     textAlign: 'center',
     letterSpacing: 0.2,
   },
@@ -570,82 +570,51 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    marginTop: 6,
+    gap: 6,
+    marginTop: 10,
   },
   phaseDot: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.2)',
   },
 
-  // Conseil luminosité
   lightingTip: {
     color: 'rgba(255,255,255,0.4)',
-    fontSize: 10,
+    fontSize: 11,
     textAlign: 'center',
-    marginTop: 4,
+    marginTop: 8,
   },
 
   // ── Barre supérieure (info) ──────────────────────────────────────────
   infoBar: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+    top: 0, left: 0, right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(0,0,0,0.68)',
-    paddingVertical: 9,
-    paddingHorizontal: 14,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
-  infoBarLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  infoBarTitle: {
-    color: '#e2e8f0',
-    fontSize: 13,
-    fontWeight: '700',
-    marginLeft: 4,
-  },
-  infoBarRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  infoBarStatus: {
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: 12,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
+  infoBarLeft:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  infoBarTitle: { color: '#e2e8f0', fontSize: 14, fontWeight: '700', marginLeft: 4 },
+  infoBarRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  infoBarStatus:{ color: 'rgba(255,255,255,0.75)', fontSize: 12 },
+  statusDot:    { width: 8, height: 8, borderRadius: 4 },
 
   // ── Barre tentatives ────────────────────────────────────────────────
   attemptsBar: {
     position: 'absolute',
-    bottom: 8,
-    left: 0,
-    right: 0,
+    bottom: 10, left: 0, right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    paddingVertical: 6,
   },
-  attemptDotsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
+  attemptDotsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   attemptDot:     { width: 12, height: 12, borderRadius: 6, backgroundColor: '#10b981' },
   attemptDotUsed: { backgroundColor: '#ef4444' },
-  attemptsText:   { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
+  attemptsText:   { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600' },
 
   // ── Bouton annuler flottant ──────────────────────────────────────────
   floatCancel: { position: 'absolute', top: 12, right: 12 },
@@ -665,45 +634,52 @@ const styles = StyleSheet.create({
     width: '100%', maxWidth: 320,
     backgroundColor: '#1e293b',
     borderRadius: 16, borderWidth: 2,
-    padding: 22, alignItems: 'center', gap: 8,
+    padding: 24, alignItems: 'center', gap: 8,
   },
-  scoreValue: { fontSize: 52, fontWeight: '900' },
-  scoreLabel: { color: 'rgba(255,255,255,0.55)', fontSize: 13 },
-  scoreDesc:  { fontSize: 14, fontWeight: '600', textAlign: 'center' },
-  scoreBar:   { width: '100%', height: 8, borderRadius: 4, marginTop: 8, overflow: 'hidden' },
-  scoreBarFill: { height: 8, borderRadius: 4 },
+  scoreValue: { fontSize: 56, fontWeight: '900' },
+  scoreLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 13 },
+  scoreDesc:  { fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  scoreBar:   { width: '100%', height: 10, borderRadius: 5, marginTop: 8, overflow: 'hidden' },
+  scoreBarFill: { height: 10, borderRadius: 5 },
 
   errorText: { color: '#fca5a5', fontSize: 13, textAlign: 'center', paddingHorizontal: 16 },
 
-  retrySection: { alignItems: 'center', gap: 8 },
-  retryInfo:    { color: 'rgba(255,255,255,0.65)', fontSize: 13 },
+  retrySection: { alignItems: 'center', gap: 10 },
+  retryInfo:    { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
   retryBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#2563eb', borderRadius: 10,
-    paddingHorizontal: 24, paddingVertical: 12,
+    backgroundColor: '#2563eb', borderRadius: 12,
+    paddingHorizontal: 28, paddingVertical: 14,
   },
-  retryBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  retryBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 
   successSection: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   successText:    { color: '#10b981', fontSize: 16, fontWeight: '700' },
 
-  cancelSmall: { marginTop: 8 },
-  cancelSmallText: { color: 'rgba(255,255,255,0.35)', fontSize: 12, textDecorationLine: 'underline' },
+  cancelSmall:     { marginTop: 8 },
+  cancelSmallText: { color: 'rgba(255,255,255,0.3)', fontSize: 12, textDecorationLine: 'underline' },
 
-  // ── Permission refusée ───────────────────────────────────────────────
-  permissionContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16, padding: 32, backgroundColor: '#0f172a' },
-  permissionTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  permissionText:  { color: 'rgba(255,255,255,0.65)', fontSize: 14, textAlign: 'center' },
-
-  // ── Bloqué ───────────────────────────────────────────────────────────
-  blockedContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 32, backgroundColor: '#0f172a' },
-  blockedTitle:     { color: '#ef4444', fontSize: 24, fontWeight: '900' },
-  blockedText:      { color: '#fff', fontSize: 16, fontWeight: '600', textAlign: 'center' },
-  blockedSubText:   { color: 'rgba(255,255,255,0.55)', fontSize: 13, textAlign: 'center' },
-
+  // ── Bouton annuler ───────────────────────────────────────────────────
   cancelBtn: {
-    marginTop: 16, backgroundColor: '#374151', borderRadius: 10,
-    paddingHorizontal: 28, paddingVertical: 12,
+    backgroundColor: '#334155', borderRadius: 10,
+    paddingHorizontal: 24, paddingVertical: 12, marginTop: 8,
   },
   cancelText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+
+  // ── Permission refusée ───────────────────────────────────────────────
+  permissionContainer: {
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    gap: 16, padding: 32, backgroundColor: '#0f172a',
+  },
+  permissionTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
+  permissionText:  { color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center' },
+
+  // ── Bloqué ───────────────────────────────────────────────────────────
+  blockedContainer: {
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    gap: 12, padding: 32, backgroundColor: '#0f172a',
+  },
+  blockedTitle:    { color: '#ef4444', fontSize: 24, fontWeight: '900' },
+  blockedText:     { color: '#fff', fontSize: 16, textAlign: 'center' },
+  blockedSubText:  { color: 'rgba(255,255,255,0.5)', fontSize: 13, textAlign: 'center' },
 });
