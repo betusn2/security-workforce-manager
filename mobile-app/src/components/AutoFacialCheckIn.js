@@ -278,7 +278,7 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
     try {
       const res = await facialAPI.verifyCheckin({
         userId,
-        photo: `data:image/jpeg;base64,${compressed.base64}`,
+        image: `data:image/jpeg;base64,${compressed.base64}`,
       });
 
       const data      = res.data?.data || res.data;

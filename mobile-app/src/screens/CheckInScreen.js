@@ -243,9 +243,10 @@ const CheckInScreen = ({ route, navigation }) => {
       setEnrichedDeviceInfo(deviceInfo);
       console.log('📱 Device Info:', deviceInfo);
       
-      // 4. Charger userId depuis AsyncStorage
+      // 4. Charger userId — priorité SecureStore (même clé que initData)
       try {
-        const userDataStr = await AsyncStorage.getItem('checkInUser');
+        const userDataStr = await SecureStore.getItemAsync('checkInUser')
+                         || await AsyncStorage.getItem('checkInUser');
         if (userDataStr) {
           const userData = JSON.parse(userDataStr);
           setUserId(userData.id);
@@ -1237,7 +1238,7 @@ const CheckInScreen = ({ route, navigation }) => {
           {autoFacialActive && (
             <View style={{ height: 380, borderRadius: 12, overflow: 'hidden', marginTop: 8 }}>
               <AutoFacialCheckIn
-                userId={userId}
+                userId={userId || userProfile?.id}
                 onSuccess={(score, photo) => {
                   setFacialScore(score);
                   setCapturedPhoto(photo);
