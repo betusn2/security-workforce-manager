@@ -754,12 +754,14 @@ const CheckInScreen = ({ route, navigation }) => {
   };
 
   // ── Submit check-in (mêmes champs que web attendanceAPI.checkIn) ──
-  const submitCheckIn = async (type = 'in') => {
+  const submitCheckIn = async (type = 'in', _photo = null, _score = null) => {
+    const photo = _photo || capturedPhoto;
+    const score = _score ?? facialScore;
     if (!location) {
       Alert.alert('GPS requis', 'Position GPS non disponible. Réessayez.');
       return;
     }
-    if (!capturedPhoto) {
+    if (!photo) {
       Alert.alert('Photo requise', 'Prenez une photo de vérification avant de pointer.');
       return;
     }
@@ -771,10 +773,10 @@ const CheckInScreen = ({ route, navigation }) => {
           assignmentId:         selectedAssign?.id,
           latitude:             location.latitude,
           longitude:            location.longitude,
-          checkInPhoto:         `data:image/jpeg;base64,${capturedPhoto.base64}`,
+          checkInPhoto:         `data:image/jpeg;base64,${photo.base64}`,
           checkInMethod:        'facial',
           facialVerified:       true,
-          facialMatchScore:     facialScore != null ? facialScore / 100 : 0.95,
+          facialMatchScore:     score != null ? score / 100 : 0.95,
           isWithinGeofence,
           distanceFromLocation: distance,
           deviceInfo: {
@@ -818,7 +820,7 @@ const CheckInScreen = ({ route, navigation }) => {
           await attendanceAPI.checkOut(todayAttendance.id, {
             latitude: location.latitude,
             longitude: location.longitude,
-            checkOutPhoto: `data:image/jpeg;base64,${capturedPhoto.base64}`,
+            checkOutPhoto: `data:image/jpeg;base64,${photo.base64}`,
             checkOutMethod: 'facial',
           });
           soundEffects.playCheckOut();
@@ -1303,9 +1305,9 @@ const CheckInScreen = ({ route, navigation }) => {
               : 'Pointage sécurisé par reconnaissance faciale automatique'}
           </Text>
 
-          {/* Auto Facial CheckIn en plein écran (modal overlay) */}
+          {/* Auto Facial CheckIn — plein ecran modal avec auto-soumission */}
           {autoFacialActive && (
-            <View style={{ height: 380, borderRadius: 12, overflow: 'hidden', marginTop: 8 }}>
+            <View style={[StyleSheet.absoluteFill, { zIndex: 999, elevation: 20 }]}>
               <AutoFacialCheckIn
                 userId={userId || userProfile?.id}
                 onSuccess={(score, photo) => {
@@ -1313,6 +1315,8 @@ const CheckInScreen = ({ route, navigation }) => {
                   setCapturedPhoto(photo);
                   setFaceDetected(true);
                   setAutoFacialActive(false);
+                  // Auto-soumission immediate apres verification faciale >= 50%
+                  setTimeout(() => submitCheckIn('in', photo, score), 400);
                 }}
                 onMaxAttempts={() => {
                   setFacialBlocked(true);

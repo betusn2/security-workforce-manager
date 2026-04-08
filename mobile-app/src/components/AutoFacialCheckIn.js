@@ -1,18 +1,12 @@
 /**
- * 🎭 AUTO FACIAL CHECK-IN COMPONENT — v2 (Guide Temps Réel)
- * ===================================================
- * Reconnaissance Faciale AUTOMATIQUE — 0 clic requis.
- * Interface guidée en temps réel comme la version web.
- *
- * Workflow :
- *  1. Ouvre caméra frontale automatiquement
- *  2. Affiche cadre OVALE de guidage avec messages dynamiques
- *  3. Compte à rebours 3 → 0 → capture automatique
- *  4. Envoie photo au backend /api/face-recognition/verify
- *  5. Affiche score avec couleur (vert/orange/rouge)
- *  6. Si score >= 50% → succès → callback onSuccess
- *  7. Si score < 50%  → échec  → retry (max 3 tentatives)
- *  8. Si 3 échecs     → bloque et appelle onMaxAttempts
+ * AUTO FACIAL CHECK-IN — v3 Analyse Temps Reel
+ * =============================================
+ * Reconnaissance CONTINUE — 0 clic requis.
+ *  - Capture toutes les 1.6s (pas de compte a rebours)
+ *  - Guide intelligent : lunettes, eclairage, distance, position
+ *  - Score anime en temps reel
+ *  - Validation AUTOMATIQUE des que score >= 50%
+ *  - Succes immediat -> callback onSuccess -> auto-soumission du pointage
  *
  * Props :
  *   userId        : ID de l'utilisateur
@@ -30,6 +24,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Dimensions,
+  Vibration,
 } from 'react-native';
 import { Camera, CameraType } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -39,554 +34,350 @@ import { facialAPI } from '../services/api';
 const { width: W, height: H } = Dimensions.get('window');
 
 // ── Config ────────────────────────────────────────────────────────────────
-const COUNTDOWN_SEC  = 3;
-const MIN_SCORE      = 50;
-const MAX_ATTEMPTS   = 3;
-const RETRY_DELAY_MS = 2000;
+const MIN_SCORE   = 50;    // seuil de validation (%)
+const MAX_NO_FACE = 8;     // frames sans visage avant abandon
+const CAPTURE_MS  = 1600;  // intervalle entre captures (ms)
 
-// Ovale centré, adapté à l'écran
-const OVAL_W = Math.round(W * 0.62);
-const OVAL_H = Math.round(OVAL_W * 1.3);
+// ── Ovale centre horizontal & vertical ────────────────────────────────────
+const OVAL_W    = Math.round(W * 0.64);
+const OVAL_H    = Math.round(OVAL_W * 1.28);
+const OVAL_TOP  = Math.round((H - OVAL_H) / 2 - 45);
+const OVAL_LEFT = Math.round((W - OVAL_W) / 2);
 
-// ── Phases de guidage ─────────────────────────────────────────────────────
-const GUIDE_PHASES = [
-  { color: '#ef4444', icon: 'scan-outline',     msg: "Placez votre visage dans le cadre"  },
-  { color: '#f59e0b', icon: 'eye-outline',       msg: 'Centrez et regardez la caméra'      },
-  { color: '#eab308', icon: 'body-outline',      msg: 'Restez parfaitement immobile...'    },
-  { color: '#10b981', icon: 'checkmark-circle',  msg: 'Parfait ! Capture en cours...'      },
-];
+// ── Messages de guidage ────────────────────────────────────────────────────
+const GUIDE = {
+  init:     { icon: 'scan-outline',          msg: 'Positionnez votre visage dans le cadre',        color: '#64748b' },
+  noFace:   { icon: 'scan-outline',          msg: 'Placez votre visage dans le cadre',             color: '#ef4444' },
+  tooFar:   { icon: 'arrow-forward-outline', msg: 'Rapprochez-vous de la camera',                  color: '#ef4444' },
+  glasses:  { icon: 'glasses-outline',       msg: 'Retirez vos lunettes / ameliorez l\'eclairage', color: '#f59e0b' },
+  lighting: { icon: 'sunny-outline',         msg: 'Ameliorez l\'eclairage (evitez les ombres)',    color: '#f59e0b' },
+  almost:   { icon: 'ellipse-outline',       msg: 'Presque ! Restez parfaitement immobile...',     color: '#eab308' },
+  good:     { icon: 'checkmark-circle',      msg: 'Identite confirmee !',                          color: '#10b981' },
+  server:   { icon: 'cloud-offline-outline', msg: 'Connexion en cours... Patientez',               color: '#64748b' },
+};
 
-// ── Score Card ────────────────────────────────────────────────────────────
-function ScoreCard({ score }) {
-  const color = score >= 70 ? '#10b981' : score >= MIN_SCORE ? '#f59e0b' : '#ef4444';
-  const icon  = score >= MIN_SCORE ? 'checkmark-circle' : 'close-circle';
-  const label = score >= 70  ? 'Excellente correspondance'
-              : score >= MIN_SCORE ? 'Correspondance acceptable'
-              : 'Correspondance insuffisante';
-  return (
-    <View style={[styles.scoreCard, { borderColor: color }]}>
-      <Ionicons name={icon} size={44} color={color} />
-      <Text style={[styles.scoreValue, { color }]}>{score}%</Text>
-      <Text style={styles.scoreLabel}>Score de correspondance</Text>
-      <Text style={[styles.scoreDesc, { color }]}>{label}</Text>
-      <View style={[styles.scoreBar, { backgroundColor: `${color}33` }]}>
-        <View style={[styles.scoreBarFill, { width: `${Math.min(score, 100)}%`, backgroundColor: color }]} />
-      </View>
-    </View>
-  );
-}
-
-// ── Face Guide Overlay centré ─────────────────────────────────────────────
-function FaceGuide({ countdown, isCapturing }) {
-  const pulseAnim  = useRef(new Animated.Value(1)).current;
-  const glowAnim   = useRef(new Animated.Value(0.5)).current;
-  const msgOpacity = useRef(new Animated.Value(1)).current;
-  const flashAnim  = useRef(new Animated.Value(1)).current;
-
-  const phaseIdx = isCapturing ? 3 : Math.max(0, Math.min(3, COUNTDOWN_SEC - countdown));
-  const phase    = GUIDE_PHASES[phaseIdx];
-
-  useEffect(() => {
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.04, duration: 700, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1,    duration: 700, useNativeDriver: true }),
-      ])
-    );
-    anim.start();
-    return () => anim.stop();
-  }, []);
-
-  useEffect(() => {
-    if (phaseIdx === 3) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(glowAnim, { toValue: 1,   duration: 300, useNativeDriver: true }),
-          Animated.timing(glowAnim, { toValue: 0.2, duration: 300, useNativeDriver: true }),
-        ])
-      ).start();
-    } else {
-      glowAnim.setValue(0.5);
-    }
-  }, [phaseIdx]);
-
-  useEffect(() => {
-    if (isCapturing) {
-      Animated.sequence([
-        Animated.timing(flashAnim, { toValue: 0.1, duration: 80,  useNativeDriver: true }),
-        Animated.timing(flashAnim, { toValue: 1,   duration: 250, useNativeDriver: true }),
-      ]).start();
-    }
-  }, [isCapturing]);
-
-  useEffect(() => {
-    Animated.sequence([
-      Animated.timing(msgOpacity, { toValue: 0, duration: 100, useNativeDriver: true }),
-      Animated.timing(msgOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-    ]).start();
-  }, [phaseIdx]);
-
-  // Vignette hors-ovale : 4 zones sombres (haut, bas, gauche, droite)
-  // Chaque zone est positionnée de façon absolue autour de l'ovale centré
-  const ovalTop  = (H - OVAL_H) / 2 - 60; // décalé légèrement vers le haut
-  const ovalLeft = (W - OVAL_W) / 2;
-
-  return (
-    <Animated.View style={[StyleSheet.absoluteFill, { opacity: flashAnim }]} pointerEvents="none">
-
-      {/* Zone sombre HAUT */}
-      <View style={[styles.vigZone, { top: 0, left: 0, right: 0, height: ovalTop }]} />
-
-      {/* Zone sombre BAS */}
-      <View style={[styles.vigZone, {
-        top: ovalTop + OVAL_H, left: 0, right: 0, bottom: 0,
-        justifyContent: 'flex-start', alignItems: 'center', paddingTop: 14,
-      }]}>
-        {/* Message de guidage */}
-        <Animated.View style={[styles.guidanceRow, { opacity: msgOpacity }]}>
-          <Ionicons name={phase.icon} size={16} color={phase.color} style={{ marginRight: 6 }} />
-          <Text style={[styles.guidanceMsg, { color: phase.color }]}>{phase.msg}</Text>
-        </Animated.View>
-
-        {/* Dots de phase */}
-        <View style={styles.phaseDotsRow}>
-          {GUIDE_PHASES.map((p, i) => (
-            <View key={i} style={[
-              styles.phaseDot,
-              { backgroundColor: i <= phaseIdx ? p.color : 'rgba(255,255,255,0.2)', width: i === phaseIdx ? 20 : 8 },
-            ]} />
-          ))}
-        </View>
-
-        <Text style={styles.lightingTip}>Bonne lumière • 30-60 cm • Visage dégagé</Text>
-      </View>
-
-      {/* Zone sombre GAUCHE */}
-      <View style={[styles.vigZone, { top: ovalTop, left: 0, width: ovalLeft, height: OVAL_H }]} />
-
-      {/* Zone sombre DROITE */}
-      <View style={[styles.vigZone, { top: ovalTop, right: 0, left: ovalLeft + OVAL_W, height: OVAL_H }]} />
-
-      {/* Cadre ovale centré */}
-      <Animated.View style={[
-        styles.ovalOuter,
-        {
-          position: 'absolute',
-          top: ovalTop, left: ovalLeft,
-          width: OVAL_W, height: OVAL_H,
-          borderColor: phase.color,
-          transform: [{ scale: pulseAnim }],
-        },
-      ]}>
-        {/* Anneau halo */}
-        <Animated.View style={[
-          styles.ovalGlow,
-          { borderColor: phase.color, opacity: glowAnim },
-        ]} />
-
-        {/* Compteur ou icône */}
-        {!isCapturing && countdown > 0 && (
-          <Text style={styles.countdownNum}>{countdown}</Text>
-        )}
-        {!isCapturing && countdown === 0 && (
-          <Ionicons name="camera" size={36} color="#10b981" />
-        )}
-        {isCapturing && <ActivityIndicator size="large" color="#fff" />}
-      </Animated.View>
-    </Animated.View>
-  );
-}
-
-// ── Composant principal ─────────────────────────────────────────────────
 export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, onCancel }) {
-  const [permission, setPermission]     = useState(null);
-  const [phase,      setPhase]          = useState('init'); // init|countdown|capturing|verifying|result|blocked
-  const [countdown,  setCountdown]      = useState(COUNTDOWN_SEC);
-  const [attempts,   setAttempts]       = useState(0);
-  const [score,      setScore]          = useState(null);
-  const [verified,   setVerified]       = useState(false);
-  const [errorMsg,   setErrorMsg]       = useState('');
+  const [permission, setPermission] = useState(null);
+  const [phase,      setPhase]      = useState('init');   // init|scanning|success|blocked
+  const [liveScore,  setLiveScore]  = useState(null);
+  const [guide,      setGuide]      = useState(GUIDE.init);
+  const [scanning,   setScanning]   = useState(false);
+
   const cameraRef   = useRef(null);
   const cameraReady = useRef(false);
-  const countdownRef = useRef(null);
-
-  // Refs pour éviter les stale closures (useCallback avec [] deps)
+  const intervalRef = useRef(null);
+  const inFlight    = useRef(false);
+  const noFaceCount = useRef(0);
+  const lowCount    = useRef(0);
   const userIdRef   = useRef(userId);
-  const attemptsRef = useRef(0);
   useEffect(() => { userIdRef.current = userId; }, [userId]);
-  useEffect(() => { attemptsRef.current = attempts; }, [attempts]);
 
-  // ── 1. Demander permission caméra dès le montage ──────────────────────
+  // ── Animations ────────────────────────────────────────────────────────
+  const scoreAnim   = useRef(new Animated.Value(0)).current;
+  const pulseAnim   = useRef(new Animated.Value(1)).current;
+  const successAnim = useRef(new Animated.Value(0)).current;
+
+  // Pulsation de l'ovale
+  useEffect(() => {
+    const a = Animated.loop(Animated.sequence([
+      Animated.timing(pulseAnim, { toValue: 1.035, duration: 900, useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1,     duration: 900, useNativeDriver: true }),
+    ]));
+    a.start();
+    return () => a.stop();
+  }, []);
+
+  // ── Permission camera ─────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       const { status } = await Camera.requestCameraPermissionsAsync();
       setPermission(status === 'granted');
       if (status === 'granted') {
-        // Court délai pour laisser la caméra s'initialiser
-        setTimeout(() => startCountdown(), 800);
+        setTimeout(() => setPhase('scanning'), 900);
       }
     })();
-    return () => clearInterval(countdownRef.current);
+    return () => clearInterval(intervalRef.current);
   }, []);
 
-  // ── 2. Compte à rebours ──────────────────────────────────────────────
-  const startCountdown = useCallback(() => {
-    setPhase('countdown');
-    setCountdown(COUNTDOWN_SEC);
-    let remaining = COUNTDOWN_SEC;
-    clearInterval(countdownRef.current);
-    countdownRef.current = setInterval(() => {
-      remaining -= 1;
-      setCountdown(remaining);
-      if (remaining <= 0) {
-        clearInterval(countdownRef.current);
-        captureAndVerify();
-      }
-    }, 1000);
+  // ── Boucle de capture (demarre quand phase='scanning') ────────────────
+  useEffect(() => {
+    if (phase === 'scanning') {
+      clearInterval(intervalRef.current);
+      const t = setTimeout(() => {
+        doCapture();
+        intervalRef.current = setInterval(doCapture, CAPTURE_MS);
+      }, 700);
+      return () => { clearTimeout(t); clearInterval(intervalRef.current); };
+    } else {
+      clearInterval(intervalRef.current);
+    }
+  }, [phase]);
+
+  // ── Guide intelligent ─────────────────────────────────────────────────
+  const computeGuide = useCallback((faceDetected, score) => {
+    if (!faceDetected) return GUIDE.noFace;
+    if (score < 20)         return lowCount.current >= 3 ? GUIDE.glasses : GUIDE.tooFar;
+    if (score < 35)         return GUIDE.lighting;
+    if (score < MIN_SCORE)  return GUIDE.almost;
+    return GUIDE.good;
   }, []);
 
-  // ── 3. Capture automatique ───────────────────────────────────────────
-  const captureAndVerify = useCallback(async () => {
-    setPhase('capturing');
+  // ── Capture + analyse ─────────────────────────────────────────────────
+  const doCapture = useCallback(async () => {
+    if (inFlight.current)                          return;
+    if (!cameraRef.current || !cameraReady.current) return;
+
+    inFlight.current = true;
+    setScanning(true);
+
     try {
-      if (!cameraRef.current) throw new Error('Caméra non disponible');
-
-      // Attendre que la caméra soit prête (Android)
-      if (!cameraReady.current) {
-        await new Promise(resolve => setTimeout(resolve, 700));
-      }
-
-      // Prendre la photo — NE PAS utiliser skipProcessing sur Android
-      // (évite les images tournées 90° qui bloquent la détection CompreFace)
       const raw = await cameraRef.current.takePictureAsync({
-        quality: 0.92,
+        quality: 0.88,
         base64: false,
       });
 
-      // Redimensionner à 800px (résolution suffisante pour CompreFace)
-      // compress: 0.88 conserve la qualité faciale nécessaire
       const compressed = await ImageManipulator.manipulateAsync(
         raw.uri,
-        [{ resize: { width: 800 } }],
-        { compress: 0.88, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        [{ resize: { width: 640 } }],
+        { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true }
       );
 
-      setPhase('verifying');
-      await verifyFace(compressed);
-    } catch (err) {
-      console.error('Erreur capture:', err);
-      setErrorMsg('Erreur lors de la capture. Réessayez.');
-      setPhase('result');
-      setScore(0);
-    }
-  }, []);
-
-  // ── 4. Vérification côté backend ─────────────────────────────────────
-  const verifyFace = useCallback(async (compressed) => {
-    // Lire depuis les refs pour avoir les valeurs ACTUELLES (évite stale closure)
-    const currentUserId  = userIdRef.current;
-    const currentAttempts = attemptsRef.current;
-
-    console.log('[FacialVerif] userId=', currentUserId, 'attempts=', currentAttempts);
-
-    if (!currentUserId) {
-      console.error('[FacialVerif] userId null — impossible de vérifier');
-      setErrorMsg('Session expirée — veuillez vous reconnecter.');
-      setScore(0);
-      setPhase('result');
-      return;
-    }
-
-    try {
-      const res = await facialAPI.verifyCheckin({
-        userId: currentUserId,
-        image: `data:image/jpeg;base64,${compressed.base64}`,
+      const res  = await facialAPI.verifyCheckin({
+        userId: userIdRef.current,
+        image:  `data:image/jpeg;base64,${compressed.base64}`,
       });
 
-      const data      = res.data?.data || res.data;
-      const rawScore  = data?.score ?? data?.similarity ?? data?.confidence ?? 0;
-      const pct       = typeof rawScore === 'number'
-        ? (rawScore <= 1 ? Math.round(rawScore * 100) : Math.round(rawScore))
+      const data  = res.data?.data || res.data;
+      const raw_s = data?.score ?? data?.similarity ?? data?.confidence ?? 0;
+      const score = typeof raw_s === 'number'
+        ? (raw_s <= 1 ? Math.round(raw_s * 100) : Math.round(raw_s))
         : 0;
 
-      console.log('[FacialVerif] score=', pct, 'faceDetected=', data?.faceDetected, 'errorCode=', data?.errorCode);
+      const faceOk = data?.faceDetected !== false && data?.errorCode !== 'NO_FACE';
+      console.log('[FacialRT] score=', score, 'face=', faceOk, 'errorCode=', data?.errorCode);
 
-      // Cas spécial : aucun visage détecté dans l'image
-      if (data?.errorCode === 'NO_FACE' || (!data?.faceDetected && pct === 0)) {
-        setErrorMsg('Aucun visage détecté — repositionnez-vous et améliorez l\'éclairage.');
-      }
+      // Score anime
+      setLiveScore(score);
+      Animated.timing(scoreAnim, {
+        toValue:  score / 100,
+        duration: 350,
+        useNativeDriver: false,
+      }).start();
 
-      setScore(pct);
-      setVerified(pct >= MIN_SCORE);
-      setPhase('result');
+      // Compteur scores bas (< 25) pour detecter lunettes/eclairage
+      if (score < 25) lowCount.current += 1;
+      else            lowCount.current  = 0;
 
-      if (pct >= MIN_SCORE) {
-        // Succès — appeler callback après 1.5s pour laisser l'animation
-        setTimeout(() => onSuccess(pct, compressed), 1500);
-      } else {
-        // Échec — préparer re-tentative
-        const newAttempts = currentAttempts + 1;
-        setAttempts(newAttempts);
-        attemptsRef.current = newAttempts;
-        if (newAttempts >= MAX_ATTEMPTS) {
-          setPhase('blocked');
-          setTimeout(() => onMaxAttempts?.(), 2000);
-        }
-        // Sinon retry button visible dans render
-      }
-    } catch (err) {
-      console.error('Erreur vérification faciale:', err);
-      console.error('Response data:', err.response?.data);
+      setGuide(computeGuide(faceOk, score));
 
-      const errorCode = err.response?.data?.errorCode;
-      const debugMsg  = err.response?.data?.debug || '';
-
-      // SERVICE_UNAVAILABLE = serveur en démarrage → retry auto sans consommer une tentative
-      if (err.response?.status === 503 || errorCode === 'SERVICE_UNAVAILABLE') {
-        setErrorMsg('Serveur en cours de démarrage… Nouvelle tentative dans 5s');
-        setScore(null);
-        setPhase('result');
-        setTimeout(() => {
-          setScore(null);
-          setErrorMsg('');
-          setPhase('init');
-          setTimeout(() => startCountdown(), 500);
-        }, 5000);
+      // ─── SUCCES → validation immediate ──────────────────────────────
+      if (score >= MIN_SCORE) {
+        clearInterval(intervalRef.current);
+        Vibration.vibrate([0, 80, 60, 80]);
+        setPhase('success');
+        Animated.spring(successAnim, {
+          toValue: 1, tension: 65, friction: 8, useNativeDriver: true,
+        }).start();
+        // Appel immediat → le parent soumet le pointage automatiquement
+        setTimeout(() => onSuccess(score, compressed), 1000);
         return;
       }
 
-      const newAttempts = currentAttempts + 1;
-      setAttempts(newAttempts);
-      attemptsRef.current = newAttempts;
-      const msg = err.response?.data?.message || 'Vérification impossible. Vérifiez votre connexion.';
-      setErrorMsg(debugMsg ? `${msg} (${debugMsg})` : msg);
-      setScore(0);
-      setPhase('result');
-      if (newAttempts >= MAX_ATTEMPTS) {
-        setPhase('blocked');
-        setTimeout(() => onMaxAttempts?.(), 2000);
+      // Compteur absence visage
+      if (!faceOk) {
+        noFaceCount.current += 1;
+        if (noFaceCount.current >= MAX_NO_FACE) {
+          clearInterval(intervalRef.current);
+          setPhase('blocked');
+          setTimeout(() => onMaxAttempts?.(), 1200);
+        }
+      } else {
+        noFaceCount.current = 0;
       }
+
+    } catch (err) {
+      const ec = err.response?.data?.errorCode;
+      if (err.response?.status === 503 || ec === 'SERVICE_UNAVAILABLE') {
+        setGuide(GUIDE.server);
+      } else {
+        console.error('[FacialRT]', err.response?.data?.debug || err.message);
+      }
+    } finally {
+      inFlight.current = false;
+      setScanning(false);
     }
-  }, [onSuccess, onMaxAttempts]);
+  }, [onSuccess, onMaxAttempts, computeGuide]);
 
-  // ── Retry ────────────────────────────────────────────────────────────
-  const handleRetry = useCallback(() => {
-    setScore(null);
-    setErrorMsg('');
-    setVerified(false);
-    // Délai avant relancement
-    setTimeout(() => startCountdown(), RETRY_DELAY_MS);
-  }, [startCountdown]);
+  // ── RENDU ─────────────────────────────────────────────────────────────
 
-  // ── Render ───────────────────────────────────────────────────────────
   if (permission === false) {
     return (
-      <View style={styles.permissionContainer}>
+      <View style={styles.centered}>
         <Ionicons name="camera-off-outline" size={48} color="#ef4444" />
-        <Text style={styles.permissionTitle}>Caméra non autorisée</Text>
-        <Text style={styles.permissionText}>
-          Autorisez l'accès à la caméra dans les paramètres pour effectuer la reconnaissance faciale.
-        </Text>
+        <Text style={styles.permTitle}>Camera non autorisee</Text>
+        <Text style={styles.permText}>Autorisez l'acces dans les parametres.</Text>
         <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
-          <Text style={styles.cancelText}>Annuler</Text>
+          <Text style={styles.cancelTxt}>Annuler</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  // Écran bloqué après 3 échecs
   if (phase === 'blocked') {
     return (
-      <View style={styles.blockedContainer}>
+      <View style={styles.centered}>
         <Ionicons name="lock-closed" size={56} color="#ef4444" />
-        <Text style={styles.blockedTitle}>Accès refusé</Text>
-        <Text style={styles.blockedText}>Nombre maximum de tentatives atteint.</Text>
-        <Text style={styles.blockedSubText}>
-          Contactez votre superviseur ou essayez ultérieurement.
-        </Text>
+        <Text style={styles.blockedTitle}>Acces refuse</Text>
+        <Text style={styles.blockedTxt}>Impossible de detecter votre visage.</Text>
+        <Text style={styles.blockedSub}>Verifiez l'eclairage et la position.</Text>
         <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
-          <Text style={styles.cancelText}>Retour</Text>
+          <Text style={styles.cancelTxt}>Retour</Text>
         </TouchableOpacity>
       </View>
     );
   }
+
+  const ovalColor = liveScore === null ? '#475569'
+    : liveScore >= MIN_SCORE ? '#10b981'
+    : liveScore >= 35        ? '#eab308'
+    : liveScore >= 20        ? '#f59e0b'
+    :                          '#ef4444';
 
   return (
     <View style={styles.wrapper}>
-      {/* ── Caméra frontale ── */}
-      {(phase === 'countdown' || phase === 'capturing' || phase === 'init') && (
-        <View style={styles.cameraContainer}>
+
+      {/* ── Camera fullscreen ── */}
+      {phase !== 'success' && (
+        <>
           <Camera
             ref={cameraRef}
             style={StyleSheet.absoluteFill}
             type={CameraType.front}
             onCameraReady={() => { cameraReady.current = true; }}
           />
-          <FaceGuide countdown={countdown} isCapturing={phase === 'capturing'} />
 
-          {/* ── Barre supérieure : titre + statut ── */}
-          <View style={styles.infoBar}>
-            <View style={styles.infoBarLeft}>
-              <Ionicons name="person-circle-outline" size={18} color="#93c5fd" />
-              <Text style={styles.infoBarTitle}>Reconnaissance Faciale</Text>
+          {/* Vignettes sombres autour de l'ovale */}
+          <View style={[styles.vig, { top: 0, left: 0, right: 0, height: OVAL_TOP }]} />
+          <View style={[styles.vig, { top: OVAL_TOP + OVAL_H, left: 0, right: 0, bottom: 0 }]} />
+          <View style={[styles.vig, { top: OVAL_TOP, left: 0, width: OVAL_LEFT, height: OVAL_H }]} />
+          <View style={[styles.vig, { top: OVAL_TOP, right: 0, left: OVAL_LEFT + OVAL_W, height: OVAL_H }]} />
+
+          {/* Ovale pulse */}
+          <Animated.View style={[styles.ovalFrame, {
+            top: OVAL_TOP, left: OVAL_LEFT,
+            width: OVAL_W, height: OVAL_H,
+            borderColor: ovalColor,
+            transform: [{ scale: pulseAnim }],
+          }]}>
+            <View style={[styles.ovalHalo, { borderColor: ovalColor }]} />
+            {scanning && (
+              <View style={styles.analysisSpinner}>
+                <ActivityIndicator size="small" color="rgba(255,255,255,0.9)" />
+              </View>
+            )}
+          </Animated.View>
+
+          {/* Barre superieure */}
+          <View style={styles.topBar}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="person-circle-outline" size={16} color="#93c5fd" />
+              <Text style={styles.topBarTitle}>Reconnaissance Faciale</Text>
             </View>
-            <View style={styles.infoBarRight}>
-              <View style={[styles.statusDot, {
-                backgroundColor: phase === 'capturing' ? '#f59e0b'
-                               : phase === 'countdown'  ? '#10b981'
-                               : '#64748b',
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {scanning && <ActivityIndicator size="small" color="rgba(255,255,255,0.6)" />}
+              <View style={[styles.liveDot, {
+                backgroundColor: scanning ? '#f59e0b' : phase === 'scanning' ? '#10b981' : '#475569',
               }]} />
-              <Text style={styles.infoBarStatus}>
-                {phase === 'capturing' ? 'Capture...'
-                : phase === 'countdown' ? `${countdown}s`
-                : 'Prêt'}
-              </Text>
             </View>
           </View>
 
-          {/* ── Barre tentatives (bas) ── */}
-          <View style={styles.attemptsBar}>
-            <View style={styles.attemptDotsRow}>
-              {Array.from({ length: MAX_ATTEMPTS }).map((_, i) => (
-                <View key={i} style={[styles.attemptDot, i < attempts && styles.attemptDotUsed]} />
-              ))}
+          {/* Zone score + guide sous l'ovale */}
+          <View style={[styles.bottomZone, { top: OVAL_TOP + OVAL_H + 14 }]}>
+
+            {/* Barre de score */}
+            {liveScore !== null && (
+              <View style={styles.scoreLine}>
+                <View style={styles.scoreBarBg}>
+                  <Animated.View style={[styles.scoreBarFill, {
+                    width: scoreAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+                    backgroundColor: ovalColor,
+                  }]} />
+                  {/* Marqueur seuil 50% */}
+                  <View style={styles.marker50} />
+                </View>
+                <Text style={[styles.scoreNum, { color: ovalColor }]}>{liveScore}%</Text>
+              </View>
+            )}
+
+            {/* Message de guidage */}
+            <View style={[styles.guideRow, { borderColor: guide.color + '40' }]}>
+              <Ionicons name={guide.icon} size={14} color={guide.color} />
+              <Text style={[styles.guideTxt, { color: guide.color }]}>{guide.msg}</Text>
             </View>
-            <Text style={styles.attemptsText}>
-              {MAX_ATTEMPTS - attempts} tentative{MAX_ATTEMPTS - attempts > 1 ? 's' : ''} restante{MAX_ATTEMPTS - attempts > 1 ? 's' : ''}
-            </Text>
+
+            <Text style={styles.threshold}>Seuil {MIN_SCORE}% • Analyse automatique</Text>
           </View>
 
-          {/* ── Bouton annuler ── */}
+          {/* Bouton annuler */}
           <TouchableOpacity
-            style={styles.floatCancel}
-            onPress={() => { clearInterval(countdownRef.current); onCancel?.(); }}
+            style={styles.cancelFloat}
+            onPress={() => { clearInterval(intervalRef.current); onCancel?.(); }}
           >
-            <Ionicons name="close-circle" size={28} color="rgba(255,255,255,0.8)" />
+            <Ionicons name="close-circle" size={30} color="rgba(255,255,255,0.55)" />
           </TouchableOpacity>
-        </View>
+        </>
       )}
 
-      {/* ── Vérification en cours ── */}
-      {phase === 'verifying' && (
-        <View style={styles.verifyingContainer}>
-          <ActivityIndicator size="large" color="#3b82f6" />
-          <Text style={styles.verifyingText}>Vérification du visage en cours...</Text>
-          <Text style={styles.verifyingSubText}>Comparaison avec la base de données</Text>
-        </View>
-      )}
-
-      {/* ── Résultat ── */}
-      {phase === 'result' && (
-        <View style={styles.resultContainer}>
-          <ScoreCard score={score ?? 0} />
-
-          {errorMsg ? (
-            <Text style={styles.errorText}>{errorMsg}</Text>
-          ) : null}
-
-          {!verified && attempts < MAX_ATTEMPTS && (
-            <View style={styles.retrySection}>
-              <Text style={styles.retryInfo}>
-                Tentative {attempts}/{MAX_ATTEMPTS} — {MAX_ATTEMPTS - attempts} restante(s)
-              </Text>
-              <TouchableOpacity style={styles.retryBtn} onPress={handleRetry}>
-                <Ionicons name="refresh" size={18} color="#fff" />
-                <Text style={styles.retryBtnText}>Réessayer</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {verified && (
-            <View style={styles.successSection}>
-              <Ionicons name="checkmark-circle" size={24} color="#10b981" />
-              <Text style={styles.successText}>Identité vérifiée !</Text>
-            </View>
-          )}
-
-          <TouchableOpacity style={styles.cancelSmall} onPress={onCancel}>
-            <Text style={styles.cancelSmallText}>Annuler le pointage facial</Text>
-          </TouchableOpacity>
-        </View>
+      {/* ── Overlay succes ── */}
+      {phase === 'success' && (
+        <Animated.View style={[styles.successOverlay, { opacity: successAnim }]}>
+          <Animated.View style={[styles.successCircle, {
+            transform: [{ scale: successAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }) }],
+          }]}>
+            <Ionicons name="checkmark" size={72} color="#fff" />
+          </Animated.View>
+          <Text style={styles.successTitle}>Identite verifiee !</Text>
+          <Text style={styles.successScore}>{liveScore}% — Pointage en cours...</Text>
+          <ActivityIndicator size="small" color="rgba(255,255,255,0.6)" style={{ marginTop: 16 }} />
+        </Animated.View>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: { flex: 1, backgroundColor: '#0f172a' },
+  wrapper: { flex: 1, backgroundColor: '#000' },
 
-  // ── Caméra ──────────────────────────────────────────────────────────
-  cameraContainer: { flex: 1, position: 'relative', backgroundColor: '#000' },
-
-  // ── Vignette zones sombres (positionnées absolument autour de l'ovale) ──
-  vigZone: {
+  vig: {
     position: 'absolute',
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: 'rgba(0,0,0,0.60)',
   },
 
-  // ── Ovale centré ────────────────────────────────────────────────────
-  ovalOuter: {
+  ovalFrame: {
+    position: 'absolute',
     borderRadius: 1000,
     borderWidth: 3,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'visible',
   },
-  ovalGlow: {
+  ovalHalo: {
     position: 'absolute',
-    width: OVAL_W + 18,
+    width:  OVAL_W + 18,
     height: OVAL_H + 18,
     borderRadius: 1000,
-    borderWidth: 2.5,
-    opacity: 0.5,
+    borderWidth: 2,
+    opacity: 0.35,
+  },
+  analysisSpinner: {
+    position: 'absolute',
+    bottom: 12, right: 12,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 12,
+    padding: 5,
   },
 
-  // Chiffre du compte à rebours
-  countdownNum: {
-    fontSize: 64,
-    fontWeight: '900',
-    color: '#fff',
-    textShadowColor: 'rgba(0,0,0,0.9)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 10,
-  },
-
-  // ── Messages de guidage ──────────────────────────────────────────────
-  guidanceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  guidanceMsg: {
-    fontSize: 15,
-    fontWeight: '800',
-    textAlign: 'center',
-    letterSpacing: 0.2,
-  },
-
-  // Points de phase
-  phaseDotsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 10,
-  },
-  phaseDot: {
-    height: 8,
-    borderRadius: 4,
-  },
-
-  lightingTip: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 11,
-    textAlign: 'center',
-    marginTop: 8,
-  },
-
-  // ── Barre supérieure (info) ──────────────────────────────────────────
-  infoBar: {
+  topBar: {
     position: 'absolute',
     top: 0, left: 0, right: 0,
     flexDirection: 'row',
@@ -596,90 +387,112 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
   },
-  infoBarLeft:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  infoBarTitle: { color: '#e2e8f0', fontSize: 14, fontWeight: '700', marginLeft: 4 },
-  infoBarRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  infoBarStatus:{ color: 'rgba(255,255,255,0.75)', fontSize: 12 },
-  statusDot:    { width: 8, height: 8, borderRadius: 4 },
+  topBarTitle: { color: '#e2e8f0', fontSize: 13, fontWeight: '700' },
+  liveDot: { width: 8, height: 8, borderRadius: 4 },
 
-  // ── Barre tentatives ────────────────────────────────────────────────
-  attemptsBar: {
+  bottomZone: {
     position: 'absolute',
-    bottom: 10, left: 0, right: 0,
-    flexDirection: 'row',
+    left: 0, right: 0,
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: 20,
     gap: 10,
   },
-  attemptDotsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  attemptDot:     { width: 12, height: 12, borderRadius: 6, backgroundColor: '#10b981' },
-  attemptDotUsed: { backgroundColor: '#ef4444' },
-  attemptsText:   { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600' },
-
-  // ── Bouton annuler flottant ──────────────────────────────────────────
-  floatCancel: { position: 'absolute', top: 12, right: 12 },
-
-  // ── Vérification en cours ───────────────────────────────────────────
-  verifyingContainer: {
-    flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16, padding: 32,
+  scoreLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    gap: 10,
   },
-  verifyingText:    { color: '#fff', fontSize: 18, fontWeight: '600', textAlign: 'center' },
-  verifyingSubText: { color: 'rgba(255,255,255,0.55)', fontSize: 13, textAlign: 'center' },
-
-  // ── Résultat ─────────────────────────────────────────────────────────
-  resultContainer: {
-    flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, gap: 14,
+  scoreBarBg: {
+    flex: 1,
+    height: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 4,
+    overflow: 'visible',
+    position: 'relative',
   },
-  scoreCard: {
-    width: '100%', maxWidth: 320,
-    backgroundColor: '#1e293b',
-    borderRadius: 16, borderWidth: 2,
-    padding: 24, alignItems: 'center', gap: 8,
+  scoreBarFill: {
+    height: 8,
+    borderRadius: 4,
   },
-  scoreValue: { fontSize: 56, fontWeight: '900' },
-  scoreLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 13 },
-  scoreDesc:  { fontSize: 14, fontWeight: '700', textAlign: 'center' },
-  scoreBar:   { width: '100%', height: 10, borderRadius: 5, marginTop: 8, overflow: 'hidden' },
-  scoreBarFill: { height: 10, borderRadius: 5 },
-
-  errorText: { color: '#fca5a5', fontSize: 13, textAlign: 'center', paddingHorizontal: 16 },
-
-  retrySection: { alignItems: 'center', gap: 10 },
-  retryInfo:    { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
-  retryBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#2563eb', borderRadius: 12,
-    paddingHorizontal: 28, paddingVertical: 14,
+  marker50: {
+    position: 'absolute',
+    left: '50%',
+    top: -3,
+    width: 2,
+    height: 14,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderRadius: 1,
   },
-  retryBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  scoreNum: {
+    fontSize: 22,
+    fontWeight: '900',
+    minWidth: 52,
+    textAlign: 'right',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  guideRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.58)',
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  guideTxt: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  threshold: {
+    color: 'rgba(255,255,255,0.3)',
+    fontSize: 11,
+    textAlign: 'center',
+  },
 
-  successSection: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  successText:    { color: '#10b981', fontSize: 16, fontWeight: '700' },
+  cancelFloat: {
+    position: 'absolute',
+    top: 14, right: 14,
+  },
 
-  cancelSmall:     { marginTop: 8 },
-  cancelSmallText: { color: 'rgba(255,255,255,0.3)', fontSize: 12, textDecorationLine: 'underline' },
+  successOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(16,185,129,0.93)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 14,
+  },
+  successCircle: {
+    width: 120, height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#fff',
+  },
+  successTitle: { color: '#fff', fontSize: 28, fontWeight: '900' },
+  successScore: { color: 'rgba(255,255,255,0.8)', fontSize: 16, fontWeight: '600' },
 
-  // ── Bouton annuler ───────────────────────────────────────────────────
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 14,
+    padding: 32,
+    backgroundColor: '#0f172a',
+  },
+  permTitle:    { color: '#fff',     fontSize: 20, fontWeight: '700' },
+  permText:     { color: 'rgba(255,255,255,0.5)', fontSize: 13, textAlign: 'center' },
+  blockedTitle: { color: '#ef4444', fontSize: 24, fontWeight: '900' },
+  blockedTxt:   { color: '#fff',    fontSize: 15, textAlign: 'center' },
+  blockedSub:   { color: 'rgba(255,255,255,0.5)', fontSize: 13, textAlign: 'center' },
   cancelBtn: {
     backgroundColor: '#334155', borderRadius: 10,
-    paddingHorizontal: 24, paddingVertical: 12, marginTop: 8,
+    paddingHorizontal: 24, paddingVertical: 12, marginTop: 4,
   },
-  cancelText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-
-  // ── Permission refusée ───────────────────────────────────────────────
-  permissionContainer: {
-    flex: 1, justifyContent: 'center', alignItems: 'center',
-    gap: 16, padding: 32, backgroundColor: '#0f172a',
-  },
-  permissionTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  permissionText:  { color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center' },
-
-  // ── Bloqué ───────────────────────────────────────────────────────────
-  blockedContainer: {
-    flex: 1, justifyContent: 'center', alignItems: 'center',
-    gap: 12, padding: 32, backgroundColor: '#0f172a',
-  },
-  blockedTitle:    { color: '#ef4444', fontSize: 24, fontWeight: '900' },
-  blockedText:     { color: '#fff', fontSize: 16, textAlign: 'center' },
-  blockedSubText:  { color: 'rgba(255,255,255,0.5)', fontSize: 13, textAlign: 'center' },
+  cancelTxt: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
