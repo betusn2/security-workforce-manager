@@ -1,17 +1,18 @@
 /**
  * Face Recognition Service - Node.js Local Mode
- * Uses @vladmandic/face-api + sharp (pre-built binaries, NO canvas/libcairo deps)
+ * Uses @vladmandic/face-api + jimp (PURE JavaScript, zero native binaries)
  * Extracts 128-float face descriptors and compares them with euclidean distance
  * Identical algorithm to web CheckInOut.jsx → same match scores
  *
  * Models are bundled in backend/models/face-api/ (committed to repo)
- * Image decoding: sharp → raw RGB pixels → tf.Tensor3D (no canvas needed)
+ * Image decoding: jimp (pure JS) → raw RGBA pixels → RGB → tf.Tensor3D
+ * NO canvas, NO libcairo, NO sharp, NO native binaries required
  */
 
 const path = require('path');
 
 let faceapi = null;
-let sharpLib = null;
+let Jimp = null;
 let modelsLoaded = false;
 let initPromise = null;
 
@@ -22,7 +23,7 @@ const MATCH_THRESHOLD_SCORE = 50;
 const MODEL_DIR = path.join(__dirname, '..', '..', 'models', 'face-api');
 
 /**
- * Initialize face-api.js with sharp for image decoding (no canvas required)
+ * Initialize face-api.js with jimp for image decoding (pure JS, no native deps)
  */
 async function init() {
   if (modelsLoaded) return;
@@ -30,17 +31,17 @@ async function init() {
 
   initPromise = (async () => {
     try {
-      console.log('[FaceApiNode] Initializing (sharp + tfjs, no canvas)...');
+      console.log('[FaceApiNode] Initializing (jimp pure-JS, no canvas)...');
 
       // Pure JS TF.js backend (no native binaries needed)
       require('@tensorflow/tfjs');
 
-      // face-api.js Node build — we pass tf.Tensor3D directly, no canvas monkeyPatch
+      // face-api.js Node build — we pass tf.Tensor3D directly
       faceapi = require('@vladmandic/face-api/dist/face-api.node.js');
 
-      // sharp — pre-built binaries, decodes JPEG/PNG → raw RGB pixels
-      sharpLib = require('sharp');
-      console.log('[FaceApiNode] sharp loaded:', typeof sharpLib);
+      // jimp — 100% pure JavaScript, decodes JPEG/PNG → RGBA buffer, no system deps
+      Jimp = require('jimp');
+      console.log('[FaceApiNode] jimp loaded (pure JS)');
 
       console.log('[FaceApiNode] Loading models from:', MODEL_DIR);
 
@@ -52,7 +53,7 @@ async function init() {
       ]);
 
       modelsLoaded = true;
-      console.log('[FaceApiNode] ✅ Models loaded successfully (no canvas)');
+      console.log('[FaceApiNode] ✅ Models loaded successfully (pure JS, no native deps)');
     } catch (err) {
       initPromise = null; // allow retry
       const errMsg = err?.message ?? String(err);
@@ -67,7 +68,8 @@ async function init() {
 
 /**
  * Extract 128-float face descriptor from a base64 image
- * Uses sharp to decode JPEG → raw RGB pixels → tf.Tensor3D (no canvas needed)
+ * Uses jimp (pure JS) to decode JPEG → raw RGBA → RGB → tf.Tensor3D
+ * No canvas, no sharp, no native binaries. Works on ANY Node.js platform.
  * @param {string} base64Image - base64 JPEG/PNG (with or without data: prefix)
  * @returns {Float32Array|null}
  */
@@ -77,19 +79,25 @@ async function extractDescriptor(base64Image) {
   const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
   const buffer = Buffer.from(base64Data, 'base64');
 
-  // Decode image with sharp: resize to 640px wide (keep aspect), strip alpha, raw RGB
-  const { data, info } = await sharpLib(buffer)
-    .resize({ width: 640, fit: 'inside', withoutEnlargement: true })
-    .removeAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
+  // Jimp reads JPEG/PNG, resizes, returns RGBA pixel buffer (pure JS)
+  const img = await Jimp.read(buffer);
+  // Resize to max 640px wide to reduce memory / improve speed
+  if (img.bitmap.width > 640) {
+    img.resize(640, Jimp.AUTO);
+  }
 
-  // Create tf.Tensor3D from raw uint8 RGB data (shape [H, W, 3])
-  // face-api.js TinyFaceDetector expects uint8 values 0-255 as float32 tensor
-  const tensor = faceapi.tf.tensor3d(
-    new Uint8Array(data),
-    [info.height, info.width, 3]
-  );
+  const { width, height, data: rgba } = img.bitmap; // data = Uint8Array RGBA
+
+  // Convert RGBA → RGB (face-api.js tensor expects 3 channels)
+  const rgb = new Uint8Array(width * height * 3);
+  for (let i = 0, j = 0; i < rgba.length; i += 4, j += 3) {
+    rgb[j]     = rgba[i];     // R
+    rgb[j + 1] = rgba[i + 1]; // G
+    rgb[j + 2] = rgba[i + 2]; // B
+  }
+
+  // Create tf.Tensor3D [H, W, 3] — face-api.js accepts this directly
+  const tensor = faceapi.tf.tensor3d(rgb, [height, width, 3]);
 
   try {
     const detection = await faceapi
@@ -107,7 +115,7 @@ async function extractDescriptor(base64Image) {
 
     return detection.descriptor; // Float32Array[128]
   } finally {
-    faceapi.tf.dispose(tensor);
+    faceapi.tf.dispose(tensor); // free GPU/CPU memory
   }
 }
 
