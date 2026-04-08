@@ -231,44 +231,45 @@ export default function PermissionRequestScreen({ onDone }) {
       <SafeAreaView style={styles.safe}>
         <StatusBar barStyle="light-content" backgroundColor="#1e3a5f" />
         <View style={styles.gradient}>
-          <Animated.View style={[
-            styles.welcomeContainer,
-            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
-          ]}>
-            <AppLogo size="large" color="#60a5fa" textColor="#ffffff" />
+          {/* Zone scrollable */}
+          <Animated.ScrollView
+            contentContainerStyle={styles.welcomeScroll}
+            showsVerticalScrollIndicator={false}
+            style={{ flex: 1, opacity: fadeAnim }}
+          >
+            <View style={{ transform: [{ translateY: slideAnim }] }}>
+              <AppLogo size="medium" color="#60a5fa" textColor="#ffffff" />
 
-            <View style={styles.welcomeCard}>
-              <Text style={styles.welcomeTitle}>Autorisations nécessaires</Text>
+              <Text style={styles.welcomeTitle}>Autorisations requises</Text>
               <Text style={styles.welcomeText}>
-                Pour assurer votre sécurité et celle de vos collègues, cette application
-                a besoin de {PERMISSION_STEPS.length} autorisations.
-              </Text>
-              <Text style={styles.welcomeText}>
-                Chaque autorisation sera expliquée clairement. Vous pouvez les modifier
-                à tout moment dans les <Text style={styles.bold}>Paramètres</Text> de votre téléphone.
+                Pour votre sécurité et celle de vos collègues, accordez les {PERMISSION_STEPS.length} autorisations suivantes.
               </Text>
 
-              {/* Liste rapide */}
-              {PERMISSION_STEPS.map(step => (
+              {/* Liste compacte des permissions */}
+              {PERMISSION_STEPS.map((step, i) => (
                 <View key={step.key} style={styles.quickRow}>
-                  <Text style={styles.quickEmoji}>{step.emoji}</Text>
-                  <Text style={styles.quickLabel}>{step.title}</Text>
+                  <View style={[styles.quickBullet, { backgroundColor: step.color }]}>
+                    <Text style={styles.quickBulletNum}>{i + 1}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.quickLabel}>{step.title}</Text>
+                    <Text style={styles.quickDesc}>{step.desc}</Text>
+                  </View>
                 </View>
               ))}
             </View>
+          </Animated.ScrollView>
 
+          {/* Bouton FIXE en bas — toujours visible */}
+          <View style={styles.bottomBar}>
             <TouchableOpacity
-              style={[styles.btnStart, { marginTop: 24 }]}
+              style={styles.btnStart}
               onPress={startPermissions}
               activeOpacity={0.85}
             >
-              <Text style={styles.btnStartText}>🔑 Configurer les autorisations</Text>
+              <Text style={styles.btnStartText}>Autoriser tout et continuer</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity onPress={onDone} style={styles.skipBtn}>
-              <Text style={styles.skipText}>Ignorer pour l'instant</Text>
-            </TouchableOpacity>
-          </Animated.View>
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -353,45 +354,75 @@ const styles = StyleSheet.create({
   },
 
   // Bienvenue
-  welcomeContainer: {
-    flex: 1,
+  welcomeScroll: {
+    flexGrow: 1,
     alignItems: 'center',
-    padding: 24,
-    paddingTop: 40,
-  },
-  welcomeCard: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderRadius: 16,
     padding: 20,
-    marginTop: 28,
-    width: '100%',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    paddingBottom: 16,
   },
   welcomeTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 10,
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '800',
     textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 8,
+    letterSpacing: 0.5,
   },
   welcomeText: {
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: 14,
-    lineHeight: 22,
-    marginBottom: 8,
+    color: 'rgba(255,255,255,0.70)',
+    fontSize: 13.5,
+    lineHeight: 20,
     textAlign: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 4,
   },
-  bold: { fontWeight: '700', color: '#93c5fd' },
   quickRow: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
+    width: '100%',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  quickBullet: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
-    paddingVertical: 6,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+    marginRight: 12,
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  quickBulletNum: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  quickLabel: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  quickDesc: {
+    color: 'rgba(255,255,255,0.60)',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  // Barre bouton fixe en bas
+  bottomBar: {
+    padding: 16,
+    paddingBottom: 20,
+    backgroundColor: '#1e3a5f',
+    borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.1)',
   },
-  quickEmoji: { fontSize: 18, marginRight: 10 },
-  quickLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 14 },
 
   // Étape par étape
   stepCounter: {
@@ -503,8 +534,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.4,
   },
-  skipBtn: { marginTop: 14, padding: 8 },
-  skipText:  { color: 'rgba(255,255,255,0.45)', fontSize: 13 },
+
 
   // Loading
   loadingText: {

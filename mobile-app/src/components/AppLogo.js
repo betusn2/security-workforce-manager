@@ -60,58 +60,92 @@ export default function AppLogo({
     return () => pulse.stopAnimation();
   }, []);
 
-  // ─── Bouclier SVG (via caractères unicode + View stylisés) ──────────────────
-  const ShieldIcon = () => (
-    <Animated.View style={[styles.shieldWrap, { transform: [{ scale: pulse }] }]}>
-      {/* Halo externe */}
-      <View style={[
-        styles.shieldHalo,
-        {
-          width:  dims.shield * 1.6,
-          height: dims.shield * 1.6,
-          borderRadius: dims.shield * 0.8,
+  // ─── Badge sécurité dessiné avec des Views (aucun emoji) ────────────────────
+  const ShieldIcon = () => {
+    const bs  = dims.shield;       // badge size
+    const inn = bs * 0.68;         // inner ring size
+    const gps = dims.badge;        // GPS dot size
+    return (
+      <Animated.View style={[styles.shieldWrap, { transform: [{ scale: pulse }] }]}>
+        {/* Halo externe */}
+        <View style={[styles.shieldHalo, {
+          width: bs * 1.6, height: bs * 1.6,
+          borderRadius: bs * 0.8,
           backgroundColor: color + '18',
-        },
-      ]} />
-      {/* Halo interne */}
-      <View style={[
-        styles.shieldHaloInner,
-        {
-          width:  dims.shield * 1.25,
-          height: dims.shield * 1.25,
-          borderRadius: dims.shield * 0.625,
+        }]} />
+        {/* Halo interne */}
+        <View style={[styles.shieldHaloInner, {
+          width: bs * 1.25, height: bs * 1.25,
+          borderRadius: bs * 0.625,
           backgroundColor: color + '30',
-        },
-      ]} />
-      {/* Cercle principal */}
-      <View style={[
-        styles.shieldCircle,
-        {
-          width: dims.shield,
-          height: dims.shield,
-          borderRadius: dims.shield / 2,
+        }]} />
+
+        {/* Cercle principal */}
+        <View style={{
+          width: bs, height: bs, borderRadius: bs / 2,
           backgroundColor: color,
+          elevation: 10,
           shadowColor: color,
           shadowOffset: { width: 0, height: 4 },
           shadowOpacity: 0.5,
           shadowRadius: 12,
-          elevation: 10,
-        },
-      ]}>
-        {/* Bouclier emoji + GPS pin */}
-        <Text style={[styles.shieldEmoji, { fontSize: dims.icon * 1.2 }]}>🛡️</Text>
-        <View style={[styles.gpsBadge, {
-          width:  dims.badge,
-          height: dims.badge,
-          borderRadius: dims.badge / 2,
-          right:  -dims.badge * 0.15,
-          bottom: -dims.badge * 0.15,
-        }]}>
-          <Text style={{ fontSize: dims.badge * 0.65 }}>📍</Text>
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          {/* Anneau blanc intérieur */}
+          <View style={{
+            width: inn, height: inn, borderRadius: inn / 2,
+            borderWidth: 2.5,
+            borderColor: 'rgba(255,255,255,0.75)',
+            backgroundColor: 'rgba(255,255,255,0.12)',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            {/* Lettres SG */}
+            <Text style={{
+              color: '#ffffff',
+              fontSize: dims.icon * 0.9,
+              fontWeight: '900',
+              letterSpacing: 2,
+              includeFontPadding: false,
+            }}>SG</Text>
+            {/* Ligne séparatrice */}
+            <View style={{
+              width: inn * 0.55, height: 1.5,
+              backgroundColor: 'rgba(255,255,255,0.55)',
+              marginTop: 2,
+            }} />
+            {/* Sous-texte */}
+            <Text style={{
+              color: 'rgba(255,255,255,0.75)',
+              fontSize: dims.icon * 0.32,
+              fontWeight: '700',
+              letterSpacing: 1.5,
+              marginTop: 2,
+              includeFontPadding: false,
+            }}>GUARD</Text>
+          </View>
         </View>
-      </View>
-    </Animated.View>
-  );
+
+        {/* GPS badge (cercle rouge + point blanc) — aucun emoji */}
+        <View style={{
+          position: 'absolute',
+          width: gps, height: gps, borderRadius: gps / 2,
+          backgroundColor: '#ef4444',
+          right: bs * 0.04, bottom: bs * 0.04,
+          borderWidth: 2.5, borderColor: '#ffffff',
+          alignItems: 'center', justifyContent: 'center',
+          elevation: 8,
+        }}>
+          <View style={{
+            width: gps * 0.38, height: gps * 0.38,
+            borderRadius: gps * 0.19,
+            backgroundColor: '#ffffff',
+          }} />
+        </View>
+      </Animated.View>
+    );
+  };
 
   if (variant === 'icon') {
     return (
@@ -176,24 +210,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignSelf: 'center',
   },
-  shieldCircle: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  shieldEmoji: {
-    textAlign: 'center',
-  },
-  gpsBadge: {
-    position: 'absolute',
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
-  },
+
   textBlock: {
     marginTop: 16,
     alignItems: 'center',
