@@ -77,10 +77,16 @@ exports.registerFace = async (req, res) => {
       result = await compreFaceService.addFace(subjectId, imageData);
 
       if (result.success) {
-        // Mettre à jour l'utilisateur
+        // CompreFace OK → aussi extraire et stocker le descriptor local (face-api.js)
+        // pour permettre la vérification locale si CompreFace devient indisponible
         user.profilePhoto = imageData;
         user.facialVectorUpdatedAt = new Date();
         await user.save();
+
+        // Extraction du descriptor en arrière-plan (non bloquant)
+        _extractAndStoreDescriptor(userId, imageData).catch(e =>
+          console.warn('[RegisterFace] Extraction descriptor local échouée:', e.message)
+        );
 
         logActivity('FACE_REGISTERED_COMPREFACE', userId, {
           imageId: result.imageId,
@@ -94,36 +100,13 @@ exports.registerFace = async (req, res) => {
           subjectId: result.subjectId,
         });
       } else {
-        return res.status(400).json({
-          success: false,
-          message: result.error || 'Erreur enregistrement CompreFace',
-        });
+        // CompreFace KO → utiliser face-api.js local
+        console.warn('[RegisterFace] CompreFace KO, utilisation face-api.js local');
+        return await _registerWithLocalFaceApi(res, userId, imageData, user);
       }
     } else {
-      // Mode local — stocker la photo de profil + descriptor
-      result = await faceRecognitionService.registerFace(userId, images || [imageData]);
-
-      const updateData = {
-        profilePhoto: imageData,          // stocker la photo comme référence
-        facialVectorUpdatedAt: new Date(),
-      };
-      if (result.success && result.descriptor) {
-        updateData.facialDescriptor = JSON.stringify(result.descriptor);
-      }
-
-      await User.update(updateData, { where: { id: userId } });
-
-      logActivity('FACE_REGISTERED', userId, {
-        registeredImages: result.registeredImages || 1,
-        mode: 'presence',
-      });
-
-      res.json({
-        success: true,
-        message: 'Photo de profil enregistrée. Vérification faciale activée.',
-        userId,
-        source: 'presence',
-      });
+      // Mode local → face-api.js
+      return await _registerWithLocalFaceApi(res, userId, imageData, user);
     }
   } catch (error) {
     console.error('Face registration error:', error);
@@ -182,34 +165,10 @@ exports.verifyFace = async (req, res) => {
       const recognitionResult = await compreFaceService.recognizeFace(image, 1);
 
       if (!recognitionResult.success) {
-        // CompreFace indisponible (API key, réseau, service down)
-        // → basculer en mode présence local au lieu de bloquer l'agent
-        console.warn('[FaceVerif] CompreFace KO, fallback mode présence:', recognitionResult.error);
-
-        const hasPhoto = !!user.profilePhoto || !!user.facialDescriptor;
-        if (!hasPhoto) {
-          return res.status(400).json({
-            success: false, verified: false,
-            message: 'Visage non enregistré — contactez un administrateur',
-            errorCode: 'NOT_REGISTERED',
-          });
-        }
-        const imageBuffer = compreFaceService.base64ToBuffer(image);
-        if (!imageBuffer || imageBuffer.length < 1000) {
-          return res.status(400).json({
-            success: false, verified: false,
-            message: 'Image reçue invalide',
-            errorCode: 'INVALID_IMAGE',
-          });
-        }
-        trackAttempt(userId, true);
-        resetAttempts(userId);
-        logActivity('FACE_VERIFIED', userId, { confidence: 85, mode: 'presence_fallback', eventId, checkType });
-        return res.json({
-          success: true, verified: true, confidence: 85, faceDetected: true,
-          source: 'presence_fallback',
-          message: 'Identité vérifiée (présence)',
-        });
+        // CompreFace KO → utiliser face-api.js local pour une vraie comparaison biométrique
+        // Même algorithme que le tableau de bord web (CheckInOut.jsx)
+        console.warn('[FaceVerif] CompreFace KO, basculement sur face-api.js local:', recognitionResult.error);
+        return await _verifyWithLocalFaceApi(req, res, user, image, userId, eventId, checkType);
       }
 
       if (!recognitionResult.faceDetected) {
@@ -257,48 +216,8 @@ exports.verifyFace = async (req, res) => {
 
       return res.json(result);
     } else {
-      // Mode local — vérification par présence de photo de profil
-      // (CIN déjà authentifié, photo = preuve visuelle suffisante sans CompreFace)
-      const hasProfilePhoto  = !!user.profilePhoto;
-      const hasDescriptor    = !!user.facialDescriptor;
-
-      if (!hasProfilePhoto && !hasDescriptor) {
-        return res.status(400).json({
-          success: false,
-          verified: false,
-          message: 'Visage non enregistré — contactez un administrateur',
-          errorCode: 'NOT_REGISTERED',
-        });
-      }
-
-      // Valider l'image reçue (doit être un base64 valide)
-      const imageBuffer = faceRecognitionService.base64ToBuffer(image);
-      if (!imageBuffer || imageBuffer.length < 1000) {
-        return res.status(400).json({
-          success: false,
-          verified: false,
-          message: 'Image invalide',
-          errorCode: 'INVALID_IMAGE',
-        });
-      }
-
-      // Vérification photo-présence: l'authentification CIN + selfie = identité vérifiée
-      result = {
-        success: true,
-        verified: true,
-        confidence: 90,
-        threshold: 85,
-        processingTime: 50,
-        source: 'presence',
-        message: 'Identité vérifiée (CIN + photo de présence)',
-        note: 'CompreFace non configuré — mode présence CIN actif',
-      };
-
-      trackAttempt(userId, true);
-      logActivity('FACE_VERIFIED', userId, { confidence: 90, eventId, checkType, mode: 'presence' });
-      resetAttempts(userId);
-
-      res.json(result);
+      // Mode local → vraie comparaison faciale via face-api.js
+      return await _verifyWithLocalFaceApi(req, res, user, image, userId, eventId, checkType);
     }
   } catch (error) {
     console.error('Face verification error:', error);
@@ -571,6 +490,181 @@ exports.adjustThreshold = async (req, res) => {
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
+
+/**
+ * Enregistrement facial local avec face-api.js
+ */
+async function _registerWithLocalFaceApi(res, userId, imageData, user) {
+  try {
+    const faceApiNode = require('../services/faceApiNodeService');
+
+    console.log('[RegisterFace] Extraction descriptor avec face-api.js...');
+    const descriptor = await faceApiNode.extractDescriptor(imageData);
+
+    if (!descriptor) {
+      return res.status(400).json({
+        success: false,
+        message: 'Aucun visage détecté dans la photo fournie — reprenez une photo avec le visage bien visible',
+        errorCode: 'NO_FACE',
+      });
+    }
+
+    await User.update({
+      profilePhoto: imageData,
+      facialDescriptor: JSON.stringify(Array.from(descriptor)),
+      facialVectorUpdatedAt: new Date(),
+    }, { where: { id: userId } });
+
+    logActivity('FACE_REGISTERED', userId, { mode: 'face-api-local' });
+
+    return res.json({
+      success: true,
+      message: 'Visage enregistré avec succès (face-api.js local)',
+      userId,
+      source: 'face-api-local',
+    });
+  } catch (err) {
+    console.error('[RegisterFace] Erreur face-api.js:', err.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Erreur lors de l\'enregistrement facial',
+      error: err.message,
+    });
+  }
+}
+
+/**
+ * Extrait et stocke le descriptor en arrière-plan (après CompreFace registration)
+ */
+async function _extractAndStoreDescriptor(userId, imageData) {
+  const faceApiNode = require('../services/faceApiNodeService');
+  const descriptor = await faceApiNode.extractDescriptor(imageData);
+  if (descriptor) {
+    await User.update(
+      { facialDescriptor: JSON.stringify(Array.from(descriptor)) },
+      { where: { id: userId } }
+    );
+    console.log('[RegisterFace] Descriptor local sauvegardé pour userId:', userId);
+  }
+}
+
+/**
+ * Verification faciale locale avec face-api.js (Node.js)
+ * Même algorithme que le tableau de bord web :
+ *   1. Récupère le descriptor stocké (facialVector décrypté ou facialDescriptor)
+ *   2. Si absent mais profilePhoto → extrait depuis la photo d'enregistrement
+ *   3. Extrait le descriptor de la photo capturée (selfie mobile)
+ *   4. Calcule la distance euclidienne → score 0-100
+ */
+async function _verifyWithLocalFaceApi(req, res, user, image, userId, eventId, checkType) {
+  try {
+    const faceApiNode = require('../services/faceApiNodeService');
+
+    // 1. Récupérer le descriptor de référence
+    let storedDescriptor = null;
+
+    // Essayer facialVector (chiffré, mis à jour par le web avec face-api.js)
+    const decryptedVector = user.getDecryptedFacialVector();
+    if (faceApiNode.isValidDescriptor(decryptedVector)) {
+      storedDescriptor = decryptedVector;
+      console.log('[FaceVerif] Référence: facialVector décrypté (128 floats, web enrollment)');
+    }
+
+    // Essayer facialDescriptor (JSON brut, mis à jour par le backend)
+    if (!storedDescriptor && user.facialDescriptor) {
+      try {
+        const parsed = JSON.parse(user.facialDescriptor);
+        if (faceApiNode.isValidDescriptor(parsed)) {
+          storedDescriptor = parsed;
+          console.log('[FaceVerif] Référence: facialDescriptor JSON (128 floats, backend enrollment)');
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    // Si aucun descriptor valide mais profilePhoto → extraire maintenant (auto-enroll)
+    if (!storedDescriptor && user.profilePhoto) {
+      console.log('[FaceVerif] Pas de descriptor valide, extraction depuis profilePhoto...');
+      const refDescriptor = await faceApiNode.extractDescriptor(user.profilePhoto);
+      if (refDescriptor) {
+        storedDescriptor = refDescriptor;
+        // Sauvegarder pour les prochaines vérifications
+        await User.update(
+          { facialDescriptor: JSON.stringify(Array.from(refDescriptor)) },
+          { where: { id: userId } }
+        );
+        console.log('[FaceVerif] Descriptor extrait de profilePhoto et sauvegardé');
+      }
+    }
+
+    if (!storedDescriptor) {
+      return res.status(400).json({
+        success: false,
+        verified: false,
+        message: 'Visage non enregistré — contactez un administrateur',
+        errorCode: 'NOT_REGISTERED',
+      });
+    }
+
+    // 2. Extraire le descriptor de la photo capturée (selfie mobile)
+    console.log('[FaceVerif] Extraction du descriptor depuis la photo capturée...');
+    const capturedDescriptor = await faceApiNode.extractDescriptor(image);
+
+    if (!capturedDescriptor) {
+      return res.json({
+        success: true,
+        verified: false,
+        faceDetected: false,
+        confidence: 0,
+        message: 'Aucun visage détecté — repositionnez votre visage face à la caméra',
+        errorCode: 'NO_FACE',
+      });
+    }
+
+    // 3. Comparer (même formule que web : distance euclidienne → score 0-100)
+    const distance = faceApiNode.euclideanDistance(capturedDescriptor, storedDescriptor);
+    const confidence = faceApiNode.distanceToScore(distance);
+    const isVerified = confidence >= faceApiNode.MATCH_THRESHOLD_SCORE; // >= 50%
+
+    console.log(`[FaceVerif] distance=${distance.toFixed(3)}, score=${confidence}%, vérifié=${isVerified}`);
+
+    trackAttempt(userId, isVerified);
+
+    if (isVerified) {
+      resetAttempts(userId);
+      logActivity('FACE_VERIFIED', userId, { confidence, mode: 'face-api-local', eventId, checkType });
+    } else {
+      logActivity('FACE_VERIFICATION_FAILED', userId, {
+        confidence, mode: 'face-api-local', errorCode: 'FACE_MISMATCH', eventId,
+      });
+      checkForAnomalies(userId, { verified: false, confidence, errorCode: 'FACE_MISMATCH' });
+    }
+
+    return res.json({
+      success: true,
+      verified: isVerified,
+      confidence,
+      score: confidence,
+      faceDetected: true,
+      source: 'face-api-local',
+      message: isVerified
+        ? `Identité confirmée (${confidence}%)`
+        : `Identité non confirmée — visage différent (${confidence}%)`,
+      errorCode: isVerified ? null : 'FACE_MISMATCH',
+    });
+
+  } catch (faceApiError) {
+    console.error('[FaceVerif] Erreur face-api.js local:', faceApiError.message);
+
+    // Dernier recours : si les modèles ne sont pas encore chargés ou erreur temporaire
+    // → refuser proprement plutôt que de laisser passer n'importe qui
+    return res.status(503).json({
+      success: false,
+      verified: false,
+      message: 'Service de reconnaissance faciale temporairement indisponible — réessayez dans quelques secondes',
+      errorCode: 'SERVICE_UNAVAILABLE',
+    });
+  }
+}
 
 /**
  * Load all face descriptors from database
