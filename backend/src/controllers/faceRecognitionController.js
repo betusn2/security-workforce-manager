@@ -653,7 +653,9 @@ async function _verifyWithLocalFaceApi(req, res, user, image, userId, eventId, c
     });
 
   } catch (faceApiError) {
-    console.error('[FaceVerif] Erreur face-api.js local:', faceApiError.message);
+    const errMsg = faceApiError?.message ?? String(faceApiError);
+    console.error('[FaceVerif] Erreur face-api.js local:', errMsg);
+    if (faceApiError?.stack) console.error('[FaceVerif] Stack:', faceApiError.stack);
 
     // Dernier recours : si les modèles ne sont pas encore chargés ou erreur temporaire
     // → refuser proprement plutôt que de laisser passer n'importe qui
@@ -662,6 +664,7 @@ async function _verifyWithLocalFaceApi(req, res, user, image, userId, eventId, c
       verified: false,
       message: 'Service de reconnaissance faciale temporairement indisponible — réessayez dans quelques secondes',
       errorCode: 'SERVICE_UNAVAILABLE',
+      debug: errMsg,
     });
   }
 }

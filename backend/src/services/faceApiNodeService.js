@@ -1,16 +1,17 @@
 /**
  * Face Recognition Service - Node.js Local Mode
- * Uses @vladmandic/face-api + @napi-rs/canvas (pre-built binaries, no system deps)
+ * Uses @vladmandic/face-api + sharp (pre-built binaries, NO canvas/libcairo deps)
  * Extracts 128-float face descriptors and compares them with euclidean distance
  * Identical algorithm to web CheckInOut.jsx → same match scores
  *
  * Models are bundled in backend/models/face-api/ (committed to repo)
+ * Image decoding: sharp → raw RGB pixels → tf.Tensor3D (no canvas needed)
  */
 
 const path = require('path');
 
 let faceapi = null;
-let napiCanvas = null;
+let sharpLib = null;
 let modelsLoaded = false;
 let initPromise = null;
 
@@ -21,7 +22,7 @@ const MATCH_THRESHOLD_SCORE = 50;
 const MODEL_DIR = path.join(__dirname, '..', '..', 'models', 'face-api');
 
 /**
- * Initialize face-api.js with @napi-rs/canvas (no system library dependencies)
+ * Initialize face-api.js with sharp for image decoding (no canvas required)
  */
 async function init() {
   if (modelsLoaded) return;
@@ -29,18 +30,17 @@ async function init() {
 
   initPromise = (async () => {
     try {
-      console.log('[FaceApiNode] Initializing...');
+      console.log('[FaceApiNode] Initializing (sharp + tfjs, no canvas)...');
 
       // Pure JS TF.js backend (no native binaries needed)
       require('@tensorflow/tfjs');
 
-      // face-api.js Node build
+      // face-api.js Node build — we pass tf.Tensor3D directly, no canvas monkeyPatch
       faceapi = require('@vladmandic/face-api/dist/face-api.node.js');
 
-      // @napi-rs/canvas — pre-built binaries, no libcairo system dependency
-      napiCanvas = require('@napi-rs/canvas');
-      const { Canvas, Image, ImageData } = napiCanvas;
-      faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
+      // sharp — pre-built binaries, decodes JPEG/PNG → raw RGB pixels
+      sharpLib = require('sharp');
+      console.log('[FaceApiNode] sharp loaded:', typeof sharpLib);
 
       console.log('[FaceApiNode] Loading models from:', MODEL_DIR);
 
@@ -52,10 +52,12 @@ async function init() {
       ]);
 
       modelsLoaded = true;
-      console.log('[FaceApiNode] ✅ Models loaded successfully');
+      console.log('[FaceApiNode] ✅ Models loaded successfully (no canvas)');
     } catch (err) {
       initPromise = null; // allow retry
-      console.error('[FaceApiNode] ❌ Initialization failed:', err.message, err.stack);
+      const errMsg = err?.message ?? String(err);
+      console.error('[FaceApiNode] ❌ Initialization failed:', errMsg);
+      if (err?.stack) console.error('[FaceApiNode] Stack:', err.stack);
       throw err;
     }
   })();
@@ -65,6 +67,7 @@ async function init() {
 
 /**
  * Extract 128-float face descriptor from a base64 image
+ * Uses sharp to decode JPEG → raw RGB pixels → tf.Tensor3D (no canvas needed)
  * @param {string} base64Image - base64 JPEG/PNG (with or without data: prefix)
  * @returns {Float32Array|null}
  */
@@ -73,22 +76,39 @@ async function extractDescriptor(base64Image) {
 
   const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
   const buffer = Buffer.from(base64Data, 'base64');
-  const img = await napiCanvas.loadImage(buffer);
 
-  const detection = await faceapi
-    .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({
-      inputSize: 416,
-      scoreThreshold: 0.4,
-    }))
-    .withFaceLandmarks()
-    .withFaceDescriptor();
+  // Decode image with sharp: resize to 640px wide (keep aspect), strip alpha, raw RGB
+  const { data, info } = await sharpLib(buffer)
+    .resize({ width: 640, fit: 'inside', withoutEnlargement: true })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
 
-  if (!detection) {
-    console.log('[FaceApiNode] No face detected in image');
-    return null;
+  // Create tf.Tensor3D from raw uint8 RGB data (shape [H, W, 3])
+  // face-api.js TinyFaceDetector expects uint8 values 0-255 as float32 tensor
+  const tensor = faceapi.tf.tensor3d(
+    new Uint8Array(data),
+    [info.height, info.width, 3]
+  );
+
+  try {
+    const detection = await faceapi
+      .detectSingleFace(tensor, new faceapi.TinyFaceDetectorOptions({
+        inputSize: 416,
+        scoreThreshold: 0.3,
+      }))
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+
+    if (!detection) {
+      console.log('[FaceApiNode] No face detected in image');
+      return null;
+    }
+
+    return detection.descriptor; // Float32Array[128]
+  } finally {
+    faceapi.tf.dispose(tensor);
   }
-
-  return detection.descriptor; // Float32Array[128]
 }
 
 /**
