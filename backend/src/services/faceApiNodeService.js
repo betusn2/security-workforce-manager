@@ -3,20 +3,93 @@
  * Uses @vladmandic/face-api + canvas (same library as web dashboard)
  * Extracts 128-float face descriptors and compares them with euclidean distance
  * Identical algorithm to web CheckInOut.jsx → same match scores
+ *
+ * Models are downloaded from GitHub CDN on first use and cached in /tmp
  */
 
 const path = require('path');
+const fs = require('fs');
+const https = require('https');
+const os = require('os');
 
 let faceapi = null;
 let canvas = null;
 let modelsLoaded = false;
 let initPromise = null;
 
-// Match threshold: distance <= 0.5 → score >= 50% → VERIFIED (same as web MATCH_THRESHOLD = 0.50)
+// Match threshold: score >= 50% → VERIFIED (same as web MATCH_THRESHOLD = 0.50)
 const MATCH_THRESHOLD_SCORE = 50;
 
+// Model files hosted on GitHub raw content
+const MODEL_BASE_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/model';
+const MODEL_FILES = [
+  'tiny_face_detector_model-weights_manifest.json',
+  'tiny_face_detector_model-shard1',
+  'face_landmark_68_model-weights_manifest.json',
+  'face_landmark_68_model-shard1',
+  'face_recognition_model-weights_manifest.json',
+  'face_recognition_model-shard1',
+];
+
+const MODEL_CACHE_DIR = path.join(os.tmpdir(), 'security-guard-face-api-models');
+
 /**
- * Initialize face-api.js with Node.js canvas polyfills and load models lazily
+ * Download a file via HTTPS with redirect support
+ */
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    if (fs.existsSync(dest)) return resolve(); // already cached
+
+    const file = fs.createWriteStream(dest + '.tmp');
+    const request = (targetUrl) => {
+      https.get(targetUrl, (response) => {
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          file.close();
+          return request(response.headers.location);
+        }
+        if (response.statusCode !== 200) {
+          file.close();
+          fs.unlinkSync(dest + '.tmp');
+          return reject(new Error(`HTTP ${response.statusCode} for ${url}`));
+        }
+        response.pipe(file);
+        file.on('finish', () => {
+          file.close();
+          fs.renameSync(dest + '.tmp', dest);
+          resolve();
+        });
+      }).on('error', (err) => {
+        file.close();
+        if (fs.existsSync(dest + '.tmp')) fs.unlinkSync(dest + '.tmp');
+        reject(err);
+      });
+    };
+    request(url);
+  });
+}
+
+/**
+ * Download all required model files to cache directory
+ */
+async function downloadModels() {
+  if (!fs.existsSync(MODEL_CACHE_DIR)) {
+    fs.mkdirSync(MODEL_CACHE_DIR, { recursive: true });
+    console.log('[FaceApiNode] Created model cache dir:', MODEL_CACHE_DIR);
+  }
+
+  console.log('[FaceApiNode] Downloading model files...');
+  for (const file of MODEL_FILES) {
+    const dest = path.join(MODEL_CACHE_DIR, file);
+    if (!fs.existsSync(dest)) {
+      console.log('[FaceApiNode] Downloading:', file);
+      await downloadFile(`${MODEL_BASE_URL}/${file}`, dest);
+    }
+  }
+  console.log('[FaceApiNode] All model files ready');
+}
+
+/**
+ * Initialize face-api.js with Node.js canvas polyfills and load models
  */
 async function init() {
   if (modelsLoaded) return;
@@ -26,33 +99,31 @@ async function init() {
     try {
       console.log('[FaceApiNode] Initializing face-api.js...');
 
-      // Load tensorflow CPU backend (pure JS, no native bindings needed)
+      // Download models if not cached
+      await downloadModels();
+
+      // Load tensorflow CPU backend (pure JS, no native bindings)
       require('@tensorflow/tfjs');
 
-      // Load face-api.js and canvas
-      faceapi = require('@vladmandic/face-api');
+      // Load face-api.js Node build and canvas
+      faceapi = require('@vladmandic/face-api/dist/face-api.node.js');
       canvas = require('canvas');
       const { Canvas, Image, ImageData } = canvas;
 
-      // Monkey-patch Node.js canvas APIs so face-api.js works
+      // Monkey-patch canvas APIs so face-api.js works in Node.js
       faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
 
-      // Resolve model path from installed @vladmandic/face-api package
-      const packageJsonPath = require.resolve('@vladmandic/face-api/package.json');
-      const modelPath = path.join(path.dirname(packageJsonPath), 'model');
-      console.log('[FaceApiNode] Loading models from:', modelPath);
-
-      // Load only the 3 models needed for descriptor extraction
+      // Load the 3 models from local cache
       await Promise.all([
-        faceapi.nets.tinyFaceDetector.loadFromDisk(modelPath),
-        faceapi.nets.faceLandmark68Net.loadFromDisk(modelPath),
-        faceapi.nets.faceRecognitionNet.loadFromDisk(modelPath),
+        faceapi.nets.tinyFaceDetector.loadFromDisk(MODEL_CACHE_DIR),
+        faceapi.nets.faceLandmark68Net.loadFromDisk(MODEL_CACHE_DIR),
+        faceapi.nets.faceRecognitionNet.loadFromDisk(MODEL_CACHE_DIR),
       ]);
 
       modelsLoaded = true;
       console.log('[FaceApiNode] ✅ Models loaded successfully');
     } catch (err) {
-      initPromise = null; // allow retry on next call
+      initPromise = null; // allow retry
       console.error('[FaceApiNode] ❌ Initialization failed:', err.message);
       throw err;
     }
@@ -64,7 +135,7 @@ async function init() {
 /**
  * Extract 128-float face descriptor from a base64 image
  * @param {string} base64Image - base64 JPEG/PNG (with or without data: prefix)
- * @returns {Float32Array|null} - 128-float descriptor, or null if no face detected
+ * @returns {Float32Array|null}
  */
 async function extractDescriptor(base64Image) {
   await init();
@@ -86,32 +157,24 @@ async function extractDescriptor(base64Image) {
     return null;
   }
 
-  console.log('[FaceApiNode] Face detected, descriptor length:', detection.descriptor.length);
   return detection.descriptor; // Float32Array[128]
 }
 
 /**
- * Compute euclidean distance between two face descriptors
+ * Euclidean distance between two face descriptors
  * (same as faceapi.euclideanDistance() in web)
  */
 function euclideanDistance(desc1, desc2) {
   const a = toFloat32Array(desc1);
   const b = toFloat32Array(desc2);
-
-  if (a.length !== b.length) {
-    throw new Error(`Descriptor length mismatch: ${a.length} vs ${b.length}`);
-  }
-
+  if (a.length !== b.length) throw new Error(`Descriptor length mismatch: ${a.length} vs ${b.length}`);
   let sum = 0;
-  for (let i = 0; i < a.length; i++) {
-    sum += (a[i] - b[i]) ** 2;
-  }
+  for (let i = 0; i < a.length; i++) sum += (a[i] - b[i]) ** 2;
   return Math.sqrt(sum);
 }
 
 /**
- * Convert distance to a 0-100 match score
- * Identical to web formula: (1 - min(distance, 1.0)) * 100
+ * Convert distance to 0-100 match score (same formula as web)
  */
 function distanceToScore(distance) {
   return Math.max(0, Math.round((1 - Math.min(distance, 1.0)) * 100));
@@ -136,30 +199,9 @@ function toFloat32Array(descriptor) {
   if (descriptor instanceof Float32Array) return descriptor;
   if (Array.isArray(descriptor)) return new Float32Array(descriptor);
   if (typeof descriptor === 'object' && descriptor !== null) {
-    // Handle {0: x, 1: y, ...} object format
     return new Float32Array(Object.values(descriptor));
   }
   throw new Error('Invalid descriptor format');
-}
-
-/**
- * Compare two face photos directly (extract + compare in one call)
- * @returns {{ distance, score, verified, faceDetected }}
- */
-async function comparePhotos(refBase64, capturedBase64) {
-  const [refDesc, capturedDesc] = await Promise.all([
-    extractDescriptor(refBase64),
-    extractDescriptor(capturedBase64),
-  ]);
-
-  if (!refDesc) return { faceDetected: false, score: 0, verified: false, error: 'NO_FACE_IN_REF' };
-  if (!capturedDesc) return { faceDetected: false, score: 0, verified: false, error: 'NO_FACE' };
-
-  const distance = euclideanDistance(refDesc, capturedDesc);
-  const score = distanceToScore(distance);
-  const verified = score >= MATCH_THRESHOLD_SCORE;
-
-  return { distance, score, verified, faceDetected: true };
 }
 
 module.exports = {
@@ -168,6 +210,6 @@ module.exports = {
   euclideanDistance,
   distanceToScore,
   isValidDescriptor,
-  comparePhotos,
   MATCH_THRESHOLD_SCORE,
 };
+
