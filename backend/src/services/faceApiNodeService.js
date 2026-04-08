@@ -1,95 +1,27 @@
 /**
  * Face Recognition Service - Node.js Local Mode
- * Uses @vladmandic/face-api + canvas (same library as web dashboard)
+ * Uses @vladmandic/face-api + @napi-rs/canvas (pre-built binaries, no system deps)
  * Extracts 128-float face descriptors and compares them with euclidean distance
  * Identical algorithm to web CheckInOut.jsx → same match scores
  *
- * Models are downloaded from GitHub CDN on first use and cached in /tmp
+ * Models are bundled in backend/models/face-api/ (committed to repo)
  */
 
 const path = require('path');
-const fs = require('fs');
-const https = require('https');
-const os = require('os');
 
 let faceapi = null;
-let canvas = null;
+let napiCanvas = null;
 let modelsLoaded = false;
 let initPromise = null;
 
 // Match threshold: score >= 50% → VERIFIED (same as web MATCH_THRESHOLD = 0.50)
 const MATCH_THRESHOLD_SCORE = 50;
 
-// Model files hosted on GitHub raw content
-const MODEL_BASE_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/model';
-const MODEL_FILES = [
-  'tiny_face_detector_model-weights_manifest.json',
-  'tiny_face_detector_model-shard1',
-  'face_landmark_68_model-weights_manifest.json',
-  'face_landmark_68_model-shard1',
-  'face_recognition_model-weights_manifest.json',
-  'face_recognition_model-shard1',
-];
-
-const MODEL_CACHE_DIR = path.join(os.tmpdir(), 'security-guard-face-api-models');
+// Models bundled in repository
+const MODEL_DIR = path.join(__dirname, '..', '..', 'models', 'face-api');
 
 /**
- * Download a file via HTTPS with redirect support
- */
-function downloadFile(url, dest) {
-  return new Promise((resolve, reject) => {
-    if (fs.existsSync(dest)) return resolve(); // already cached
-
-    const file = fs.createWriteStream(dest + '.tmp');
-    const request = (targetUrl) => {
-      https.get(targetUrl, (response) => {
-        if (response.statusCode === 301 || response.statusCode === 302) {
-          file.close();
-          return request(response.headers.location);
-        }
-        if (response.statusCode !== 200) {
-          file.close();
-          fs.unlinkSync(dest + '.tmp');
-          return reject(new Error(`HTTP ${response.statusCode} for ${url}`));
-        }
-        response.pipe(file);
-        file.on('finish', () => {
-          file.close();
-          fs.renameSync(dest + '.tmp', dest);
-          resolve();
-        });
-      }).on('error', (err) => {
-        file.close();
-        if (fs.existsSync(dest + '.tmp')) fs.unlinkSync(dest + '.tmp');
-        reject(err);
-      });
-    };
-    request(url);
-  });
-}
-
-/**
- * Download all required model files to cache directory
- */
-async function downloadModels() {
-  if (!fs.existsSync(MODEL_CACHE_DIR)) {
-    fs.mkdirSync(MODEL_CACHE_DIR, { recursive: true });
-    console.log('[FaceApiNode] Created model cache dir:', MODEL_CACHE_DIR);
-  }
-
-  console.log('[FaceApiNode] Downloading model files...');
-  for (const file of MODEL_FILES) {
-    const dest = path.join(MODEL_CACHE_DIR, file);
-    if (!fs.existsSync(dest)) {
-      console.log('[FaceApiNode] Downloading:', file);
-      await downloadFile(`${MODEL_BASE_URL}/${file}`, dest);
-    }
-  }
-  console.log('[FaceApiNode] All model files ready');
-}
-
-/**
- * Initialize face-api.js with Node.js canvas polyfills and load models
+ * Initialize face-api.js with @napi-rs/canvas (no system library dependencies)
  */
 async function init() {
   if (modelsLoaded) return;
@@ -97,34 +29,33 @@ async function init() {
 
   initPromise = (async () => {
     try {
-      console.log('[FaceApiNode] Initializing face-api.js...');
+      console.log('[FaceApiNode] Initializing...');
 
-      // Download models if not cached
-      await downloadModels();
-
-      // Load tensorflow CPU backend (pure JS, no native bindings)
+      // Pure JS TF.js backend (no native binaries needed)
       require('@tensorflow/tfjs');
 
-      // Load face-api.js Node build and canvas
+      // face-api.js Node build
       faceapi = require('@vladmandic/face-api/dist/face-api.node.js');
-      canvas = require('canvas');
-      const { Canvas, Image, ImageData } = canvas;
 
-      // Monkey-patch canvas APIs so face-api.js works in Node.js
+      // @napi-rs/canvas — pre-built binaries, no libcairo system dependency
+      napiCanvas = require('@napi-rs/canvas');
+      const { Canvas, Image, ImageData } = napiCanvas;
       faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
 
-      // Load the 3 models from local cache
+      console.log('[FaceApiNode] Loading models from:', MODEL_DIR);
+
+      // Load 3 models needed for descriptor extraction (bundled in repo)
       await Promise.all([
-        faceapi.nets.tinyFaceDetector.loadFromDisk(MODEL_CACHE_DIR),
-        faceapi.nets.faceLandmark68Net.loadFromDisk(MODEL_CACHE_DIR),
-        faceapi.nets.faceRecognitionNet.loadFromDisk(MODEL_CACHE_DIR),
+        faceapi.nets.tinyFaceDetector.loadFromDisk(MODEL_DIR),
+        faceapi.nets.faceLandmark68Net.loadFromDisk(MODEL_DIR),
+        faceapi.nets.faceRecognitionNet.loadFromDisk(MODEL_DIR),
       ]);
 
       modelsLoaded = true;
       console.log('[FaceApiNode] ✅ Models loaded successfully');
     } catch (err) {
       initPromise = null; // allow retry
-      console.error('[FaceApiNode] ❌ Initialization failed:', err.message);
+      console.error('[FaceApiNode] ❌ Initialization failed:', err.message, err.stack);
       throw err;
     }
   })();
@@ -142,7 +73,7 @@ async function extractDescriptor(base64Image) {
 
   const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
   const buffer = Buffer.from(base64Data, 'base64');
-  const img = await canvas.loadImage(buffer);
+  const img = await napiCanvas.loadImage(buffer);
 
   const detection = await faceapi
     .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({

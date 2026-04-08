@@ -12,11 +12,11 @@
     "test": "jest"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.97",
     "@tensorflow/tfjs": "^4.22.0",
     "@vladmandic/face-api": "^1.7.15",
     "axios": "^1.6.2",
     "bcrypt": "^6.0.0",
-    "canvas": "^2.11.2",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "crypto-js": "^4.2.0",
