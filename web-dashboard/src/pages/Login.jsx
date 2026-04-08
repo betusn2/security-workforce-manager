@@ -6,7 +6,6 @@ import useI18n from '../hooks/useI18n';
 import { assignmentsAPI, eventsAPI } from '../services/api';
 import { hasActiveOrUpcomingEvents } from '../utils/eventHelpers';
 import { toast } from 'react-toastify';
-import AppDownloadBanner from '../components/AppDownloadBanner';
 import soundEffects from '../utils/soundEffects';
 
 const Login = () => {
@@ -259,7 +258,7 @@ const Login = () => {
                     value={cin}
                     onChange={(e) => setCin(e.target.value.toUpperCase())}
                     className={`w-full px-12 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all font-mono text-lg ${isRTL ? 'text-right' : 'text-left'}`}
-                    placeholder="BK517312"
+                    placeholder="Mettez votre CIN ici"
                     required
                     autoFocus
                     maxLength={10}
@@ -374,13 +373,6 @@ const Login = () => {
             </div>
           </div>
         </div>
-
-        {/* App Download Banner */}
-        {showAppBanner && (
-          <div className="mt-6">
-            <AppDownloadBanner onDismiss={() => setShowAppBanner(false)} />
-          </div>
-        )}
 
         {/* Footer */}
         <div className="text-center mt-6 space-y-4">

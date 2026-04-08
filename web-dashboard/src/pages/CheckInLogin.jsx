@@ -11,7 +11,6 @@ import useAuthStore from '../hooks/useAuth';
 import { toast } from 'react-toastify';
 import { getDeviceFingerprint, getDeviceInfo } from '../utils/deviceFingerprint';
 import deviceInfoService from '../services/deviceInfoService';
-import AppDownloadBanner from '../components/AppDownloadBanner';
 import soundEffects from '../utils/soundEffects';
 
 /**
@@ -631,7 +630,7 @@ const CheckInLogin = () => {
                         type="text"
                         value={cin}
                         onChange={(e) => setCin(e.target.value.toUpperCase())}
-                        placeholder="AB123456"
+                        placeholder="Mettez votre CIN ici"
                         className="w-full pl-12 pr-12 py-4 border-2 border-gray-200 rounded-xl text-lg font-mono tracking-wider focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all"
                         required
                         autoFocus
@@ -824,13 +823,6 @@ const CheckInLogin = () => {
             </div>
           </div>
         </div>
-
-        {/* App Download Banner */}
-        {showAppBanner && (
-          <div className="mt-6">
-            <AppDownloadBanner onDismiss={() => setShowAppBanner(false)} />
-          </div>
-        )}
 
         {/* Note de sécurité */}
         <p className="text-center text-primary-200 text-sm mt-6">

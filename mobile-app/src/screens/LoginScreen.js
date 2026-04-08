@@ -187,7 +187,7 @@ const LoginScreen = ({ navigation }) => {
               <Ionicons name="card-outline" size={22} color={accentColor} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Ex: A303730"
+                placeholder="Mettez votre CIN ici"
                 placeholderTextColor="#aaa"
                 value={cin}
                 onChangeText={setCin}
