@@ -33,8 +33,8 @@ async function init() {
     try {
       console.log('[FaceApiNode] Initializing (jimp pure-JS, no canvas)...');
 
-      // Pure JS TF.js backend (no native binaries needed)
-      require('@tensorflow/tfjs');
+      // tfjs-node = version Node.js de TensorFlow (requise par face-api.node.js)
+      require('@tensorflow/tfjs-node');
 
       // face-api.js Node build — we pass tf.Tensor3D directly
       faceapi = require('@vladmandic/face-api/dist/face-api.node.js');
