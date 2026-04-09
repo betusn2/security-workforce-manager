@@ -55,6 +55,9 @@ const EventDetails = () => {
   const [screenshotData, setScreenshotData] = useState(null);   // { agentId, imageBase64, timestamp }
   const [screenshotLoading, setScreenshotLoading] = useState(false);
 
+  // Ref pour déduplication position updates (même agent, même pos <5s)
+  const lastPositionRef = useRef({});
+
   useEffect(() => {
     if (id) {
       fetchEventDetails();
@@ -136,6 +139,16 @@ const EventDetails = () => {
 
     // Écouter les mises à jour de localisation depuis le backend
     socketRef.current.on('tracking:position_update', (data) => {
+      // ✅ Déduplication : ignorer si même position pour ce userId dans les 8 dernières secondes
+      const lastPos = lastPositionRef.current[data.userId];
+      const lat = data.latitude;
+      const lng = data.longitude;
+      const now = Date.now();
+      if (lastPos && Math.abs(lastPos.lat - lat) < 0.000005 && Math.abs(lastPos.lng - lng) < 0.000005 && (now - lastPos.ts) < 8000) {
+        return; // Skip doublon
+      }
+      lastPositionRef.current[data.userId] = { lat, lng, ts: now };
+
       console.log('📍 Position GPS reçue (tracking:position_update):', {
         userId: data.userId,
         lat: data.latitude,
@@ -535,29 +548,36 @@ const EventDetails = () => {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* Indicateur Socket.IO en haut */}
-      <div className={`card ${socketConnected ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'} transition-all duration-300`}>
-        <div className="flex items-center justify-between">
+      {/* Indicateur Socket.IO en haut — barre de statut temps réel enrichie */}
+      <div className={`card ${socketConnected ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200' : 'bg-gradient-to-r from-red-50 to-rose-50 border-red-200'} transition-all duration-300`}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
             {socketConnected ? (
               <>
-                <div className="relative">
-                  <FiWifi className="text-green-600 animate-pulse" size={24} />
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-ping"></div>
+                <div className="relative flex-shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-green-500 flex items-center justify-center">
+                    <FiWifi className="text-white" size={20} />
+                  </div>
+                  <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-green-400 rounded-full border-2 border-white animate-ping"></div>
+                  <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white"></div>
                 </div>
                 <div>
-                  <p className="font-bold text-green-900">🟢 Suivi Temps Réel Actif</p>
-                  <p className="text-sm text-green-700">
-                    Connexion établie • {onlineAgents.size} agent(s) en ligne
-                    {lastSync && ` • Dernière sync: ${format(lastSync, 'HH:mm:ss')}`}
+                  <div className="flex items-center gap-2">
+                    <p className="font-black text-green-900 text-base">Suivi Temps Réel Actif</p>
+                    <span className="px-2 py-0.5 bg-green-500 text-white text-xs font-bold rounded-full animate-pulse">LIVE</span>
+                  </div>
+                  <p className="text-sm text-green-700 mt-0.5">
+                    {lastSync && `Dernière position: ${format(lastSync, 'HH:mm:ss')}`}
                   </p>
                 </div>
               </>
             ) : (
               <>
-                <FiWifiOff className="text-red-600" size={24} />
+                <div className="w-10 h-10 rounded-xl bg-red-500 flex items-center justify-center flex-shrink-0">
+                  <FiWifiOff className="text-white" size={20} />
+                </div>
                 <div>
-                  <p className="font-bold text-red-900">🔴 Suivi Temps Réel Désactivé</p>
+                  <p className="font-black text-red-900 text-base">Suivi Temps Réel Désactivé</p>
                   <p className="text-sm text-red-700">
                     {socketError ? `Erreur: ${socketError}` : 'Connexion perdue • Reconnexion en cours...'}
                   </p>
@@ -565,13 +585,57 @@ const EventDetails = () => {
               </>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            {socketConnected && (
-              <div className="flex items-center gap-2 px-3 py-1 bg-green-100 rounded-full">
+
+          {/* Compteurs en temps réel */}
+          {socketConnected && (
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Agents en ligne */}
+              <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-green-200 shadow-sm">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-xs font-medium text-green-800">LIVE</span>
+                <span className="text-xs font-bold text-gray-700">{onlineAgents.size} en ligne</span>
               </div>
-            )}
+              {/* Agents avec GPS actif */}
+              {Object.values(agentLocations).filter(l => l.lat).length > 0 && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-blue-200 shadow-sm">
+                  <FiNavigation className="text-blue-500" size={12} />
+                  <span className="text-xs font-bold text-gray-700">{Object.values(agentLocations).filter(l => l.lat).length} GPS actifs</span>
+                </div>
+              )}
+              {/* Agents hors périmètre */}
+              {(() => {
+                const outCount = assignments.filter(a => {
+                  const loc = agentLocations[a.agentId];
+                  if (!loc?.lat || !event?.latitude) return false;
+                  const d = Math.sqrt(
+                    Math.pow((loc.lat - parseFloat(event.latitude)) * 111320, 2) +
+                    Math.pow((loc.lng - parseFloat(event.longitude)) * 111320 * Math.cos(parseFloat(event.latitude) * Math.PI / 180), 2)
+                  );
+                  return d > (parseFloat(event.radius) || 1000);
+                }).length;
+                return outCount > 0 ? (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-red-50 rounded-xl border border-red-200 shadow-sm animate-pulse">
+                    <FiAlertTriangle className="text-red-500" size={12} />
+                    <span className="text-xs font-bold text-red-700">{outCount} hors zone</span>
+                  </div>
+                ) : null;
+              })()}
+              {/* Batterie la plus faible */}
+              {(() => {
+                const batteries = Object.values(agentLocations).map(l => l.battery).filter(b => b != null);
+                const minBatt = batteries.length > 0 ? Math.min(...batteries) : null;
+                if (minBatt == null) return null;
+                const color = minBatt <= 20 ? 'text-red-600 border-red-200 bg-red-50' : minBatt <= 50 ? 'text-yellow-600 border-yellow-200 bg-yellow-50' : 'text-green-600 border-green-200 bg-white';
+                return (
+                  <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border shadow-sm ${color}`}>
+                    <FiBatteryCharging size={12} />
+                    <span className="text-xs font-bold">Min: {minBatt}%</span>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
             <button
               onClick={() => {
                 if (socketRef.current) {

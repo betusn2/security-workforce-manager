@@ -130,7 +130,19 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
       source: 'background',
     };
 
-    // Envoyer via HTTP API (Socket.IO peut être suspendu)
+    // 🔌 Vérifier si Socket.IO a envoyé récemment (< 20s) pour éviter les doublons
+    const lastSocketTs = await AsyncStorage.getItem('lastSocketSendTs');
+    if (lastSocketTs && Date.now() - parseInt(lastSocketTs) < 20000) {
+      // Socket.IO est actif et a envoyé récemment — skip pour éviter double envoi
+      // Mettre à jour quand même les données locales
+      await AsyncStorage.setItem('lastKnownLat', String(latitude));
+      await AsyncStorage.setItem('lastKnownLng', String(longitude));
+      await AsyncStorage.setItem('alert_last_activity_ts', String(Date.now()));
+      console.log(`⏭️ [BG] Skip HTTP (socket actif il y a ${Math.round((Date.now() - parseInt(lastSocketTs)) / 1000)}s) — ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+      return;
+    }
+
+    // Envoyer via HTTP API (Socket.IO suspendu ou inactif)
     await axios.post(`${API_URL}/tracking/location`, payload, {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 8000,

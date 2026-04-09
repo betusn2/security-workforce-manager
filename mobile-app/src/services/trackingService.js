@@ -14,6 +14,7 @@ import * as Battery from 'expo-battery';
 import * as Network from 'expo-network';
 import * as Device from 'expo-device';
 import { Platform, AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import socketService from './socketService';
 
 const FOREGROUND_INTERVAL_MS = 15000; // 15s en premier plan
@@ -215,7 +216,10 @@ class TrackingService {
       };
 
       socketService.emit('tracking:position', payload);
-      console.log(`📍 Position envoyée: ${latitude.toFixed(5)}, ${longitude.toFixed(5)} | batt:${batteryInfo.batteryLevel}% | ${speedKmh}km/h`);
+      // 💾 Marquer le dernier envoi socket pour que backgroundLocationTask
+      // puisse éviter un double envoi HTTP dans les 20 prochaines secondes
+      AsyncStorage.setItem('lastSocketSendTs', String(Date.now())).catch(() => {});
+      console.log(`📍 Position envoyée (socket): ${latitude.toFixed(5)}, ${longitude.toFixed(5)} | batt:${batteryInfo.batteryLevel}% | ${speedKmh}km/h | écran:${isScreenOn ? 'ON' : 'OFF'}`);
 
     } catch (error) {
       console.error('❌ Erreur envoi position:', error.message);
