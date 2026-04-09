@@ -320,7 +320,17 @@ const HomeScreen = ({ navigation }) => {
               <Text style={styles.supervisorPhone}>{supervisor.phone}</Text>
             )}
           </View>
-          <Ionicons name="chevron-forward-outline" size={16} color="#9ca3af" />
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Chat', {
+              recipientId:    supervisor.id,
+              recipientName:  `${supervisor.firstName} ${supervisor.lastName}`,
+              recipientPhoto: supervisor.profilePhoto || null,
+            })}
+            style={styles.chatBtn}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={15} color="#2563eb" />
+            <Text style={styles.chatBtnText}>Chat</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -511,6 +521,13 @@ const styles = StyleSheet.create({
   supervisorLabel: { fontSize: 11, color: '#9ca3af' },
   supervisorName:  { fontSize: 15, fontWeight: '600', color: '#1f2937' },
   supervisorPhone: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  chatBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 7,
+    backgroundColor: '#eff6ff', borderRadius: 10,
+    borderWidth: 1, borderColor: '#bfdbfe',
+  },
+  chatBtnText: { fontSize: 13, fontWeight: '600', color: '#2563eb' },
   section:         { padding: 16 },
   sectionTitle:    { fontSize: 17, fontWeight: '600', color: '#1f2937', marginBottom: 12 },
   emptyCard: {

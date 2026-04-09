@@ -159,6 +159,14 @@ export const notificationsAPI = {
   sendToAll: (data) => api.post('/notifications/send-all', data),
 };
 
+export const messagesAPI = {
+  getConversations:   (params) => api.get('/messages/conversations', { params }),
+  getOrCreateDirect:  (recipientId) => api.post('/messages/conversations/direct', { recipientId }),
+  getMessages:        (conversationId, params) => api.get(`/messages/conversation/${conversationId}`, { params }),
+  sendMessage:        (data) => api.post('/messages/send', data),
+  markAsRead:         (messageId) => api.put(`/messages/${messageId}/read`),
+};
+
 /**
  * Reconnaissance Faciale
  * Utilise les endpoints /api/face-recognition/* du backend

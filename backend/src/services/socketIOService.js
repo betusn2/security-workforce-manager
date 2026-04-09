@@ -55,6 +55,13 @@ class SocketIOService {
       socket.on('message:send', (data) => this.handleMessageSend(socket, data));
       socket.on('messages:subscribe', (roomId) => this.subscribeToMessages(socket, roomId));
       
+      // Popup / notifications admin → agents
+      socket.on('admin:send_popup', (data) => this.handleAdminSendPopup(socket, data));
+      socket.on('admin:send_event_popup', (data) => this.handleAdminSendEventPopup(socket, data));
+      
+      // Chat entre agent et responsable
+      socket.on('chat:send_message', (data) => this.handleChatSendMessage(socket, data));
+      
       // Incidents
       socket.on('incident:create', (data) => this.handleIncidentCreate(socket, data));
       socket.on('incident:update', (data) => this.handleIncidentUpdate(socket, data));
@@ -495,8 +502,106 @@ class SocketIOService {
   }
 
   /**
-   * Créer un incident
+   * Envoyer un popup/alerte admin vers un agent spécifique
    */
+  handleAdminSendPopup(socket, data) {
+    const connection = this.connections.get(socket.id);
+    if (!connection) return;
+    if (!['admin', 'supervisor', 'responsable', 'superadmin'].includes(connection.role)) {
+      socket.emit('error', { message: 'Permission refusée' });
+      return;
+    }
+
+    const { recipientId, title, message, priority } = data;
+    if (!recipientId || !message) return;
+
+    this.io.to(`user:${recipientId}`).emit('admin:message', {
+      title:      title || 'Message du responsable',
+      message,
+      priority:   priority || 'normal',
+      senderName: data.senderName || 'Responsable',
+      timestamp:  Date.now(),
+    });
+
+    console.log(`📨 Popup envoyé à user:${recipientId} par ${connection.userId}`);
+  }
+
+  /**
+   * Diffuser un popup/alerte admin à tous les agents d'un événement
+   */
+  handleAdminSendEventPopup(socket, data) {
+    const connection = this.connections.get(socket.id);
+    if (!connection) return;
+    if (!['admin', 'supervisor', 'responsable', 'superadmin'].includes(connection.role)) {
+      socket.emit('error', { message: 'Permission refusée' });
+      return;
+    }
+
+    const { eventId, title, message, priority } = data;
+    if (!eventId || !message) return;
+
+    this.io.to(`event:${eventId}`).emit('admin:message', {
+      title:      title || 'Message de diffusion',
+      message,
+      priority:   priority || 'normal',
+      senderName: data.senderName || 'Responsable',
+      targetType: 'event',
+      timestamp:  Date.now(),
+    });
+
+    console.log(`📢 Broadcast envoyé à event:${eventId} par ${connection.userId}`);
+  }
+
+  /**
+   * Chat en temps réel entre agent et responsable
+   */
+  async handleChatSendMessage(socket, data) {
+    const connection = this.connections.get(socket.id);
+    if (!connection) return;
+
+    const { conversationId, content, recipientId } = data;
+    if (!content) return;
+
+    try {
+      const { Message, Conversation, User } = require('../models');
+
+      let convId = conversationId;
+      if (!convId && recipientId) {
+        // Créer ou récupérer la conversation directe
+        const { Conversation: Conv } = require('../models');
+        const conv = await Conv.findOrCreateDirect(connection.userId, recipientId);
+        convId = conv.conversation.id;
+      }
+
+      if (!convId) return;
+
+      const message = await Message.create({
+        conversationId: convId,
+        senderId:       connection.userId,
+        recipientId:    recipientId || null,
+        messageType:    'text',
+        content,
+        deliveredAt:    new Date(),
+      });
+
+      const fullMsg = await Message.findByPk(message.id, {
+        include: [{ model: User, as: 'sender', attributes: ['id', 'firstName', 'lastName', 'profilePhoto'] }],
+      });
+
+      const payload = { conversationId: convId, message: fullMsg.toJSON() };
+
+      // Envoyer au destinataire
+      if (recipientId) {
+        this.io.to(`user:${recipientId}`).emit('chat:new_message', payload);
+      }
+      // Confirmer à l'expéditeur
+      socket.emit('chat:message_sent', payload);
+
+    } catch (err) {
+      console.error('❌ Erreur chat:send_message:', err);
+      socket.emit('chat:error', { message: 'Erreur envoi message' });
+    }
+  }
   handleIncidentCreate(socket, data) {
     const connection = this.connections.get(socket.id);
     if (!connection) return;

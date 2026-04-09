@@ -5,7 +5,7 @@ import {
   FiTrash2, FiAlertTriangle, FiCheckCircle, FiUserCheck, FiUserX,
   FiActivity, FiShield, FiLayers, FiFlag, FiAlertCircle, FiInfo,
   FiTrendingUp, FiCopy, FiRepeat, FiBatteryCharging, FiWifi, FiWifiOff, FiNavigation,
-  FiRefreshCw
+  FiRefreshCw, FiMessageSquare, FiRadio, FiZap
 } from 'react-icons/fi';
 import io from 'socket.io-client';
 import { eventsAPI, zonesAPI, assignmentsAPI, attendanceAPI, trackingAPI } from '../services/api';
@@ -18,6 +18,7 @@ import PresenceTimeline from '../components/PresenceTimeline';
 import ComplianceScore from '../components/ComplianceScore';
 import AlertsPanel from '../components/AlertsPanel';
 import AgentAvatar from '../components/AgentAvatar';
+import SendMessageModal from '../components/SendMessageModal';
 import trackingStatsService from '../services/trackingStatsService';
 import useAuthStore from '../hooks/useAuth';
 
@@ -54,6 +55,9 @@ const EventDetails = () => {
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [screenshotData, setScreenshotData] = useState(null);   // { agentId, imageBase64, timestamp }
   const [screenshotLoading, setScreenshotLoading] = useState(false);
+
+  // 🆕 Modal d'envoi de message
+  const [msgModal, setMsgModal] = useState(null); // null | { type:'agent'|'event', ... }
 
   // Ref pour déduplication position updates (même agent, même pos <5s)
   const lastPositionRef = useRef({});
@@ -912,59 +916,52 @@ const EventDetails = () => {
       {/* Agents affectés */}
       {assignments.length > 0 && (
         <div className="card">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
             <h2 className="text-xl font-bold text-gray-900 flex items-center">
               <FiUsers className="mr-2 text-purple-600" />
               Agents affectés ({assignments.length})
             </h2>
-            <div className="flex items-center gap-3 text-sm flex-wrap">
+            <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-green-50 border border-green-200">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                 <FiWifi className="text-green-600" size={13} />
-                <span className="text-green-700 font-medium">{onlineAgents.size} en ligne</span>
+                <span className="text-green-700 font-medium text-sm">{onlineAgents.size} en ligne</span>
               </div>
               {getRecentGPSCount() > onlineAgents.size && (
                 <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200">
                   <FiNavigation className="text-blue-600" size={13} />
-                  <span className="text-blue-700 font-medium">{getRecentGPSCount()} avec GPS récent</span>
+                  <span className="text-blue-700 font-medium text-sm">{getRecentGPSCount()} GPS récent</span>
                 </div>
               )}
+              {/* 📢 Diffusion à tous les agents */}
+              <button
+                onClick={() => setMsgModal({
+                  type: 'event',
+                  eventId: event?.id,
+                  eventName: event?.name || 'Événement',
+                })}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm transition-all shadow-sm"
+                title="Diffuser un message à tous les agents"
+              >
+                <FiRadio size={15} />
+                Diffuser
+              </button>
             </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Agent
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Zone
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Statut GPS
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Position GPS
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Batterie
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Périmètre
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Présence
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Check-in
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Check-out
-                  </th>
+            <table className="min-w-full divide-y divide-gray-100">
+              <thead>
+                <tr className="bg-gradient-to-r from-gray-50 to-gray-100">
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Zone</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">GPS</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Batterie</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Périmètre</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Présence</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-gray-100">
                 {assignments.map((assignment) => {
                   const agentAttendance = attendance.find(a => a.agentId === assignment.agentId);
                   const isOnline = onlineAgents.has(assignment.agentId);
@@ -972,21 +969,20 @@ const EventDetails = () => {
                   const inPerimeter = isAgentInPerimeter(assignment.agentId);
                   const lastSeen = getLastSeenLabel(location?.timestamp);
                   const hasRecentGPS = location?.timestamp && (Date.now() - new Date(location.timestamp).getTime()) < 5 * 60 * 1000;
-                  
+
                   return (
-                    <>
-                    <tr 
-                      key={assignment.id} 
-                      className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    <React.Fragment key={assignment.id}>
+                    <tr
+                      className={`hover:bg-indigo-50/40 transition-colors cursor-pointer ${
+                        isOnline ? 'bg-green-50/20' : ''
+                      }`}
                       onClick={() => {
-                        // Ouvrir le panneau même sans GPS — avec infos agent basiques
                         setSelectedAgent({
                           userId: assignment.agentId,
                           ...(location || {}),
                           user: {
                             ...(assignment.agent || {}),
                             ...(location?.user || {}),
-                            // Préférer données assignment (photo, téléphone)
                             id: assignment.agentId,
                             firstName: assignment.agent?.firstName || location?.user?.firstName || '',
                             lastName: assignment.agent?.lastName || location?.user?.lastName || '',
@@ -1000,7 +996,8 @@ const EventDetails = () => {
                       }}
                       title="Cliquer pour voir les informations détaillées"
                     >
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      {/* Agent */}
+                      <td className="px-5 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-3">
                           <AgentAvatar
                             photo={assignment.agent?.profilePhoto}
@@ -1010,107 +1007,122 @@ const EventDetails = () => {
                             online={isOnline}
                           />
                           <div>
-                            <p className="font-semibold text-gray-900">
+                            <p className="font-semibold text-gray-900 text-sm">
                               {assignment.agent?.firstName} {assignment.agent?.lastName}
                             </p>
-                            <p className="text-sm text-gray-500">{assignment.agent?.employeeId}</p>
+                            <p className="text-xs text-gray-400">{assignment.agent?.employeeId}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-900">
-                          {assignment.zone?.name || '-'}
-                        </span>
+
+                      {/* Zone */}
+                      <td className="px-5 py-3 whitespace-nowrap">
+                        {assignment.zone?.name ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium">
+                            <FiMapPin size={10} className="text-gray-400" />
+                            {assignment.zone.name}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
                       </td>
-                      {/* Statut GPS: en ligne (socket) / fond (API récent) / hors ligne */}
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
+
+                      {/* GPS (status + coords combinés) */}
+                      <td className="px-5 py-3 whitespace-nowrap text-center">
                         {isOnline ? (
-                          <div className="flex flex-col items-center gap-1">
+                          <div className="flex flex-col items-center gap-0.5">
                             <div className="flex items-center gap-1 text-green-600">
-                              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                              <FiWifi size={14} />
+                              <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                              <FiWifi size={12} />
                               <span className="text-xs font-bold">En ligne</span>
                             </div>
+                            {location?.lat && (
+                              <span className="text-xs font-mono text-blue-500">
+                                {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
+                              </span>
+                            )}
                             {lastSeen && <span className="text-xs text-gray-400">{lastSeen}</span>}
                           </div>
                         ) : hasRecentGPS ? (
-                          <div className="flex flex-col items-center gap-1">
+                          <div className="flex flex-col items-center gap-0.5">
                             <div className="flex items-center gap-1 text-blue-500">
-                              <FiNavigation size={14} />
+                              <FiNavigation size={12} />
                               <span className="text-xs font-medium">Fond/Veille</span>
                             </div>
+                            {location?.lat && (
+                              <span className="text-xs font-mono text-blue-400">
+                                {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
+                              </span>
+                            )}
                             {lastSeen && <span className="text-xs text-gray-400">{lastSeen}</span>}
                           </div>
                         ) : location?.timestamp ? (
-                          <div className="flex flex-col items-center gap-1">
+                          <div className="flex flex-col items-center gap-0.5">
                             <div className="flex items-center gap-1 text-gray-400">
-                              <FiWifiOff size={14} />
+                              <FiWifiOff size={12} />
                               <span className="text-xs">Hors ligne</span>
                             </div>
                             {lastSeen && <span className="text-xs text-gray-400">{lastSeen}</span>}
                           </div>
                         ) : (
-                          <div className="flex items-center justify-center gap-1 text-gray-300">
-                            <FiWifiOff size={14} />
-                            <span className="text-xs">Aucune donnée</span>
-                          </div>
-                        )}
-                      </td>
-                      {/* Position GPS combinée (lat + lng) */}
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {location?.lat && location?.lng ? (
                           <div className="flex flex-col items-center gap-1">
-                            <span className="text-xs font-mono text-blue-600">
-                              {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
-                            </span>
-                            {location.accuracy && (
-                              <span className="text-xs text-gray-400">±{Math.round(location.accuracy)}m</span>
-                            )}
+                            <FiWifiOff size={14} className="text-gray-300" />
+                            <span className="text-xs text-gray-300">Aucune donnée</span>
                           </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
+
+                      {/* Batterie */}
+                      <td className="px-5 py-3 whitespace-nowrap text-center">
                         {location?.battery !== undefined ? (
                           <div className="flex items-center justify-center gap-1">
-                            <FiBatteryCharging className={getBatteryColor(location.battery)} size={16} />
-                            <span className={`text-xs font-medium ${getBatteryColor(location.battery)}`}>
+                            <FiBatteryCharging className={getBatteryColor(location.battery)} size={15} />
+                            <span className={`text-xs font-bold ${getBatteryColor(location.battery)}`}>
                               {location.battery}%
                             </span>
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-400">-</span>
+                          <span className="text-xs text-gray-300">—</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
+
+                      {/* Périmètre */}
+                      <td className="px-5 py-3 whitespace-nowrap text-center">
                         {inPerimeter === null ? (
-                          <span className="text-xs text-gray-400">-</span>
+                          <span className="text-xs text-gray-300">—</span>
                         ) : inPerimeter ? (
-                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 flex items-center justify-center gap-1">
-                            <FiCheckCircle size={12} />
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+                            <FiCheckCircle size={11} />
                             Dans zone
                           </span>
                         ) : (
-                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 flex items-center justify-center gap-1 animate-pulse">
-                            <FiAlertTriangle size={12} />
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700 animate-pulse">
+                            <FiAlertTriangle size={11} />
                             Hors zone
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+
+                      {/* Présence */}
+                      <td className="px-5 py-3 whitespace-nowrap">
                         <div className="flex flex-col gap-1">
                           {agentAttendance ? (
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              agentAttendance.status === 'present' ? 'bg-green-100 text-green-700' :
-                              agentAttendance.status === 'late' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-red-100 text-red-700'
-                            }`}>
-                              {agentAttendance.status === 'present' ? 'Présent' :
-                               agentAttendance.status === 'late' ? 'En retard' : 'Absent'}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                agentAttendance.status === 'present' ? 'bg-green-100 text-green-700' :
+                                agentAttendance.status === 'late' ? 'bg-yellow-100 text-yellow-700' :
+                                'bg-red-100 text-red-700'
+                              }`}>
+                                {agentAttendance.status === 'present' ? 'Présent' :
+                                 agentAttendance.status === 'late' ? 'En retard' : 'Absent'}
+                              </span>
+                              <span className="text-xs text-gray-400">
+                                {agentAttendance.checkInTime && format(new Date(agentAttendance.checkInTime), 'HH:mm', { locale: fr })}
+                                {agentAttendance.checkOutTime && ` → ${format(new Date(agentAttendance.checkOutTime), 'HH:mm', { locale: fr })}`}
+                              </span>
+                            </div>
                           ) : (
-                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">
                               Non pointé
                             </span>
                           )}
@@ -1119,19 +1131,27 @@ const EventDetails = () => {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {agentAttendance?.checkInTime ? 
-                          format(new Date(agentAttendance.checkInTime), 'HH:mm', { locale: fr }) : 
-                          '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {agentAttendance?.checkOutTime ? 
-                          format(new Date(agentAttendance.checkOutTime), 'HH:mm', { locale: fr }) : 
-                          '-'}
+
+                      {/* Actions */}
+                      <td className="px-5 py-3 whitespace-nowrap text-center" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => setMsgModal({
+                            type: 'agent',
+                            agentId: assignment.agentId,
+                            agentName: `${assignment.agent?.firstName || ''} ${assignment.agent?.lastName || ''}`.trim(),
+                          })}
+                          title="Envoyer un message à cet agent"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-medium text-xs transition-all hover:shadow-sm"
+                        >
+                          <FiMessageSquare size={13} />
+                          Msg
+                        </button>
                       </td>
                     </tr>
-                    <tr key={`timeline-${assignment.id}`} className="bg-gray-50">
-                      <td colSpan={9} className="px-6 py-2">
+
+                    {/* Ligne PresenceTimeline */}
+                    <tr key={`timeline-${assignment.id}`}>
+                      <td colSpan={7} className="px-5 py-2 bg-white border-b border-gray-50">
                         <PresenceTimeline
                           eventId={event?.id}
                           agentId={assignment.agentId}
@@ -1141,7 +1161,7 @@ const EventDetails = () => {
                         />
                       </td>
                     </tr>
-                    </>
+                    </React.Fragment>
                   );
                 })}
               </tbody>
@@ -1163,6 +1183,16 @@ const EventDetails = () => {
             Gérer les affectations
           </button>
         </div>
+      )}
+
+      {/* 🆕 Modal d'envoi de message */}
+      {msgModal && (
+        <SendMessageModal
+          target={msgModal}
+          socketRef={socketRef}
+          senderName={authUser ? `${authUser.firstName || ''} ${authUser.lastName || ''}`.trim() : 'Responsable'}
+          onClose={() => setMsgModal(null)}
+        />
       )}
 
       {/* 🆕 PANNEAU D'INFORMATIONS ENRICHIES */}
