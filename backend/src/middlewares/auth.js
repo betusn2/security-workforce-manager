@@ -3,6 +3,11 @@ const { User } = require('../models');
 
 // Verify JWT Token
 const authenticate = async (req, res, next) => {
+  // Bypass OPTIONS preflight requests (handled by CORS middleware)
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+
   try {
     const authHeader = req.headers.authorization;
 
