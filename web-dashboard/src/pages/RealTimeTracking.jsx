@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import AgentAvatar from '../components/AgentAvatar';
@@ -7,11 +7,12 @@ import {
   FiUsers, FiActivity, FiBattery, FiMapPin, FiZap,
   FiAlertTriangle, FiCheckCircle, FiRefreshCw,
   FiNavigation, FiX, FiMaximize2, FiSmartphone,
-  FiMessageSquare, FiSend, FiChevronDown, FiChevronUp
+  FiMessageSquare, FiSend, FiChevronDown, FiChevronUp,
+  FiLayers, FiEye, FiEyeOff
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { io } from 'socket.io-client';
-import api, { trackingAPI, notificationsAPI } from '../services/api';
+import api, { trackingAPI, notificationsAPI, zonesAPI } from '../services/api';
 import useAuthStore from '../hooks/useAuth';
 import AgentInfoPanel from '../components/AgentInfoPanel';
 import AlertsPanel from '../components/AlertsPanel';
@@ -29,10 +30,46 @@ L.Icon.Default.mergeOptions({
   shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
 });
 
-// Recentrer la carte sur un nouveau centre
-function RecenterMap({ center }) {
+// Fonds de carte disponibles
+const TILE_LAYERS = {
+  street: {
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap',
+    label: '🗺 Plan'
+  },
+  satellite: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri &copy; Maxar Technologies',
+    label: '🛰 Satellite'
+  },
+  hybrid: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri',
+    overlay: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png',
+    label: '🛰 Hybride'
+  },
+  topo: {
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenTopoMap',
+    label: '⛰ Topo'
+  },
+};
+
+// Voler vers un point/zoom spécifique sur la carte
+function FlyToTarget({ target }) {
   const map = useMap();
-  useEffect(() => { if (center) map.setView(center, map.getZoom()); }, [center, map]);
+  const lastRef = useRef(null);
+  useEffect(() => {
+    if (!target) return;
+    const key = JSON.stringify(target);
+    if (lastRef.current === key) return;
+    lastRef.current = key;
+    if (target.bounds) {
+      map.flyToBounds(target.bounds, { duration: 1.2, maxZoom: 17, padding: [40, 40] });
+    } else {
+      map.flyTo(target.center, target.zoom || 15, { duration: 1.2, easeLinearity: 0.5 });
+    }
+  }, [target]);
   return null;
 }
 
@@ -208,6 +245,10 @@ const RealTimeTracking = () => {
     showActive: true, showOutside: true, showCompleted: false,
     showLowBattery: true, showAgents: true, showSupervisors: true, showOffline: false,
   });
+  const [zones,        setZones]        = useState([]);
+  const [showZones,    setShowZones]    = useState(true);
+  const [mapTile,      setMapTile]      = useState('street');
+  const [flyTarget,    setFlyTarget]    = useState(null);
   const [mapCenter,    setMapCenter]    = useState([33.5731, -7.5898]);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [loading,      setLoading]      = useState(false);
@@ -370,12 +411,30 @@ const RealTimeTracking = () => {
     }
   };
 
+  const loadZones = async (eventId) => {
+    try {
+      const r = await zonesAPI.getByEvent(eventId);
+      const data = r?.data?.data || r?.data || [];
+      setZones(Array.isArray(data) ? data.filter(z => z.latitude && z.longitude) : []);
+    } catch { setZones([]); }
+  };
+
   const selectEvent = useCallback(async (evt) => {
     if (!evt) return;
     setSelectedEvent(evt);
-    if (evt.latitude && evt.longitude) setMapCenter([parseFloat(evt.latitude), parseFloat(evt.longitude)]);
+    setZones([]);
+    if (evt.latitude && evt.longitude) {
+      const lat = parseFloat(evt.latitude);
+      const lng = parseFloat(evt.longitude);
+      const radius = parseFloat(evt.geoRadius || evt.radius || 200);
+      // Calculer zoom adapté au rayon du géofence
+      const zoom = radius > 2000 ? 12 : radius > 800 ? 13 : radius > 300 ? 15 : 16;
+      setMapCenter([lat, lng]);
+      setFlyTarget({ center: [lat, lng], zoom });
+    }
     loadAgents(evt.id);
     loadLivePositions(evt.id);
+    loadZones(evt.id);
   }, []);
 
   const loadAgents = async (eventId) => {
@@ -647,27 +706,115 @@ const RealTimeTracking = () => {
       <div className="flex" style={{ height: isFullScreen ? 'calc(100vh - 230px)' : 560 }}>
         {/* Carte */}
         <div className="flex-1 relative">
-          <MapContainer center={mapCenter} zoom={13} style={{ height: '100%', width: '100%' }}>
-            <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            <RecenterMap center={mapCenter} />
+          {/* Contrôles carte */}
+          <div className="absolute top-3 left-3 z-[1000] flex gap-1.5 flex-col">
+            {/* Sélecteur fond de carte */}
+            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+              {Object.entries(TILE_LAYERS).map(([key, tile]) => (
+                <button key={key} onClick={() => setMapTile(key)}
+                  className={`w-full px-3 py-1.5 text-xs font-medium text-left transition-colors ${
+                    mapTile === key ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'
+                  }`}>{tile.label}</button>
+              ))}
+            </div>
+            {/* Toggle zones */}
+            <button onClick={() => setShowZones(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl shadow-lg border text-xs font-semibold transition-colors ${
+                showZones ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+              }`}>
+              {showZones ? <FiEye size={12} /> : <FiEyeOff size={12} />}
+              Zones ({zones.length})
+            </button>
+          </div>
 
-            {/* Périmètre */}
+          <MapContainer center={mapCenter} zoom={13} style={{ height: '100%', width: '100%' }}>
+            <TileLayer
+              attribution={TILE_LAYERS[mapTile].attribution}
+              url={TILE_LAYERS[mapTile].url}
+            />
+            {/* Couche labels supplémentaire (mode hybride) */}
+            {mapTile === 'hybrid' && TILE_LAYERS.hybrid.overlay && (
+              <TileLayer url={TILE_LAYERS.hybrid.overlay} attribution="" />
+            )}
+            <FlyToTarget target={flyTarget} />
+
+            {/* Périmètre principal de l'événement */}
             {selectedEvent?.latitude && selectedEvent?.longitude && (
               <>
                 <Circle
                   center={[parseFloat(selectedEvent.latitude), parseFloat(selectedEvent.longitude)]}
                   radius={parseFloat(selectedEvent.geoRadius || selectedEvent.radius) || 200}
-                  pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.07, weight: 2, dashArray: '6 10' }}
-                />
+                  pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.07, weight: 2.5, dashArray: '8 6' }}
+                >
+                  <Tooltip sticky className="leaflet-tooltip-zone">
+                    <span style={{ fontWeight: 700, color: '#3b82f6' }}>🎯 {selectedEvent.name}</span><br/>
+                    <span style={{ fontSize: 11, color: '#666' }}>Périmètre : {selectedEvent.geoRadius || 200}m</span>
+                  </Tooltip>
+                </Circle>
                 <Marker position={[parseFloat(selectedEvent.latitude), parseFloat(selectedEvent.longitude)]}>
                   <Popup>
-                    <strong>{selectedEvent.name}</strong><br />
-                    <span className="text-xs text-gray-500">{selectedEvent.location}</span><br />
-                    <span className="text-xs">Rayon : {selectedEvent.geoRadius || 200}m</span>
+                    <div style={{ minWidth: 200 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, color: '#1e40af' }}>📍 {selectedEvent.name}</div>
+                      <div style={{ fontSize: 12, color: '#666', marginBottom: 6 }}>{selectedEvent.location}</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 10px', fontSize: 11 }}>
+                        <span style={{ color: '#888' }}>Rayon</span><span>{selectedEvent.geoRadius || 200}m</span>
+                        <span style={{ color: '#888' }}>Statut</span>
+                        <span style={{ color: selectedEvent.status === 'active' ? '#16a34a' : '#6b7280', fontWeight: 600 }}>
+                          {selectedEvent.status === 'active' ? '🟢 En cours' : '⚫ ' + selectedEvent.status}
+                        </span>
+                        <span style={{ color: '#888' }}>Zones</span><span>{zones.length} zones</span>
+                        <span style={{ color: '#888' }}>Agents</span><span>{stats.total} affectés</span>
+                      </div>
+                    </div>
                   </Popup>
                 </Marker>
               </>
             )}
+
+            {/* Zones de l'événement */}
+            {showZones && zones.map((zone) => {
+              const zLat = parseFloat(zone.latitude);
+              const zLng = parseFloat(zone.longitude);
+              const zRadius = parseFloat(zone.geoRadius || 50);
+              const zColor = zone.color || '#10b981';
+              return (
+                <React.Fragment key={zone.id}>
+                  <Circle
+                    center={[zLat, zLng]}
+                    radius={zRadius}
+                    pathOptions={{ color: zColor, fillColor: zColor, fillOpacity: 0.18, weight: 2, dashArray: null }}
+                  >
+                    <Tooltip permanent direction="center" offset={[0, 0]}
+                      className="leaflet-tooltip-zone-label">
+                      <div style={{ background: zColor, color: 'white', borderRadius: 6, padding: '2px 7px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', boxShadow: '0 1px 4px rgba(0,0,0,0.25)' }}>
+                        {zone.name}
+                      </div>
+                    </Tooltip>
+                    <Popup>
+                      <div style={{ minWidth: 200 }}>
+                        <div style={{ color: zColor, fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
+                          📍 {zone.name}
+                        </div>
+                        {zone.description && (
+                          <div style={{ fontSize: 12, color: '#555', marginBottom: 6, fontStyle: 'italic' }}>{zone.description}</div>
+                        )}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 10px', fontSize: 11 }}>
+                          <span style={{ color: '#888' }}>Rayon</span><span>{zone.geoRadius || 50}m</span>
+                          {zone.capacity && <><span style={{ color: '#888' }}>Capacité</span><span>{zone.capacity}</span></>}
+                          {zone.requiredAgents && <><span style={{ color: '#888' }}>Agents requis</span><span>{zone.requiredAgents}</span></>}
+                          {zone.priority && <><span style={{ color: '#888' }}>Priorité</span><span style={{ textTransform: 'capitalize' }}>{zone.priority}</span></>}
+                        </div>
+                        {zone.instructions && (
+                          <div style={{ marginTop: 8, padding: '6px 8px', background: '#f8fafc', borderRadius: 6, fontSize: 11, color: '#374151' }}>
+                            📋 {zone.instructions}
+                          </div>
+                        )}
+                      </div>
+                    </Popup>
+                  </Circle>
+                </React.Fragment>
+              );
+            })}
 
             {/* Markers agents */}
             {mapAgents.map(a => (
@@ -720,6 +867,22 @@ const RealTimeTracking = () => {
                 pathOptions={{ color: '#3b82f6', weight: 3, opacity: 0.7 }} />
             )}
           </MapContainer>
+
+          {/* Légende zones */}
+          {showZones && zones.length > 0 && (
+            <div className="absolute bottom-6 left-3 bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-3 z-[1000] max-w-[200px]">
+              <div className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1">
+                <FiLayers size={11} /> Zones ({zones.length})
+              </div>
+              {zones.map(z => (
+                <div key={z.id} className="flex items-center gap-2 mb-1 last:mb-0">
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: z.color || '#10b981', flexShrink: 0, border: '2px solid white', boxShadow: '0 0 0 1px ' + (z.color || '#10b981') }} />
+                  <span className="text-xs text-gray-700 truncate" title={z.name}>{z.name}</span>
+                  <span className="text-xs text-gray-400 ml-auto">{z.geoRadius || 50}m</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Alertes flottantes */}
           {alerts.length > 0 && (
@@ -857,7 +1020,7 @@ const RealTimeTracking = () => {
                         <td className="px-4 py-3 font-mono text-xs">
                           {loc?.lat ? (
                             <button className="text-blue-600 hover:underline text-left"
-                              onClick={e => { e.stopPropagation(); setMapCenter([loc.lat, loc.lng]); }}
+                              onClick={e => { e.stopPropagation(); setFlyTarget({ center: [loc.lat, loc.lng], zoom: 17 }); }}
                               title="Centrer carte">
                               {loc.lat.toFixed(5)}, {loc.lng.toFixed(5)}
                             </button>
@@ -945,7 +1108,7 @@ const RealTimeTracking = () => {
                             ><FiActivity size={12} /></button>
                             {loc?.lat && (
                               <button
-                                onClick={() => setMapCenter([loc.lat, loc.lng])}
+                                onClick={() => setFlyTarget({ center: [loc.lat, loc.lng], zoom: 17 })}
                                 className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-colors"
                                 title="Centrer carte"
                               ><FiNavigation size={12} /></button>
@@ -961,6 +1124,26 @@ const RealTimeTracking = () => {
           )}
         </div>
       )}
+
+      {/* CSS pour tooltips zones */}
+      <style>{`
+        .leaflet-tooltip-zone-label {
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+        }
+        .leaflet-tooltip-zone-label::before { display: none !important; }
+        .leaflet-tooltip.leaflet-tooltip-zone {
+          background: white;
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
+          padding: 4px 8px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+          font-size: 12px;
+        }
+        .leaflet-tooltip.leaflet-tooltip-zone::before { display: none; }
+      `}</style>
 
       <AlertsPanel eventId={selectedEvent?.id} token={token} />
     </div>
