@@ -8,7 +8,7 @@ import {
   FiRefreshCw
 } from 'react-icons/fi';
 import io from 'socket.io-client';
-import { eventsAPI, zonesAPI, assignmentsAPI, attendanceAPI } from '../services/api';
+import { eventsAPI, zonesAPI, assignmentsAPI, attendanceAPI, trackingAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { format, isPast, isFuture, isToday, isTomorrow, differenceInDays, differenceInHours } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -58,13 +58,17 @@ const EventDetails = () => {
     if (id) {
       fetchEventDetails();
       initializeSocketIO();
+      // 🔄 Periodic API refresh every 30s to catch background/sleep mode positions
+      const refreshInterval = setInterval(() => {
+        fetchLivePositions();
+      }, 30000);
+      return () => {
+        clearInterval(refreshInterval);
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+        }
+      };
     }
-    
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-    };
   }, [id]);
 
   // Initialiser Socket.IO pour le suivi en temps réel
@@ -285,6 +289,50 @@ const EventDetails = () => {
     });
   };
 
+  // 📡 Charger les dernières positions connues via API (inclut tracking en arrière-plan/veille)
+  const fetchLivePositions = async () => {
+    try {
+      const res = await trackingAPI.getEventLivePositions(id);
+      const positions = res?.data?.data || res?.data || [];
+      if (Array.isArray(positions) && positions.length > 0) {
+        setAgentLocations(prev => {
+          const updated = { ...prev };
+          positions.forEach(pos => {
+            const userId = pos.userId || pos.agentId;
+            if (!userId) return;
+            // Only update if this API data is newer than socket data
+            const existing = prev[userId];
+            const newTs = new Date(pos.createdAt || pos.recordedAt || pos.timestamp);
+            if (!existing || newTs > existing.timestamp) {
+              updated[userId] = {
+                lat: parseFloat(pos.latitude),
+                lng: parseFloat(pos.longitude),
+                latitude: parseFloat(pos.latitude),
+                longitude: parseFloat(pos.longitude),
+                accuracy: pos.accuracy,
+                altitude: pos.altitude,
+                speed: pos.speed,
+                battery: pos.batteryLevel || 100,
+                batteryLevel: pos.batteryLevel || 100,
+                batteryCharging: pos.batteryCharging,
+                networkType: pos.networkType,
+                networkOnline: pos.networkOnline,
+                isMoving: pos.isMoving,
+                timestamp: newTs,
+                isOnline: existing?.isOnline || false, // HTTP = background, may not be in real-time socket
+                fromBackground: true,
+                user: pos.user
+              };
+            }
+          });
+          return updated;
+        });
+      }
+    } catch (err) {
+      // Silent fail - live positions are optional enrichment
+    }
+  };
+
   // Calculer la distance entre deux points GPS (formule Haversine)
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3; // Rayon de la Terre en mètres
@@ -322,6 +370,27 @@ const EventDetails = () => {
     if (level >= 50) return 'text-green-500';
     if (level >= 20) return 'text-yellow-500';
     return 'text-red-500';
+  };
+
+  // Formater "il y a X secondes/minutes" pour la dernière position GPS
+  const getLastSeenLabel = (timestamp) => {
+    if (!timestamp) return null;
+    const diffMs = Date.now() - new Date(timestamp).getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 60) return `il y a ${diffSec}s`;
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `il y a ${diffMin}min`;
+    const diffHour = Math.floor(diffMin / 60);
+    return `il y a ${diffHour}h`;
+  };
+
+  // Agents avec position GPS récente (< 5 min), qu'ils soient en ligne ou en fond
+  const getRecentGPSCount = () => {
+    const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+    return assignments.filter(a => {
+      const loc = agentLocations[a.agentId];
+      return loc && loc.timestamp && new Date(loc.timestamp).getTime() > fiveMinAgo;
+    }).length;
   };
 
   const fetchEventDetails = async () => {
@@ -362,6 +431,9 @@ const EventDetails = () => {
         console.log('No attendance for this event');
         setAttendance([]);
       }
+
+      // 📡 Charger les dernières positions GPS (inclut données envoyées en arrière-plan/veille)
+      await fetchLivePositions().catch(() => {});
 
     } catch (err) {
       console.error('Error fetching event details:', err);
@@ -760,15 +832,18 @@ const EventDetails = () => {
               <FiUsers className="mr-2 text-purple-600" />
               Agents affectés ({assignments.length})
             </h2>
-            <div className="flex items-center gap-4 text-sm">
-              <div className="flex items-center gap-2">
-                <FiWifi className="text-green-500" />
-                <span className="text-gray-600">{onlineAgents.size} en ligne</span>
+            <div className="flex items-center gap-3 text-sm flex-wrap">
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-green-50 border border-green-200">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <FiWifi className="text-green-600" size={13} />
+                <span className="text-green-700 font-medium">{onlineAgents.size} en ligne</span>
               </div>
-              <div className="flex items-center gap-2">
-                <FiNavigation className="text-blue-500" />
-                <span className="text-gray-600">Tracking temps réel</span>
-              </div>
+              {getRecentGPSCount() > onlineAgents.size && (
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200">
+                  <FiNavigation className="text-blue-600" size={13} />
+                  <span className="text-blue-700 font-medium">{getRecentGPSCount()} avec GPS récent</span>
+                </div>
+              )}
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -782,13 +857,10 @@ const EventDetails = () => {
                     Zone
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    En ligne
+                    Statut GPS
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Latitude
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Longitude
+                    Position GPS
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Batterie
@@ -797,7 +869,7 @@ const EventDetails = () => {
                     Périmètre
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Statut
+                    Présence
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Check-in
@@ -813,6 +885,8 @@ const EventDetails = () => {
                   const isOnline = onlineAgents.has(assignment.agentId);
                   const location = agentLocations[assignment.agentId];
                   const inPerimeter = isAgentInPerimeter(assignment.agentId);
+                  const lastSeen = getLastSeenLabel(location?.timestamp);
+                  const hasRecentGPS = location?.timestamp && (Date.now() - new Date(location.timestamp).getTime()) < 5 * 60 * 1000;
                   
                   return (
                     <>
@@ -820,15 +894,15 @@ const EventDetails = () => {
                       key={assignment.id} 
                       className="hover:bg-gray-50 transition-colors cursor-pointer"
                       onClick={() => {
-                        if (location && isOnline) {
+                        if (location) {
                           setSelectedAgent({
                             userId: assignment.agentId,
                             ...location,
                             user: assignment.agent || location.user
                           });
-                          toast.info(`📊 Infos détaillées: ${assignment.agent?.firstName} ${assignment.agent?.lastName}`, { autoClose: 2000 });
+                          toast.info(`📊 Infos: ${assignment.agent?.firstName} ${assignment.agent?.lastName}`, { autoClose: 2000 });
                         } else {
-                          toast.warning('❌ Agent non connecté ou pas de données GPS', { autoClose: 2000 });
+                          toast.warning('❌ Aucune donnée GPS disponible pour cet agent', { autoClose: 2000 });
                         }
                       }}
                       title="Cliquer pour voir les informations détaillées"
@@ -861,35 +935,53 @@ const EventDetails = () => {
                           {assignment.zone?.name || '-'}
                         </span>
                       </td>
+                      {/* Statut GPS: en ligne (socket) / fond (API récent) / hors ligne */}
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         {isOnline ? (
-                          <div className="flex items-center justify-center gap-1 text-green-600">
-                            <FiWifi size={16} />
-                            <span className="text-xs font-medium">En ligne</span>
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="flex items-center gap-1 text-green-600">
+                              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                              <FiWifi size={14} />
+                              <span className="text-xs font-bold">En ligne</span>
+                            </div>
+                            {lastSeen && <span className="text-xs text-gray-400">{lastSeen}</span>}
+                          </div>
+                        ) : hasRecentGPS ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="flex items-center gap-1 text-blue-500">
+                              <FiNavigation size={14} />
+                              <span className="text-xs font-medium">Fond/Veille</span>
+                            </div>
+                            {lastSeen && <span className="text-xs text-gray-400">{lastSeen}</span>}
+                          </div>
+                        ) : location?.timestamp ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="flex items-center gap-1 text-gray-400">
+                              <FiWifiOff size={14} />
+                              <span className="text-xs">Hors ligne</span>
+                            </div>
+                            {lastSeen && <span className="text-xs text-gray-400">{lastSeen}</span>}
                           </div>
                         ) : (
-                          <div className="flex items-center justify-center gap-1 text-gray-400">
-                            <FiWifiOff size={16} />
-                            <span className="text-xs">Hors ligne</span>
+                          <div className="flex items-center justify-center gap-1 text-gray-300">
+                            <FiWifiOff size={14} />
+                            <span className="text-xs">Aucune donnée</span>
                           </div>
                         )}
                       </td>
+                      {/* Position GPS combinée (lat + lng) */}
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {location?.lat ? (
-                          <span className="text-xs font-mono text-blue-600">
-                            {location.lat.toFixed(6)}
-                          </span>
+                        {location?.lat && location?.lng ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-xs font-mono text-blue-600">
+                              {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
+                            </span>
+                            {location.accuracy && (
+                              <span className="text-xs text-gray-400">±{Math.round(location.accuracy)}m</span>
+                            )}
+                          </div>
                         ) : (
-                          <span className="text-xs text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {location?.lng ? (
-                          <span className="text-xs font-mono text-blue-600">
-                            {location.lng.toFixed(6)}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-gray-400">-</span>
+                          <span className="text-xs text-gray-400">—</span>
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -952,7 +1044,7 @@ const EventDetails = () => {
                       </td>
                     </tr>
                     <tr key={`timeline-${assignment.id}`} className="bg-gray-50">
-                      <td colSpan={10} className="px-6 py-2">
+                      <td colSpan={9} className="px-6 py-2">
                         <PresenceTimeline
                           eventId={event?.id}
                           agentId={assignment.agentId}

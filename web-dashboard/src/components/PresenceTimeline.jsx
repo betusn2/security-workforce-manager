@@ -15,7 +15,8 @@ const PresenceTimeline = ({ eventId, agentId, agentName, eventStart, eventEnd })
     axios.get(`/api/tracking/timeline/${eventId}/${agentId}`, {
       headers: { Authorization: `Bearer ${token}` }
     }).then(r => {
-      setTimeline(r.data);
+      // API returns { success: true, data: { segments, compliancePercent, ... } }
+      setTimeline(r.data?.data || r.data);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [eventId, agentId]);
@@ -51,8 +52,8 @@ const PresenceTimeline = ({ eventId, agentId, agentName, eventStart, eventEnd })
     <div style={{ margin: '8px 0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
         <span style={{ fontSize: 12, color: '#94a3b8' }}>{agentName}</span>
-        <span style={{ fontSize: 12, fontWeight: 'bold', color: timeline.compliancePercent >= 90 ? '#10b981' : timeline.compliancePercent >= 70 ? '#f59e0b' : '#ef4444' }}>
-          {Math.round(timeline.compliancePercent)}% conformité
+        <span style={{ fontSize: 12, fontWeight: 'bold', color: (timeline.compliancePercent ?? 0) >= 90 ? '#10b981' : (timeline.compliancePercent ?? 0) >= 70 ? '#f59e0b' : '#ef4444' }}>
+          {isNaN(timeline.compliancePercent) || timeline.compliancePercent == null ? '—' : Math.round(timeline.compliancePercent)}% conformité
         </span>
       </div>
       <div style={{ position: 'relative', height: 20, backgroundColor: '#1e293b', borderRadius: 4, overflow: 'hidden' }}>
