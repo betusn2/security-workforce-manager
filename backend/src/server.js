@@ -260,6 +260,14 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
 
+// ✅ Preflight handler explicite - doit être AVANT les routes
+app.options('*', cors({
+  origin: ALLOWED_ORIGINS,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+}));
+
 // Rate limiting - Désactivé en développement
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -361,6 +369,9 @@ app.get('/', (req, res) => {
 
 // 404 handler
 app.use((req, res) => {
+  const origin = req.headers.origin;
+  if (origin) res.header('Access-Control-Allow-Origin', origin);
+  res.header('Access-Control-Allow-Credentials', 'true');
   res.status(404).json({
     success: false,
     message: 'Route non trouvée'
@@ -370,7 +381,9 @@ app.use((req, res) => {
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('Error:', err);
-
+  const origin = req.headers.origin;
+  if (origin) res.header('Access-Control-Allow-Origin', origin);
+  res.header('Access-Control-Allow-Credentials', 'true');
   res.status(err.status || 500).json({
     success: false,
     message: err.message || 'Erreur interne du serveur',
