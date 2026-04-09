@@ -1,16 +1,24 @@
 /**
- * 🔋 TÂCHE GPS ARRIÈRE-PLAN (Background Location Task)
+ * 🔋 TÂCHE GPS ARRIÈRE-PLAN — PRODUCTION GRADE
  * =====================================================
- * Ce fichier DOIT être importé dans App.js (racine du projet)
- * avant tout autre import, pour que expo-task-manager l'enregistre.
+ * Ce fichier DOIT être importé en PREMIER dans App.js
+ * pour que expo-task-manager l'enregistre avant tout.
  *
- * Fonctionnement :
- * - Android : crée un Foreground Service avec notification persistante
- *   → Le GPS continue même si l'écran est éteint / app en arrière-plan
- * - iOS     : Background mode "location" (déclaré dans app.json)
+ * Stratégie background Android :
+ * ┌─────────────────────────────────────────────────────────┐
+ * │  Foreground Service (notification persistante)           │
+ * │  → Empêche Android de tuer le processus                 │
+ * │  → Intervalle natif GPS : 5 secondes                    │
+ * │  → Envoi HTTP (Socket.IO peut être suspendu par Hermes) │
+ * │  → stopWithTask=false → survit au "swipe to close"      │
+ * └─────────────────────────────────────────────────────────┘
  *
- * En arrière-plan, Socket.IO peut être suspendu → on POSTe via HTTP API.
- * En premier plan, trackingService.js utilise Socket.IO pour le temps réel.
+ * Déduplication : skip HTTP si socket/HTTP ont envoyé < 6s
+ * Adaptatif     : ralentit si batterie critique (<15%)
+ * Hors-ligne    : stocke positions localement, synchro au retour
+ * Alertes       : POST alerte si GPS/réseau coupé
+ *
+ * Compatible Android 10 → 15, Samsung/Xiaomi/Oppo/Realme
  */
 
 import * as TaskManager from 'expo-task-manager';
@@ -26,7 +34,12 @@ import { API_URL } from '../config';
 
 export const BACKGROUND_LOCATION_TASK = 'SECURITY_GUARD_BACKGROUND_LOCATION';
 
-// ─── Définition de la tâche ────────────────────────────────────────────────
+// ─── Clés AsyncStorage partagées ──────────────────────────────────────────
+export const TS_KEY_SOCKET = 'lastSocketSendTs';  // mis à jour par trackingService
+export const TS_KEY_BG     = 'lastBgSendTs';      // mis à jour par cette tâche
+const DEDUP_THRESHOLD_MS   = 6000;  // skip si une position a été envoyée < 6s
+
+// ─── Définition de la tâche native ───────────────────────────────────────
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
   if (error) {
     console.error('❌ Erreur tâche background GPS:', error.message);
@@ -76,7 +89,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
       isWithinGeofence = distanceFromEvent <= eventRadius;
     }
 
-    // Batterie
+    // ─── Batterie ─────────────────────────────────────────────────────────
     let batteryLevel = null, batteryCharging = false, batteryStatus = '—';
     try {
       const level = await Battery.getBatteryLevelAsync();
@@ -89,7 +102,7 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
         : batteryLevel > 15 ? 'Faible' : 'Critique';
     } catch {}
 
-    // Réseau
+    // ─── Réseau ───────────────────────────────────────────────────────────
     let networkType = 'Inconnu', networkOnline = true;
     try {
       const net = await Network.getNetworkStateAsync();
@@ -103,7 +116,25 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
       networkOnline = !!(net.isConnected && net.isInternetReachable);
     } catch {}
 
-    // Appareil
+    // ─── Déduplication : skip si un envoi (socket OU HTTP) < 6s ──────────
+    // trackingService écrit lastSocketSendTs après chaque envoi socket.
+    // Cette tâche écrit lastBgSendTs après chaque envoi HTTP.
+    // On évite les doublons quand socket et background tournent ensemble.
+    const lastSocketTs = parseInt(await AsyncStorage.getItem(TS_KEY_SOCKET) || '0');
+    const lastBgTs     = parseInt(await AsyncStorage.getItem(TS_KEY_BG)     || '0');
+    const lastAnySendTs = Math.max(lastSocketTs, lastBgTs);
+
+    if (Date.now() - lastAnySendTs < DEDUP_THRESHOLD_MS) {
+      await AsyncStorage.multiSet([
+        ['lastKnownLat', String(latitude)],
+        ['lastKnownLng', String(longitude)],
+        ['alert_last_activity_ts', String(Date.now())],
+      ]);
+      console.log(`⏭️ [BG] Skip (envoi il y a ${Math.round((Date.now() - lastAnySendTs) / 1000)}s) — ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+      return;
+    }
+
+    // ─── Appareil
     const deviceOS = Platform.OS === 'android'
       ? `Android ${Platform.Version}`
       : `iOS ${Platform.Version}`;
@@ -130,23 +161,14 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
       source: 'background',
     };
 
-    // 🔌 Vérifier si Socket.IO a envoyé récemment (< 20s) pour éviter les doublons
-    const lastSocketTs = await AsyncStorage.getItem('lastSocketSendTs');
-    if (lastSocketTs && Date.now() - parseInt(lastSocketTs) < 20000) {
-      // Socket.IO est actif et a envoyé récemment — skip pour éviter double envoi
-      // Mettre à jour quand même les données locales
-      await AsyncStorage.setItem('lastKnownLat', String(latitude));
-      await AsyncStorage.setItem('lastKnownLng', String(longitude));
-      await AsyncStorage.setItem('alert_last_activity_ts', String(Date.now()));
-      console.log(`⏭️ [BG] Skip HTTP (socket actif il y a ${Math.round((Date.now() - parseInt(lastSocketTs)) / 1000)}s) — ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
-      return;
-    }
-
-    // Envoyer via HTTP API (Socket.IO suspendu ou inactif)
+    // ─── Envoi HTTP (Socket.IO suspendu en background sur Hermes) ─────────
     await axios.post(`${API_URL}/tracking/location`, payload, {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 8000,
     });
+
+    // ✅ Marquer le timestamp HTTP pour le prochain cycle de déduplication
+    await AsyncStorage.setItem(TS_KEY_BG, String(Date.now()));
 
     // ─── Notification sortie de zone + détection sortie anticipée ──────────
     if (eventLat && eventLng && !isWithinGeofence) {
@@ -344,26 +366,28 @@ export async function startBackgroundTracking(userId, eventId = null) {
     // Démarrer le tracking background avec foreground service
     await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
       accuracy: Location.Accuracy.BestForNavigation,
-      timeInterval: 15000,          // toutes les 15 secondes (bon compromis réactivité/batterie)
-      distanceInterval: 10,         // ou si déplacé de 10m
-      deferredUpdatesInterval: 5000,
-      deferredUpdatesDistance: 8,
+      timeInterval: 5000,          // ✅ 5 secondes (was 15s) — temps réel
+      distanceInterval: 0,         // ✅ Toujours envoyer même si stationnaire (was 10m)
+      deferredUpdatesInterval: 3000, // Grouper les updates si décalés
+      deferredUpdatesDistance: 0,  // Sans filtre distance pour les updates groupées
       showsBackgroundLocationIndicator: true, // indicateur GPS sur iOS
 
-      // ─── ANDROID FOREGROUND SERVICE ───────────────────────────────
-      // Crée une notification persistante qui empêche Android de tuer l'app
+      // ─── ANDROID FOREGROUND SERVICE ─────────────────────────────
+      // Crée une notification PERSISTANTE non-supprimable.
+      // Empêche Android, Samsung, Xiaomi, Oppo, etc. de tuer l'app.
       foregroundService: {
-        notificationTitle: '📍 Sécurité — Suivi actif',
-        notificationBody: 'Votre position est suivie en temps réel',
-        notificationColor: '#2563eb',
+        notificationTitle: '📍 Security Guard — Suivi GPS actif',
+        notificationBody:  'Tracking en temps réel • Écran éteint : suivi maintenu',
+        notificationColor: '#1d4ed8',
+        killServiceOnDestroy: false,  // ✅ Survit au "swipe to close" (was absent/true)
       },
 
-      // Pause si pas de mouvement (économie batterie)
+      // Ne PAS mettre en pause automatiquement
       pausesUpdatesAutomatically: false,
 
-      // Actif en arrière-plan
+      // Type activité navigation générale (OtherNavigation = walking/standing)
       activityType: Location.ActivityType.OtherNavigation,
-      useSignificantChanges: false,  // ne pas utiliser le mode "changements significatifs"
+      useSignificantChanges: false, // toujours en mode complet, pas "significant-only"
     });
 
     console.log('✅ Background tracking GPS démarré');

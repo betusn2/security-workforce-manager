@@ -36,6 +36,8 @@ const withAndroid15Fix = (config) => {
     // USE_EXACT_ALARM does not need user approval (unlike SCHEDULE_EXACT_ALARM)
     addPermission('android.permission.USE_EXACT_ALARM');
     addPermission('android.permission.RECEIVE_BOOT_COMPLETED');
+    // Android 14+ — required to bind to foreground services
+    addPermission('android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE');
 
     const app = manifest.application?.[0];
     if (!app) return mod;
@@ -67,8 +69,13 @@ const withAndroid15Fix = (config) => {
           name.includes('LocationModule') ||
           name.includes('BackgroundFetch');
 
-        if (isLocationService && !service.$?.['android:foregroundServiceType']) {
-          service.$['android:foregroundServiceType'] = 'location';
+        if (isLocationService) {
+          if (!service.$?.['android:foregroundServiceType']) {
+            service.$['android:foregroundServiceType'] = 'location';
+          }
+          // ✅ Ne PAS tuer le service quand l'utilisateur ferme l'app (swipe to close)
+          // Essentiel pour Samsung/Oppo/Xiaomi qui utilisent stopWithTask par défaut
+          service.$['android:stopWithTask'] = 'false';
         }
 
         // Camera-related foreground services
@@ -89,6 +96,7 @@ const withAndroid15Fix = (config) => {
             'android:name': locationTaskService,
             'android:foregroundServiceType': 'location',
             'android:exported': 'false',
+            'android:stopWithTask': 'false',  // survit au swipe-to-close
           },
         });
       }

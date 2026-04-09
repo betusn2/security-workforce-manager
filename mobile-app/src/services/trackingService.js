@@ -17,8 +17,8 @@ import { Platform, AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import socketService from './socketService';
 
-const FOREGROUND_INTERVAL_MS = 15000; // 15s en premier plan
-const BACKGROUND_INTERVAL_MS = 20000; // 20s en arrière-plan (foreground service garde socket)
+const FOREGROUND_INTERVAL_MS = 5000;  // ✅ 5s — temps réel premier plan (was 15s)
+const BACKGROUND_INTERVAL_MS = 8000;  // 8s — foreground service garde socket vivant (was 20s)
 const MIN_DISTANCE_METERS = 3;
 
 class TrackingService {
@@ -61,13 +61,10 @@ class TrackingService {
     // Première position immédiate
     await this._sendPosition();
 
-    // Interval : envoie TOUJOURS via Socket.IO
-    // Android Foreground Service garde la connexion socket vivante même en veille
+    // Intervalle de 5s en premier plan.
+    // Note : ce timer JS peut être ralenti par Hermes en background.
+    // C'est OK — backgroundLocationTask.js (natif) prend le relais écran éteint.
     this.intervalId = setInterval(() => {
-      const interval = this._appState === 'active'
-        ? FOREGROUND_INTERVAL_MS
-        : BACKGROUND_INTERVAL_MS;
-      // Utiliser un seul intervalle (le plus petit) et laisser le délai interne gérer
       this._sendPosition();
     }, FOREGROUND_INTERVAL_MS);
 
@@ -216,8 +213,8 @@ class TrackingService {
       };
 
       socketService.emit('tracking:position', payload);
-      // 💾 Marquer le dernier envoi socket pour que backgroundLocationTask
-      // puisse éviter un double envoi HTTP dans les 20 prochaines secondes
+      // 💾 Horodatage partagé — backgroundLocationTask lit cette clé
+      // pour éviter les doublons socket/HTTP (seuil 6s)
       AsyncStorage.setItem('lastSocketSendTs', String(Date.now())).catch(() => {});
       console.log(`📍 Position envoyée (socket): ${latitude.toFixed(5)}, ${longitude.toFixed(5)} | batt:${batteryInfo.batteryLevel}% | ${speedKmh}km/h | écran:${isScreenOn ? 'ON' : 'OFF'}`);
 

@@ -59,6 +59,11 @@ import {
   stopBackgroundTracking,
   syncPendingPositions,
 } from './src/services/backgroundLocationTask';
+import {
+  startTrackingWatchdog,
+  stopTrackingWatchdog,
+  updateWatchdogEventId,
+} from './src/services/trackingWatchdog';
 import { hasPermissionsBeenRequested } from './src/services/permissionManager';
 import {
   startIntelligentAlertsService,
@@ -263,15 +268,18 @@ export default function App() {
       if (user?.role !== 'admin') {
         startBackgroundTracking(user.id, currentEventId);
         startIntelligentAlertsService(user.id, currentEventId);
+        startTrackingWatchdog(user.id, currentEventId); // 🐕 watchdog
       } else {
         stopBackgroundTracking(); // s'assurer qu'il est arrêté pour admin
         stopIntelligentAlertsService();
+        stopTrackingWatchdog();
       }
 
     } else {
       socketService.disconnect();
       stopBackgroundTracking();
       stopIntelligentAlertsService();
+      stopTrackingWatchdog();
     }
   }, [isAuthenticated, user?.id, user?.role, currentEventId]);
 
