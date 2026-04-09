@@ -4,7 +4,7 @@ services:
   - type: web
     name: security-workforce-backend
     env: node
-    region: frankfurt
+    region: ohio
     plan: free
     rootDir: backend
     buildCommand: npm install
