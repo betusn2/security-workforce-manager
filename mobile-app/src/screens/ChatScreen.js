@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { messagesAPI } from '../services/api';
 import socketService from '../services/socketService';
 import useAuthStore from '../services/authStore';
+import soundEffects from '../utils/soundEffects';
 
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -138,6 +139,7 @@ export default function ChatScreen({ navigation, route }) {
           if (prev.find(m => m.id === data.message?.id)) return prev;
           return [...prev, data.message];
         });
+        soundEffects.playMessage(); // 🔔 son réception message
         setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       }
     };
@@ -181,6 +183,7 @@ export default function ChatScreen({ navigation, route }) {
         // Envoi via REST API (sauvegarde DB + emit socket par le backend)
         const res = await messagesAPI.sendMessage({ conversationId: convId, content: trimmed });
         const sent = res.data.data;
+        soundEffects.playButtonPress(); // 🔔 son envoi message
         setMessages(prev => {
           if (prev.find(m => m.id === sent.id)) return prev;
           return [...prev, sent];

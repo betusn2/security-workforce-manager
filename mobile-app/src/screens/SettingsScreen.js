@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import useAuthStore from '../services/authStore';
 import { APP_VERSION, APP_SERVER_LABEL } from '../config';
+import soundEffects from '../utils/soundEffects';
 
 const SettingRow = ({ icon, label, value, onPress, rightComponent, color = '#2563eb', danger }) => (
   <TouchableOpacity style={styles.settingRow} onPress={onPress} disabled={!onPress && !rightComponent} activeOpacity={0.7}>
@@ -41,6 +42,7 @@ export default function SettingsScreen({ navigation }) {
   const saveNotifSound = (val) => {
     setNotifSound(val);
     AsyncStorage.setItem('pref_notif_sound', String(val)).catch(() => {});
+    soundEffects.setEnabled(val);  // synchronise avec expo-av
   };
 
   const saveNotifVibrate = (val) => {
@@ -204,4 +206,4 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: '#f1f5f9', marginLeft: 64 },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#fff', borderRadius: 14, padding: 16, borderWidth: 1.5, borderColor: '#fee2e2', marginTop: 8 },
   logoutText: { fontSize: 16, fontWeight: '700', color: '#ef4444' },
-});
+});

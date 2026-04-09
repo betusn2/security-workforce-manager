@@ -15,6 +15,7 @@ import * as Location from 'expo-location';
 import { attendanceAPI, assignmentsAPI, eventsAPI, usersAPI, reportsAPI } from '../services/api';
 import useAuthStore from '../services/authStore';
 import socketService from '../services/socketService';
+import soundEffects from '../utils/soundEffects';
 
 const ROLE_CONFIG = {
   admin:      { label: 'Administrateur', color: '#dc2626', icon: 'shield-checkmark' },
@@ -94,16 +95,17 @@ const HomeScreen = ({ navigation }) => {
   };
 
   useEffect(() => {
+    soundEffects.initialize();
     fetchData();
     getLocation();
 
     // Écouter les alertes SOS en temps réel
     const handleSOS = (data) => {
+      soundEffects.playUrgentAlert();
       Vibration.vibrate([500, 500, 500, 500, 500]);
       Alert.alert(
         '🚨 ALERTE SOS',
-        `Un agent a déclenché une alerte d'urgence !${data.message ? `\n\n"${data.message}"` : ''}`,
-        [
+        `Un agent a déclenché une alerte d'urgence !${data.message ? `\n\n"${data.message}"` : ''}`,        [
           { text: 'Fermer', style: 'cancel' },
           { text: 'Voir les incidents', onPress: () => navigation.navigate('IncidentReport') },
         ]
@@ -113,6 +115,7 @@ const HomeScreen = ({ navigation }) => {
     // Écouter les nouveaux incidents
     const handleIncident = (data) => {
       if (data.priority === 'urgent' || data.priority === 'high') {
+        soundEffects.playAlert();
         Vibration.vibrate(300);
         Alert.alert(
           '⚠️ Nouvel incident',
@@ -147,18 +150,21 @@ const HomeScreen = ({ navigation }) => {
 
   // Navigate to CheckIn — pass full event + assignment objects (same as web)
   const handleCheckIn = (event, assignment) => {
+    soundEffects.playSelection();
     navigation.navigate('CheckIn', { event, assignment });
   };
 
   // Navigate to CheckOut — pass attendance id + event (same as web)
   const handleCheckOut = (attendance, event) => {
+    soundEffects.playSelection();
     navigation.navigate('CheckOut', { attendanceId: attendance.id, event });
   };
 
   const handleLogout = () => {
+    soundEffects.playButtonPress();
     Alert.alert('Déconnexion', 'Voulez-vous vous déconnecter ?', [
       { text: 'Annuler', style: 'cancel' },
-      { text: 'Déconnexion', style: 'destructive', onPress: () => logout() },
+      { text: 'Déconnexion', style: 'destructive', onPress: () => { soundEffects.playLogout(); logout(); } },
     ]);
   };
 
@@ -227,7 +233,7 @@ const HomeScreen = ({ navigation }) => {
           </View>
         </View>
         <View style={{ alignItems: 'flex-end', gap: 8 }}>
-          <TouchableOpacity style={styles.avatar} onPress={() => navigation.navigate('Profile')}>
+          <TouchableOpacity style={styles.avatar} onPress={() => { soundEffects.playButtonPress(); navigation.navigate('Profile'); }}>
             <Text style={styles.avatarText}>{user?.firstName?.[0]}{user?.lastName?.[0]}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleLogout}>
@@ -284,14 +290,14 @@ const HomeScreen = ({ navigation }) => {
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
             <TouchableOpacity
               style={styles.adminShortcut}
-              onPress={() => navigation.navigate('AdminEvents')}
+              onPress={() => { soundEffects.playSelection(); navigation.navigate('AdminEvents'); }}
             >
               <Ionicons name="calendar" size={24} color="#8b5cf6" />
               <Text style={styles.adminShortcutText}>Événements</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.adminShortcut}
-              onPress={() => navigation.navigate('AdminReports')}
+              onPress={() => { soundEffects.playSelection(); navigation.navigate('AdminReports'); }}
             >
               <Ionicons name="bar-chart" size={24} color="#10b981" />
               <Text style={styles.adminShortcutText}>Rapports</Text>
@@ -299,7 +305,7 @@ const HomeScreen = ({ navigation }) => {
             {isAdmin && (
               <TouchableOpacity
                 style={styles.adminShortcut}
-                onPress={() => navigation.navigate('AdminUsers')}
+                onPress={() => { soundEffects.playSelection(); navigation.navigate('AdminUsers'); }}
               >
                 <Ionicons name="people" size={24} color="#2563eb" />
                 <Text style={styles.adminShortcutText}>Agents</Text>
@@ -321,11 +327,11 @@ const HomeScreen = ({ navigation }) => {
             )}
           </View>
           <TouchableOpacity
-            onPress={() => navigation.navigate('Chat', {
+            onPress={() => { soundEffects.playSelection(); navigation.navigate('Chat', {
               recipientId:    supervisor.id,
               recipientName:  `${supervisor.firstName} ${supervisor.lastName}`,
               recipientPhoto: supervisor.profilePhoto || null,
-            })}
+            }); }}
             style={styles.chatBtn}
           >
             <Ionicons name="chatbubble-ellipses-outline" size={15} color="#2563eb" />
@@ -353,7 +359,7 @@ const HomeScreen = ({ navigation }) => {
             </View>
           ) : (
             adminEvents.slice(0, 5).map((event, index) => (
-              <TouchableOpacity key={index} style={styles.eventCard} onPress={() => navigation.navigate('EventDetail', { eventId: event.id })} activeOpacity={0.75}>
+              <TouchableOpacity key={index} style={styles.eventCard} onPress={() => { soundEffects.playSelection(); navigation.navigate('EventDetail', { eventId: event.id }); }} activeOpacity={0.75}>
                 <View style={styles.eventHeader}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.eventName}>{event.name}</Text>

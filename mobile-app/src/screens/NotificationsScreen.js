@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import api, { notificationsAPI } from '../services/api';
 import socketService from '../services/socketService';
+import soundEffects from '../utils/soundEffects';
 
 const NotificationsScreen = ({ navigation }) => {
   const [notifications, setNotifications] = useState([]);
@@ -58,6 +59,7 @@ const NotificationsScreen = ({ navigation }) => {
   // Écouter nouvelles notifications en temps réel
   useEffect(() => {
     const handleNew = (data) => {
+      soundEffects.playNotification();
       setNotifications(prev => [data, ...prev]);
       setUnreadCount(c => c + 1);
     };
