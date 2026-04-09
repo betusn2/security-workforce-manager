@@ -33,7 +33,27 @@ exports.recordLocation = async (req, res) => {
       isMockLocation,
       networkType,
       cellTowerInfo,
-      eventId
+      eventId,
+      // Champs enrichis envoyés par la tâche background
+      speedKmh: payloadSpeedKmh,
+      isMoving: payloadIsMoving,
+      batteryCharging,
+      batteryStatus,
+      batteryEstimatedTime,
+      networkOnline,
+      networkStatus,
+      networkDownlink,
+      networkRtt,
+      deviceOS,
+      deviceBrowser,
+      deviceType,
+      deviceMemory,
+      deviceCPUCores,
+      deviceScreenOn,
+      deviceScreenResolution,
+      deviceBrand,
+      deviceModel,
+      source,
     } = req.body;
 
     const userId = req.user.id;
@@ -196,6 +216,60 @@ exports.recordLocation = async (req, res) => {
     // Broadcast via Socket.IO
     const io = req.app.get('io');
     if (io) {
+      // Payload enrichi (format attendu par EventDetails.jsx via tracking:position_update)
+      const enrichedPositionData = {
+        userId,
+        latitude,
+        longitude,
+        accuracy,
+        altitude,
+        speed: speed || 0,
+        speedKmh: payloadSpeedKmh ?? (speed != null ? +(speed * 3.6).toFixed(1) : 0),
+        heading,
+        isMoving: payloadIsMoving ?? (speed != null ? speed > 0.14 : false),
+        isConnected: false, // arrière-plan = pas de socket actif côté mobile
+        isWithinGeofence,
+        distanceFromEvent,
+        // Batterie
+        batteryLevel: batteryLevel != null ? Math.round(batteryLevel) : null,
+        batteryCharging: batteryCharging || false,
+        batteryStatus: batteryStatus || null,
+        batteryEstimatedTime: batteryEstimatedTime || null,
+        // Réseau
+        networkType: networkType || null,
+        networkOnline: networkOnline !== undefined ? networkOnline : true,
+        networkStatus: networkStatus || null,
+        networkDownlink: networkDownlink || null,
+        networkRtt: networkRtt || null,
+        // Appareil
+        deviceOS: deviceOS || null,
+        deviceBrowser: deviceBrowser || null,
+        deviceType: deviceType || null,
+        deviceMemory: deviceMemory || null,
+        deviceCPUCores: deviceCPUCores || null,
+        deviceScreenOn: deviceScreenOn !== undefined ? deviceScreenOn : false,
+        deviceScreenResolution: deviceScreenResolution || null,
+        deviceBrand: deviceBrand || null,
+        deviceModel: deviceModel || null,
+        timestamp: Date.now(),
+        source: source || 'background',
+        user: req.user ? {
+          id: req.user.id,
+          cin: req.user.cin,
+          firstName: req.user.firstName,
+          lastName: req.user.lastName,
+          employeeId: req.user.employeeId,
+          role: req.user.role,
+          phone: req.user.phone,
+        } : null,
+      };
+
+      // Émettre tracking:position_update (format EventDetails) + agent:location (legacy)
+      if (eventId) {
+        io.to(`event-${eventId}`).emit('tracking:position_update', enrichedPositionData);
+      }
+      io.to('role:admin').to('role:supervisor').emit('tracking:position_update', enrichedPositionData);
+
       io.to(`role:admin`).to(`role:supervisor`).emit('agent:location', {
         userId,
         eventId,
@@ -206,8 +280,8 @@ exports.recordLocation = async (req, res) => {
         isWithinGeofence,
         distanceFromEvent,
         batteryLevel,
-        batteryCharging,
-        batteryStatus,
+        batteryCharging: batteryCharging || false,
+        batteryStatus: batteryStatus || null,
         networkType,
         timestamp: new Date()
       });

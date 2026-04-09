@@ -332,10 +332,10 @@ export async function startBackgroundTracking(userId, eventId = null) {
     // Démarrer le tracking background avec foreground service
     await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
       accuracy: Location.Accuracy.BestForNavigation,
-      timeInterval: 30000,          // toutes les 30 secondes (économie stockage 3×)
-      distanceInterval: 15,         // ou si déplacé de 15m
+      timeInterval: 15000,          // toutes les 15 secondes (bon compromis réactivité/batterie)
+      distanceInterval: 10,         // ou si déplacé de 10m
       deferredUpdatesInterval: 5000,
-      deferredUpdatesDistance: 10,
+      deferredUpdatesDistance: 8,
       showsBackgroundLocationIndicator: true, // indicateur GPS sur iOS
 
       // ─── ANDROID FOREGROUND SERVICE ───────────────────────────────

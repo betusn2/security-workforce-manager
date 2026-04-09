@@ -16,7 +16,8 @@ import * as Device from 'expo-device';
 import { Platform, AppState } from 'react-native';
 import socketService from './socketService';
 
-const FOREGROUND_INTERVAL_MS = 20000; // 20s en premier plan (équilibre réactivité/stockage)
+const FOREGROUND_INTERVAL_MS = 15000; // 15s en premier plan
+const BACKGROUND_INTERVAL_MS = 20000; // 20s en arrière-plan (foreground service garde socket)
 const MIN_DISTANCE_METERS = 3;
 
 class TrackingService {
@@ -34,6 +35,7 @@ class TrackingService {
     this.speedSum = 0;
     this.speedCount = 0;
     this.appStateSubscription = null;
+    this._appState = 'active'; // track current state
   }
 
   /**
@@ -53,18 +55,36 @@ class TrackingService {
     this.isTracking = true;
     this.startBattery = await this._getBatteryLevel();
 
-    console.log(`✅ TrackingService (foreground) démarré`);
+    console.log(`✅ TrackingService (foreground+background socket) démarré`);
 
     // Première position immédiate
     await this._sendPosition();
 
-    // Interval en premier plan (Socket.IO temps réel)
+    // Interval : envoie TOUJOURS via Socket.IO
+    // Android Foreground Service garde la connexion socket vivante même en veille
     this.intervalId = setInterval(() => {
-      if (AppState.currentState === 'active') {
-        this._sendPosition();
-      }
-      // Si app inactive -> background task prend le relais
+      const interval = this._appState === 'active'
+        ? FOREGROUND_INTERVAL_MS
+        : BACKGROUND_INTERVAL_MS;
+      // Utiliser un seul intervalle (le plus petit) et laisser le délai interne gérer
+      this._sendPosition();
     }, FOREGROUND_INTERVAL_MS);
+
+    // Surveiller l'état de l'app (actif / arrière-plan / veille)
+    this.appStateSubscription = AppState.addEventListener('change', async (nextState) => {
+      const prev = this._appState;
+      this._appState = nextState;
+      console.log(`📱 AppState: ${prev} → ${nextState}`);
+
+      if (nextState === 'background' || nextState === 'inactive') {
+        // L'écran va s'éteindre — envoyer une dernière position
+        // avec deviceScreenOn: false pour signaler à l'interface
+        await this._sendPosition(false);
+      } else if (nextState === 'active' && prev !== 'active') {
+        // Retour au premier plan — envoyer immédiatement
+        await this._sendPosition(true);
+      }
+    });
 
     return true;
   }
@@ -77,15 +97,20 @@ class TrackingService {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
+    if (this.appStateSubscription) {
+      this.appStateSubscription.remove();
+      this.appStateSubscription = null;
+    }
     this.isTracking = false;
-    console.log('🛑 TrackingService (foreground) arrêté');
+    console.log('🛑 TrackingService (socket) arrêté');
   }
 
   /**
    * Envoyer une position enrichie
+   * @param {boolean|null} screenOn - null = auto-détecter depuis AppState
    * @private
    */
-  async _sendPosition() {
+  async _sendPosition(screenOn = null) {
     try {
       // GPS
       const loc = await Location.getCurrentPositionAsync({
@@ -139,6 +164,11 @@ class TrackingService {
         batteryConsumed,
       };
 
+      // Statut écran basé sur AppState (ou paramètre explicite)
+      const isScreenOn = screenOn !== null
+        ? screenOn
+        : (this._appState === 'active');
+
       // Payload complet
       const payload = {
         // GPS
@@ -171,7 +201,7 @@ class TrackingService {
         deviceType: deviceInfo.type,
         deviceMemory: deviceInfo.memory,
         deviceCPUCores: deviceInfo.cpuCores,
-        deviceScreenOn: true, // écran actif car l'app est ouverte
+        deviceScreenOn: isScreenOn,
 
         // Stats session
         stats,
@@ -179,6 +209,9 @@ class TrackingService {
         // IDs
         userId: this.userId,
         eventId: this.eventId,
+
+        // Source
+        source: isScreenOn ? 'realtime' : 'background_socket',
       };
 
       socketService.emit('tracking:position', payload);
