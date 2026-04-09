@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import AgentAvatar from '../components/AgentAvatar';
 import {
   FiUsers, FiActivity, FiBattery, FiMapPin, FiZap,
   FiAlertTriangle, FiCheckCircle, FiRefreshCw,
@@ -825,16 +826,13 @@ const RealTimeTracking = () => {
                         {/* Agent */}
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <div className="relative flex-shrink-0">
-                              {a.user.profilePhoto ? (
-                                <img src={a.user.profilePhoto} alt="" className="w-9 h-9 rounded-full object-cover" />
-                              ) : (
-                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold">
-                                  {a.user.firstName?.[0]}{a.user.lastName?.[0]}
-                                </div>
-                              )}
-                              <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${a.isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
-                            </div>
+                            <AgentAvatar
+                              photo={a.user.profilePhoto}
+                              firstName={a.user.firstName}
+                              lastName={a.user.lastName}
+                              size="sm"
+                              online={a.isOnline}
+                            />
                             <div>
                               <div className="font-semibold text-gray-900 text-sm">{a.user.firstName} {a.user.lastName}</div>
                               <div className="text-xs text-gray-400">{a.user.cin} · {a.user.role === 'supervisor' ? 'Resp.' : 'Agent'}</div>

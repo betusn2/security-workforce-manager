@@ -10,6 +10,7 @@ import { toast } from 'react-toastify';
 import { format, parseISO, isBefore, isToday } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import useAuthStore from '../hooks/useAuth';
+import AgentAvatar from '../components/AgentAvatar';
 
 // 🎨 Composants réutilisables
 const StatusBadge = ({ status }) => {
@@ -966,9 +967,12 @@ const AssignmentCard = ({ assignment, onViewDetails, onConfirm, onDecline, onRem
     <div className="p-4 space-y-3">
       {/* Agent */}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-semibold text-sm shadow-sm">
-          {assignment.agent?.firstName?.[0]}{assignment.agent?.lastName?.[0]}
-        </div>
+        <AgentAvatar
+          photo={assignment.agent?.profilePhoto}
+          firstName={assignment.agent?.firstName}
+          lastName={assignment.agent?.lastName}
+          size="md"
+        />
         <div className="flex-1 min-w-0">
           <p className="font-medium text-gray-900 text-sm truncate">
             {assignment.agent?.firstName} {assignment.agent?.lastName}
@@ -1045,9 +1049,12 @@ const AssignmentRow = ({ assignment, onViewDetails, onConfirm, onDecline, onRemo
     {/* Agent */}
     <td className="px-6 py-4">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-semibold shadow-sm">
-          {assignment.agent?.firstName?.[0]}{assignment.agent?.lastName?.[0]}
-        </div>
+        <AgentAvatar
+          photo={assignment.agent?.profilePhoto}
+          firstName={assignment.agent?.firstName}
+          lastName={assignment.agent?.lastName}
+          size="md"
+        />
         <div>
           <p className="font-medium text-gray-900 text-sm">
             {assignment.agent?.firstName} {assignment.agent?.lastName}

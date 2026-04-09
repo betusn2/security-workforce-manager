@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiUsers, FiPhone, FiMail, FiMapPin, FiCalendar, FiClock, FiCheck, FiX, FiLoader, FiUserCheck, FiAlertCircle, FiRefreshCw, FiEye } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import AgentAvatar from '../components/AgentAvatar';
 
 const SupervisorAgents = () => {
   const [agents, setAgents] = useState([]);
@@ -185,17 +186,13 @@ const SupervisorAgents = () => {
                 {/* Agent Header */}
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    {agent.profilePhoto ? (
-                      <img
-                        src={`/uploads/${agent.profilePhoto}`}
-                        alt={`${agent.firstName} ${agent.lastName}`}
-                        className="w-14 h-14 rounded-xl object-cover border-2 border-white/20"
-                      />
-                    ) : (
-                      <div className="w-14 h-14 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center">
-                        <FiUserCheck className="text-white" size={24} />
-                      </div>
-                    )}
+                    <AgentAvatar
+                      photo={agent.profilePhoto}
+                      firstName={agent.firstName}
+                      lastName={agent.lastName}
+                      size="lg"
+                      className="rounded-xl border-2 border-white/20"
+                    />
                     <div>
                       <h3 className="text-white font-bold text-lg">
                         {agent.firstName} {agent.lastName}
@@ -247,17 +244,13 @@ const SupervisorAgents = () => {
             {/* Modal Header */}
             <div className="sticky top-0 bg-gradient-to-r from-primary-600 to-primary-700 p-6 flex items-center justify-between border-b border-white/10">
               <div className="flex items-center gap-4">
-                {selectedAgent.profilePhoto ? (
-                  <img
-                    src={`/uploads/${selectedAgent.profilePhoto}`}
-                    alt={`${selectedAgent.firstName} ${selectedAgent.lastName}`}
-                    className="w-16 h-16 rounded-xl object-cover border-2 border-white/30"
-                  />
-                ) : (
-                  <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center">
-                    <FiUserCheck className="text-white" size={32} />
-                  </div>
-                )}
+                <AgentAvatar
+                  photo={selectedAgent.profilePhoto}
+                  firstName={selectedAgent.firstName}
+                  lastName={selectedAgent.lastName}
+                  size="xl"
+                  className="rounded-xl border-2 border-white/30"
+                />
                 <div>
                   <h2 className="text-2xl font-bold text-white">
                     {selectedAgent.firstName} {selectedAgent.lastName}

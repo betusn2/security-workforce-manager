@@ -3,7 +3,8 @@ import {
   FiDownload, FiRefreshCw, FiMapPin, FiSmartphone, 
   FiClock, FiEye, FiX, FiCheckCircle, FiAlertCircle,
   FiUserCheck, FiNavigation, FiShield, FiFileText, FiFile,
-  FiChevronDown, FiChevronUp, FiArrowUp, FiArrowDown, FiChevronRight
+  FiChevronDown, FiChevronUp, FiArrowUp, FiArrowDown, FiChevronRight,
+  FiBatteryCharging, FiWifi, FiUser
 } from 'react-icons/fi';
 import { attendanceAPI } from '../services/api';
 import { toast } from 'react-toastify';
@@ -12,6 +13,7 @@ import { format, parse, isValid } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import ExcelJS from 'exceljs';
 import { jsPDF } from 'jspdf';
+import AgentAvatar from '../components/AgentAvatar';
 
 // Helper function to determine device type from device name
 const getDeviceType = (deviceName) => {
@@ -700,9 +702,12 @@ const Attendance = () => {
                           <tr key={record.id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-xs font-bold">
-                                  {record.agent?.firstName?.charAt(0).toUpperCase() || 'A'}
-                                </div>
+                                <AgentAvatar
+                                  photo={record.agent?.profilePhoto}
+                                  firstName={record.agent?.firstName}
+                                  lastName={record.agent?.lastName}
+                                  size="sm"
+                                />
                                 <div>
                                   <div className="font-medium text-gray-900">{record.agent?.firstName || '-'} {record.agent?.lastName || '-'}</div>
                                   <div className="text-xs text-gray-500">{record.agent?.employeeId || record.agentId}</div>
@@ -850,18 +855,49 @@ const Attendance = () => {
             {/* Agent Information */}
             <div className="border-b pb-4">
               <h3 className="text-lg font-semibold text-gray-800 mb-3">👤 Informations Agent</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-gray-500">Prénom</p>
-                  <p className="font-semibold text-gray-900">{selectedRow.agent?.firstName || '-'}</p>
+              {/* Photos: profil de création + photo de pointage facial */}
+              <div className="flex items-start gap-6 mb-4">
+                <div className="flex flex-col items-center gap-1">
+                  <AgentAvatar
+                    photo={selectedRow.agent?.profilePhoto}
+                    firstName={selectedRow.agent?.firstName}
+                    lastName={selectedRow.agent?.lastName}
+                    size="xl"
+                  />
+                  <span className="text-xs text-gray-500 font-medium">Photo de profil</span>
                 </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-gray-500">Nom</p>
-                  <p className="font-semibold text-gray-900">{selectedRow.agent?.lastName || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-gray-500">ID Employé</p>
-                  <p className="font-semibold text-gray-900">{selectedRow.agent?.employeeId || selectedRow.agentId || '-'}</p>
+                {selectedRow.checkInPhoto && (
+                  <div className="flex flex-col items-center gap-1">
+                    <img
+                      src={selectedRow.checkInPhoto.startsWith('data:') ? selectedRow.checkInPhoto : `data:image/jpeg;base64,${selectedRow.checkInPhoto}`}
+                      alt="Photo check-in"
+                      className="w-20 h-20 rounded-full object-cover border-2 border-blue-300"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                    <span className="text-xs text-blue-600 font-medium">Photo check-in</span>
+                  </div>
+                )}
+                <div className="flex-1">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-gray-500">Prénom</p>
+                      <p className="font-semibold text-gray-900">{selectedRow.agent?.firstName || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-gray-500">Nom</p>
+                      <p className="font-semibold text-gray-900">{selectedRow.agent?.lastName || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-gray-500">ID Employé</p>
+                      <p className="font-semibold text-gray-900">{selectedRow.agent?.employeeId || selectedRow.agentId || '-'}</p>
+                    </div>
+                    {selectedRow.agent?.phone && (
+                      <div>
+                        <p className="text-xs uppercase tracking-wider text-gray-500">Téléphone</p>
+                        <p className="font-semibold text-gray-900">{selectedRow.agent.phone}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1028,6 +1064,47 @@ const Attendance = () => {
                 </div>
               </div>
             </div>
+
+            {/* 📡 Données mobiles enrichies */}
+            {(selectedRow.batteryLevel != null || selectedRow.networkType || selectedRow.checkInSpeed != null || selectedRow.checkInAltitude != null) && (
+              <div className="border-b pb-4">
+                <h3 className="text-lg font-semibold text-gray-800 mb-3">📡 Données Mobiles (Check-in)</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {selectedRow.batteryLevel != null && (
+                    <div className="bg-gray-50 rounded-lg p-3 flex flex-col gap-1">
+                      <span className="text-xs text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                        <FiBatteryCharging size={12} /> Batterie
+                      </span>
+                      <span className={`font-bold text-lg ${selectedRow.batteryLevel >= 50 ? 'text-green-600' : selectedRow.batteryLevel >= 20 ? 'text-yellow-600' : 'text-red-600'}`}>
+                        {Math.round(selectedRow.batteryLevel)}%
+                      </span>
+                    </div>
+                  )}
+                  {selectedRow.networkType && (
+                    <div className="bg-gray-50 rounded-lg p-3 flex flex-col gap-1">
+                      <span className="text-xs text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                        <FiWifi size={12} /> Réseau
+                      </span>
+                      <span className="font-bold text-gray-900">{selectedRow.networkType}</span>
+                    </div>
+                  )}
+                  {selectedRow.checkInSpeed != null && (
+                    <div className="bg-gray-50 rounded-lg p-3 flex flex-col gap-1">
+                      <span className="text-xs text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                        <FiNavigation size={12} /> Vitesse
+                      </span>
+                      <span className="font-bold text-gray-900">{Math.round((selectedRow.checkInSpeed || 0) * 3.6)} km/h</span>
+                    </div>
+                  )}
+                  {selectedRow.checkInAltitude != null && (
+                    <div className="bg-gray-50 rounded-lg p-3 flex flex-col gap-1">
+                      <span className="text-xs text-gray-500 uppercase tracking-wider">Altitude</span>
+                      <span className="font-bold text-gray-900">{Math.round(selectedRow.checkInAltitude)} m</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="flex gap-2">
               <button

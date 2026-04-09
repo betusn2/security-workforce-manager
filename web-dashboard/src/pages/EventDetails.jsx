@@ -17,6 +17,7 @@ import AgentInfoPanel from '../components/AgentInfoPanel';
 import PresenceTimeline from '../components/PresenceTimeline';
 import ComplianceScore from '../components/ComplianceScore';
 import AlertsPanel from '../components/AlertsPanel';
+import AgentAvatar from '../components/AgentAvatar';
 import trackingStatsService from '../services/trackingStatsService';
 import useAuthStore from '../hooks/useAuth';
 
@@ -908,20 +909,14 @@ const EventDetails = () => {
                       title="Cliquer pour voir les informations détaillées"
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="relative">
-                            {assignment.agent?.profilePhoto && (
-                              <img
-                                src={assignment.agent.profilePhoto}
-                                alt={`${assignment.agent?.firstName} ${assignment.agent?.lastName}`}
-                                className="w-10 h-10 rounded-full mr-3 object-cover"
-                              />
-                            )}
-                            {/* Indicateur en ligne/hors ligne */}
-                            <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${
-                              isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
-                            }`} />
-                          </div>
+                        <div className="flex items-center gap-3">
+                          <AgentAvatar
+                            photo={assignment.agent?.profilePhoto}
+                            firstName={assignment.agent?.firstName}
+                            lastName={assignment.agent?.lastName}
+                            size="md"
+                            online={isOnline}
+                          />
                           <div>
                             <p className="font-semibold text-gray-900">
                               {assignment.agent?.firstName} {assignment.agent?.lastName}
