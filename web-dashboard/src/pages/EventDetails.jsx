@@ -12,7 +12,7 @@ import { eventsAPI, zonesAPI, assignmentsAPI, attendanceAPI, trackingAPI } from 
 import { toast } from 'react-toastify';
 import { format, isPast, isFuture, isToday, isTomorrow, differenceInDays, differenceInHours } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import MiniMap from '../components/MiniMap';
+import EventMap from '../components/EventMap';
 import AgentInfoPanel from '../components/AgentInfoPanel';
 import PresenceTimeline from '../components/PresenceTimeline';
 import ComplianceScore from '../components/ComplianceScore';
@@ -759,37 +759,57 @@ const EventDetails = () => {
         </div>
       )}
 
-      {/* Carte */}
+      {/* Carte professionnelle */}
       {event.latitude && event.longitude && (
         <div className="card">
-          <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
-            <FiMapPin className="mr-2 text-blue-600" />
-            Carte de localisation en temps réel
-          </h2>
-          <div className="mb-3 flex items-center gap-4 text-sm text-gray-600">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-              <span>Événement</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
-              <span>Agents en ligne ({onlineAgents.size})</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-red-500"></div>
-              <span>Hors périmètre</span>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <FiMapPin className="text-indigo-600" />
+              Carte de localisation en temps réel
+            </h2>
+            <div className="flex items-center gap-3 text-sm">
+              {zones.length > 0 && (
+                <span className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded-full font-medium border border-indigo-100">
+                  {zones.length} zone{zones.length > 1 ? 's' : ''}
+                </span>
+              )}
+              <span className="px-2 py-1 bg-green-50 text-green-700 rounded-full font-medium border border-green-100">
+                {onlineAgents.size} en ligne
+              </span>
+              <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-full font-medium border border-blue-100">
+                {Object.values(agentLocations).filter(l => l.lat).length} GPS actifs
+              </span>
             </div>
           </div>
-          <div className="rounded-xl overflow-hidden" style={{ height: '500px' }}>
-            <MiniMap
-              latitude={event.latitude}
-              longitude={event.longitude}
-              radius={event.radius}
-              zones={zones}
-              agentLocations={agentLocations}
-              assignments={assignments}
-            />
-          </div>
+          <EventMap
+            event={event}
+            zones={zones}
+            agentLocations={agentLocations}
+            assignments={assignments}
+            onlineAgents={onlineAgents}
+            flyToAgentId={selectedAgent?.userId}
+            height="650px"
+            onAgentClick={(agentId) => {
+              const assignment = assignments.find(a => a.agentId === agentId);
+              const location = agentLocations[agentId];
+              setSelectedAgent({
+                userId: agentId,
+                ...(location || {}),
+                user: {
+                  ...(assignment?.agent || {}),
+                  ...(location?.user || {}),
+                  id: agentId,
+                  firstName: assignment?.agent?.firstName || location?.user?.firstName || '',
+                  lastName: assignment?.agent?.lastName || location?.user?.lastName || '',
+                  employeeId: assignment?.agent?.employeeId || '',
+                  cin: assignment?.agent?.cin || '',
+                  role: assignment?.agent?.role || 'agent',
+                  phone: assignment?.agent?.phone || assignment?.agent?.phoneNumber || location?.user?.phone || '',
+                  profilePhoto: assignment?.agent?.profilePhoto || null,
+                }
+              });
+            }}
+          />
         </div>
       )}
 
