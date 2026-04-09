@@ -125,6 +125,12 @@ class SocketIOService {
         this.connections.get(socket.id).rooms.add(`event:${eventId}`);
       }
       
+      // Superviseurs/admins → room globale (reçoivent toutes les positions)
+      if (['admin', 'supervisor', 'responsable'].includes(user.role)) {
+        socket.join('global:supervisors');
+        console.log(`🌐 ${user.role} ${userId} rejoint global:supervisors`);
+      }
+
       // Envoyer confirmation
       socket.emit('auth:success', {
         userId: user.id,
@@ -176,54 +182,23 @@ class SocketIOService {
       const { latitude, longitude, accuracy, speed, heading, batteryLevel, isMoving } = data;
       const { userId, userIdentifier } = connection;
       
-      // 🔥 VÉRIFIER LA FENÊTRE TEMPORELLE DE L'ÉVÉNEMENT
+      // Vérifier la fenêtre temporelle uniquement pour la sauvegarde DB (pas pour le broadcast)
+      let allowDbSave = true;
       if (connection.eventId) {
         const event = await Event.findByPk(connection.eventId);
-        
         if (!event) {
-          socket.emit('tracking:error', { 
-            message: 'Événement introuvable',
-            code: 'EVENT_NOT_FOUND'
-          });
+          socket.emit('tracking:error', { message: 'Événement introuvable', code: 'EVENT_NOT_FOUND' });
           return;
         }
-        
-        // Vérifier si le tracking est autorisé pour cet événement (2h avant → fin)
         if (!isTrackingAllowed(event)) {
+          allowDbSave = false;
           const timeStatus = getEventTimeStatus(event);
-          
-          let reason = 'Tracking non autorisé';
-          let detailedMessage = '';
-          
-          if (timeStatus.isBeforeWindow) {
-            const eventStart = new Date(event.startDate);
-            const twoHoursBefore = new Date(eventStart.getTime() - 2 * 60 * 60 * 1000);
-            reason = 'Tracking pas encore disponible';
-            detailedMessage = `Le tracking temps réel sera activé automatiquement 2 heures avant le début de l'événement "${event.name}", à partir de ${twoHoursBefore.toLocaleString('fr-FR', {
-              day: '2-digit',
-              month: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit'
-            })}.`;
-          } else if (timeStatus.isAfterEvent) {
-            reason = 'Événement terminé';
-            detailedMessage = `L'événement "${event.name}" est terminé. Le tracking temps réel est désactivé automatiquement.`;
-          }
-          
-          socket.emit('tracking:disabled', { 
-            message: reason,
-            detailedMessage,
-            timeStatus,
-            eventId: event.id,
-            eventName: event.name,
-            code: 'TRACKING_NOT_ALLOWED'
+          // Notifier le client mais NE PAS bloquer le broadcast (position quand même visible)
+          socket.emit('tracking:disabled', {
+            message: timeStatus.isAfterEvent ? 'Événement terminé' : 'Tracking pas encore actif',
+            eventId: event.id, eventName: event.name, code: 'TRACKING_NOT_ALLOWED'
           });
-          
-          console.log(`⏸️ Tracking refusé pour ${userIdentifier || userId}: ${reason}`);
-          
-          // Supprimer la position de la mémoire
-          this.agentPositions.delete(userId);
-          return;
+          console.log(`⏸️ DB save refusée pour ${userIdentifier || userId} (hors fenêtre) — position broadcastée quand même`);
         }
       }
       
@@ -267,8 +242,8 @@ class SocketIOService {
       // Stocker la position avec l'UUID réel
       this.agentPositions.set(user.id, positionData);
       
-      // Sauvegarder en base de données
-      if (connection.eventId) {
+      // Sauvegarder en base de données (seulement si fenêtre autorisée)
+      if (connection.eventId && allowDbSave) {
         try {
           await GeoTracking.create({
             userId: userId,
@@ -281,25 +256,20 @@ class SocketIOService {
             batteryLevel: batteryLevel || null,
             isMoving: isCurrentlyMoving,
             timestamp: new Date(),
-            recordedAt: new Date() // ✅ Champ obligatoire
+            recordedAt: new Date()
           });
         } catch (dbError) {
           console.error('❌ Erreur sauvegarde position:', dbError.message);
         }
       }
-      
-      // Diffuser la position à tous les superviseurs/admins de l'événement
+
+      // ✅ BROADCAST GLOBAL — toujours diffuser à tous les superviseurs/admins
+      this.io.to('global:supervisors').emit('tracking:position_update', positionData);
+      console.log('📡 BROADCAST global:supervisors →', user?.firstName, user?.lastName, `(${latitude?.toFixed(5)}, ${longitude?.toFixed(5)})`);
+
+      // ✅ BROADCAST EVENT — diffuser aussi à la room de l'événement si disponible
       if (connection.eventId) {
-        const roomName = `event:${connection.eventId}`;
-        console.log('📡 BROADCAST position vers room:', roomName, {
-          userId: user.id,
-          lat: latitude,
-          lng: longitude,
-          battery: positionData.batteryLevel
-        });
-        this.io.to(roomName).emit('tracking:position_update', positionData);
-      } else {
-        console.log('⚠️ Pas d\'eventId pour broadcaster la position');
+        this.io.to(`event:${connection.eventId}`).emit('tracking:position_update', positionData);
       }
       
       // Confirmer la réception

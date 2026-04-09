@@ -453,7 +453,7 @@ const CheckInScreen = ({ route, navigation }) => {
       return;
     }
     
-    if (!socketService.isConnected()) {
+    if (!socketService.isConnected) {
       console.log('⚠️ Socket.IO non connecté');
       return;
     }

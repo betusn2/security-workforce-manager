@@ -485,7 +485,31 @@ const RealTimeTracking = () => {
     };
   });
 
-  const filteredAgents = enrichedAgents.filter(a => {
+  // ── Agents connectés GPS en temps réel sans affectation chargée ──────────
+  const assignedUids = new Set(assignments.map(a => a.agentId || a.userId).filter(Boolean));
+  const liveOnlyAgents = Object.entries(locations)
+    .filter(([uid]) => !assignedUids.has(uid))
+    .map(([uid, loc]) => {
+      const ts = loc?.timestamp instanceof Date ? loc.timestamp : (loc?.timestamp ? new Date(loc.timestamp) : null);
+      const stale = ts ? (Date.now() - ts.getTime()) > STALE_THRESHOLD_MS : true;
+      const isOnline = !!(loc?.isOnline && !stale);
+      const speedKmh = loc?.speedKmh ?? 0;
+      return {
+        userId: uid, asgn: null, att: null, loc,
+        batteryLevel: loc?.batteryLevel ?? null,
+        batteryCharging: loc?.batteryCharging ?? false,
+        batteryStatus: loc?.batteryStatus ?? null,
+        isMoving: loc?.isMoving ?? false,
+        speedKmh, inPerimeter: null, dist: null,
+        status: !isOnline ? 'offline' : 'active',
+        isOnline, timestamp: ts,
+        user: loc?.user || { id: uid, firstName: 'Agent', lastName: '', role: 'agent', employeeId: '', cin: '', phone: '', profilePhoto: null },
+      };
+    });
+
+  const allAgents = [...enrichedAgents, ...liveOnlyAgents];
+
+  const filteredAgents = allAgents.filter(a => {
     if (!filters.showAgents      && a.user.role === 'agent')      return false;
     if (!filters.showSupervisors && a.user.role === 'supervisor')  return false;
     if (!filters.showActive      && a.status === 'active')         return false;
@@ -502,13 +526,13 @@ const RealTimeTracking = () => {
   });
 
   const stats = {
-    total:      enrichedAgents.length,
-    online:     enrichedAgents.filter(a => a.isOnline).length,
-    offline:    enrichedAgents.filter(a => !a.isOnline).length,
-    active:     enrichedAgents.filter(a => a.status === 'active').length,
-    outside:    enrichedAgents.filter(a => a.status === 'outside_geofence').length,
-    lowBattery: enrichedAgents.filter(a => (a.batteryLevel ?? 100) < 20).length,
-    moving:     enrichedAgents.filter(a => a.isMoving).length,
+    total:      allAgents.length,
+    online:     allAgents.filter(a => a.isOnline).length,
+    offline:    allAgents.filter(a => !a.isOnline).length,
+    active:     allAgents.filter(a => a.status === 'active').length,
+    outside:    allAgents.filter(a => a.status === 'outside_geofence').length,
+    lowBattery: allAgents.filter(a => (a.batteryLevel ?? 100) < 20).length,
+    moving:     allAgents.filter(a => a.isMoving).length,
     withPos:    mapAgents.length,
   };
 
