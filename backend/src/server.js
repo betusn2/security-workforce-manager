@@ -394,16 +394,37 @@ app.use((err, req, res, next) => {
 // Database connection and server start
 const PORT = process.env.PORT || 5000;
 
-const startServer = async () => {
-  try {
-    // Wait for database creation if needed
-    if (db.initPromise) {
-      await db.initPromise;
-    }
+const DB_RETRY_ATTEMPTS = 10;
+const DB_RETRY_DELAY_MS = 8000;
 
-    // Test database connection
+const connectWithRetry = async (attempt = 1) => {
+  try {
+    if (db.initPromise) await db.initPromise;
     await db.sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
+    return true;
+  } catch (err) {
+    const isDNS = err.parent?.code === 'EAI_AGAIN' || err.original?.code === 'EAI_AGAIN';
+    const isConn = err.name === 'SequelizeConnectionError' || err.name === 'SequelizeConnectionRefusedError';
+    if ((isDNS || isConn) && attempt < DB_RETRY_ATTEMPTS) {
+      console.warn(`⚠️ DB connection attempt ${attempt}/${DB_RETRY_ATTEMPTS} failed (${err.parent?.code || err.message}). Retrying in ${DB_RETRY_DELAY_MS / 1000}s...`);
+      await new Promise(r => setTimeout(r, DB_RETRY_DELAY_MS));
+      return connectWithRetry(attempt + 1);
+    }
+    throw err;
+  }
+};
+
+const startServer = async () => {
+  // Start HTTP server immediately so Render health check passes
+  httpServer.listen(PORT, () => {
+    console.log(`🚀 HTTP server listening on port ${PORT} (waiting for DB...)`);
+    socketIOService.initialize(io);
+    initSocketBroadcast(io);
+  });
+
+  try {
+    await connectWithRetry();
 
     // Clean up excessive indexes
     await cleanupDatabaseIndexes(db.sequelize);
@@ -484,46 +505,29 @@ const startServer = async () => {
     // Initialize scheduled backup service
     initScheduledBackupService();
 
-    // Start API server
-    httpServer.listen(PORT, () => {
-      
-      console.log(`
+    console.log(`
 ╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
-║   🔐 Security Guard Management API                        ║
-║                                                           ║
+║   🔐 Security Guard Management API - DB Connected         ║
 ║   Server running on port ${PORT}                             ║
 ║   Environment: ${process.env.NODE_ENV || 'development'}                           ║
-║                                                           ║
-║   API URL: http://localhost:${PORT}/api                      ║
-║   Health: http://localhost:${PORT}/api/health                ║
-║   Socket.IO: http://localhost:${PORT}/socket.io/             ║
-║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
-      `);
-      
-      // ✅ Initialize Socket.IO Service AFTER server listening
-      socketIOService.initialize(io);
-      console.log('✅ Socket.IO Service initialized');
-      
-      // ✅ Initialize Socket Broadcast for real-time updates
-      initSocketBroadcast(io);
-      console.log('✅ Socket Broadcast initialized - Real-time updates enabled');
-      
-      // ✅ Initialize GPS Tracking Service for real-time agent tracking
-      const GPSTrackingService = require('./services/gpsTrackingService');
-      const gpsTrackingService = new GPSTrackingService(io);
-      gpsTrackingService.cleanup(); // Nettoyer les anciens tracking (pas besoin d'await, cleanup est synchrone)
-      app.set('gpsTrackingService', gpsTrackingService);
-      console.log('✅ GPS Tracking Service initialized - Real-time agent tracking enabled');
-      
-      // ✅ Redémarrer le scheduler avec l'instance Socket.IO pour la vérification des fenêtres de temps
-      startScheduler(io);
-      console.log('✅ Scheduler mis à jour avec Socket.IO pour la gestion automatique des fenêtres de temps');
-    });
+    `);
+
+    // ✅ Initialize GPS Tracking Service
+    const GPSTrackingService = require('./services/gpsTrackingService');
+    const gpsTrackingService = new GPSTrackingService(io);
+    gpsTrackingService.cleanup();
+    app.set('gpsTrackingService', gpsTrackingService);
+    console.log('✅ GPS Tracking Service initialized');
+
+    // ✅ Redémarrer le scheduler avec Socket.IO
+    startScheduler(io);
+    console.log('✅ Scheduler mis à jour avec Socket.IO');
+
   } catch (error) {
-    console.error('❌ Unable to start server:', error);
-    process.exit(1);
+    console.error('❌ Unable to connect to database after retries:', error.message);
+    console.error('⚠️  Server is running but API calls will fail until DB is available.');
+    // Do NOT process.exit - let Render health checks pass and retry on next deploy
   }
 };
 
