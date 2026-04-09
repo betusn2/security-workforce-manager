@@ -27,19 +27,47 @@ import * as Battery from 'expo-battery';
 import * as Network from 'expo-network';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
+import * as BackgroundFetch from 'expo-background-fetch';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Platform } from 'react-native';
 import { API_URL } from '../config';
 
 export const BACKGROUND_LOCATION_TASK = 'SECURITY_GUARD_BACKGROUND_LOCATION';
+export const BG_FETCH_TASK            = 'SECURITY_GUARD_BG_FETCH';
 
 // ─── Clés AsyncStorage partagées ──────────────────────────────────────────
 export const TS_KEY_SOCKET = 'lastSocketSendTs';  // mis à jour par trackingService
 export const TS_KEY_BG     = 'lastBgSendTs';      // mis à jour par cette tâche
 const DEDUP_THRESHOLD_MS   = 6000;  // skip si une position a été envoyée < 6s
 
-// ─── Définition de la tâche native ───────────────────────────────────────
+// ─── Tâche Background Fetch (WorkManager) — heartbeat secondaire ─────────
+// Utilisée par Android pour réveiller l'app toutes les ~15 min via WorkManager,
+// même en mode Doze. Redémarre le foreground service si nécessaire.
+TaskManager.defineTask(BG_FETCH_TASK, async () => {
+  try {
+    const userId = await AsyncStorage.getItem('userId');
+    if (!userId) return BackgroundFetch.BackgroundFetchResult.NoData;
+
+    const isRunning = await Location.hasStartedLocationUpdatesAsync(
+      BACKGROUND_LOCATION_TASK
+    ).catch(() => false);
+
+    if (!isRunning) {
+      const eventId = await AsyncStorage.getItem('currentEventId');
+      // startBackgroundTracking est défini plus bas dans ce fichier (hoisting function)
+      await startBackgroundTracking(userId, eventId).catch(() => {});
+      console.log('🔁 [BgFetch] Foreground service relancé via WorkManager');
+      return BackgroundFetch.BackgroundFetchResult.NewData;
+    }
+
+    return BackgroundFetch.BackgroundFetchResult.NoData;
+  } catch {
+    return BackgroundFetch.BackgroundFetchResult.Failed;
+  }
+});
+
+// ─── Définition de la tâche native GPS ───────────────────────────────────
 TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
   if (error) {
     console.error('❌ Erreur tâche background GPS:', error.message);

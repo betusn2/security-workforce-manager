@@ -17,10 +17,13 @@
 import * as Location from 'expo-location';
 import * as Battery from 'expo-battery';
 import * as Notifications from 'expo-notifications';
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as IntentLauncher from 'expo-intent-launcher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, Linking, Platform, AppState } from 'react-native';
 import {
   BACKGROUND_LOCATION_TASK,
+  BG_FETCH_TASK,
   startBackgroundTracking,
   TS_KEY_BG,
   TS_KEY_SOCKET,
@@ -56,11 +59,18 @@ export async function startTrackingWatchdog(userId, eventId = null) {
   // ── 1. Demander l'exemption batteries optimisation (une seule fois) ─────
   await requestBatteryOptimizationIfNeeded();
 
-  // ── 2. Vérification immédiate, puis toutes les 20s ────────────────────
+  // ── 2. Enregistrer expo-background-fetch (WorkManager — survit au Doze) ─
+  await BackgroundFetch.registerTaskAsync(BG_FETCH_TASK, {
+    minimumInterval: 15 * 60,  // 15 min (minimum Android)
+    stopOnTerminate: false,    // continue même si app tuée
+    startOnBoot: true,         // redémarre après reboot
+  }).catch(() => {});          // ignoré si déjà enregistré
+
+  // ── 3. Vérification immédiate, puis toutes les 20s ────────────────────
   await _checkAndHeal();
   _watchdogInterval = setInterval(_checkAndHeal, WATCHDOG_INTERVAL_MS);
 
-  // ── 3. Vérifier aussi à chaque retour au premier plan ─────────────────
+  // ── 4. Vérifier aussi à chaque retour au premier plan ─────────────────
   _appStateSubscription = AppState.addEventListener('change', async (nextState) => {
     if (nextState === 'active') {
       await _checkAndHeal();
@@ -80,6 +90,7 @@ export function stopTrackingWatchdog() {
     _appStateSubscription.remove();
     _appStateSubscription = null;
   }
+  BackgroundFetch.unregisterTaskAsync(BG_FETCH_TASK).catch(() => {});
   console.log('🐕 TrackingWatchdog arrêté');
 }
 
@@ -218,14 +229,14 @@ export async function requestBatteryOptimizationIfNeeded() {
             onPress: () => AsyncStorage.removeItem(BATT_OPT_PROMPT_KEY), // permettre de reposer
           },
           {
-            text: 'Ouvrir Paramètres',
+            text: 'Activer maintenant',
             onPress: () => {
-              try {
-                // Ouvre la page de gestion batterie de l'app
-                Linking.openSettings();
-              } catch {
-                Linking.openURL('https://dontkillmyapp.com').catch(() => {});
-              }
+              // Dialog système direct : "Autoriser à ignorer les optimisations batterie ?"
+              // Identique à ce que fait inDrive/Uber/Grab
+              IntentLauncher.startActivityAsync(
+                'android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+                { data: 'package:com.securityguard.mobile' }
+              ).catch(() => Linking.openSettings());
             },
           },
         ],
