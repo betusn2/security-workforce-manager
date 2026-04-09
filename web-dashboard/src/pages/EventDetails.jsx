@@ -895,16 +895,24 @@ const EventDetails = () => {
                       key={assignment.id} 
                       className="hover:bg-gray-50 transition-colors cursor-pointer"
                       onClick={() => {
-                        if (location) {
-                          setSelectedAgent({
-                            userId: assignment.agentId,
-                            ...location,
-                            user: assignment.agent || location.user
-                          });
-                          toast.info(`📊 Infos: ${assignment.agent?.firstName} ${assignment.agent?.lastName}`, { autoClose: 2000 });
-                        } else {
-                          toast.warning('❌ Aucune donnée GPS disponible pour cet agent', { autoClose: 2000 });
-                        }
+                        // Ouvrir le panneau même sans GPS — avec infos agent basiques
+                        setSelectedAgent({
+                          userId: assignment.agentId,
+                          ...(location || {}),
+                          user: {
+                            ...(assignment.agent || {}),
+                            ...(location?.user || {}),
+                            // Préférer données assignment (photo, téléphone)
+                            id: assignment.agentId,
+                            firstName: assignment.agent?.firstName || location?.user?.firstName || '',
+                            lastName: assignment.agent?.lastName || location?.user?.lastName || '',
+                            employeeId: assignment.agent?.employeeId || '',
+                            cin: assignment.agent?.cin || '',
+                            role: assignment.agent?.role || 'agent',
+                            phone: assignment.agent?.phone || assignment.agent?.phoneNumber || location?.user?.phone || '',
+                            profilePhoto: assignment.agent?.profilePhoto || null,
+                          }
+                        });
                       }}
                       title="Cliquer pour voir les informations détaillées"
                     >

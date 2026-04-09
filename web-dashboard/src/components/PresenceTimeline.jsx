@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
+const BACKEND_URL = process.env.REACT_APP_API_URL?.replace('/api', '') || 'https://security-workforce-manager.onrender.com';
+
 /**
  * Timeline Gantt de présence pour un agent dans un événement
  * Props: { eventId, agentId, agentName, eventStart, eventEnd }
@@ -11,11 +13,10 @@ const PresenceTimeline = ({ eventId, agentId, agentName, eventStart, eventEnd })
 
   useEffect(() => {
     if (!eventId || !agentId) return;
-    const token = localStorage.getItem('token');
-    axios.get(`/api/tracking/timeline/${eventId}/${agentId}`, {
+    const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+    axios.get(`${BACKEND_URL}/api/tracking/timeline/${eventId}/${agentId}`, {
       headers: { Authorization: `Bearer ${token}` }
     }).then(r => {
-      // API returns { success: true, data: { segments, compliancePercent, ... } }
       setTimeline(r.data?.data || r.data);
       setLoading(false);
     }).catch(() => setLoading(false));

@@ -216,18 +216,44 @@ class SocketIOService {
         attributes: ['id', 'firstName', 'lastName', 'employeeId', 'role', 'phone', 'cin']
       });
       
-      // Créer l'objet position
+      // Créer l'objet position avec TOUTES les données enrichies
+      const speedKmh = (speed != null && speed > 0) ? +(speed * 3.6).toFixed(1) : 0;
       const positionData = {
-        userId: user.id, // ✅ Utiliser l'UUID réel pour matcher avec les assignments
+        userId: user.id,
         latitude,
         longitude,
         accuracy,
+        altitude: data.altitude || null,
         speed: speed || 0,
+        speedKmh,
         heading: heading || null,
-        batteryLevel: batteryLevel !== null && batteryLevel !== undefined ? Math.round(batteryLevel) : 100,
-        timestamp: Date.now(),
         isMoving: isCurrentlyMoving,
-        isConnected: true, // ✅ Indicateur de connexion
+        isConnected: true,
+        // 🔋 Batterie complète
+        batteryLevel: batteryLevel !== null && batteryLevel !== undefined ? Math.round(batteryLevel) : null,
+        batteryCharging: data.batteryCharging || false,
+        batteryStatus: data.batteryStatus || null,
+        batteryEstimatedTime: data.batteryEstimatedTime || null,
+        // 📶 Réseau
+        networkType: data.networkType || null,
+        networkOnline: data.networkOnline !== undefined ? data.networkOnline : true,
+        networkStatus: data.networkStatus || null,
+        networkDownlink: data.networkDownlink || null,
+        networkRtt: data.networkRtt || null,
+        // 📱 Appareil
+        deviceOS: data.deviceOS || null,
+        deviceBrowser: data.deviceBrowser || null,
+        deviceType: data.deviceType || null,
+        deviceMemory: data.deviceMemory || null,
+        deviceCPUCores: data.deviceCPUCores || null,
+        deviceScreenOn: data.deviceScreenOn !== undefined ? data.deviceScreenOn : true,
+        deviceScreenResolution: data.deviceScreenResolution || null,
+        deviceBrand: data.deviceBrand || null,
+        deviceModel: data.deviceModel || null,
+        deviceName: data.deviceName || null,
+        // ✅ Timestamp & source
+        timestamp: Date.now(),
+        source: 'realtime',
         user: user ? {
           id: user.id,
           cin: user.cin,
