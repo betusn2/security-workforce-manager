@@ -71,12 +71,68 @@ const formatTime = (d) => {
   catch { return d; }
 };
 
+// ─── Agent Presence Section ───────────────────────────────────────────────────
+const AgentPresenceSection = ({ agents, phaseLabel, color }) => {
+  const present = agents.filter(a => a.isPresent || !!a.attendance?.checkInTime).length;
+  const total   = agents.length;
+  const pct     = total > 0 ? Math.round((present / total) * 100) : 0;
+
+  if (total === 0) return null;
+
+  return (
+    <View style={styles.presenceSection}>
+      <View style={styles.presenceSectionHeader}>
+        <Ionicons name="people-outline" size={14} color={color} />
+        <Text style={[styles.presenceSectionTitle, { color }]}>Présence — {phaseLabel}</Text>
+        <View style={[styles.presencePct, { backgroundColor: color + '22' }]}>
+          <Text style={[styles.presencePctText, { color }]}>{present}/{total} ({pct}%)</Text>
+        </View>
+      </View>
+      {/* Progress bar */}
+      <View style={styles.presenceBar}>
+        <View style={[styles.presenceBarFill, {
+          width: `${pct}%`,
+          backgroundColor: pct >= 100 ? '#16a34a' : pct >= 70 ? color : '#ef4444',
+        }]} />
+      </View>
+      {/* Agent list */}
+      {agents.map(item => {
+        const isHere = item.isPresent || !!item.attendance?.checkInTime;
+        const initials = `${item.agent?.firstName?.[0] || ''}${item.agent?.lastName?.[0] || ''}`;
+        return (
+          <View key={item.assignmentId || item.agent?.id} style={styles.presenceAgentRow}>
+            <View style={[styles.presenceAvatar, { backgroundColor: isHere ? '#dcfce7' : '#fee2e2' }]}>
+              <Text style={[styles.presenceAvatarText, { color: isHere ? '#16a34a' : '#ef4444' }]}>{initials}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.presenceAgentName}>{item.agent?.firstName} {item.agent?.lastName}</Text>
+              {item.zone?.name && <Text style={styles.presenceZone}>Zone: {item.zone.name}</Text>}
+            </View>
+            <View style={[styles.presenceBadge, { backgroundColor: isHere ? '#dcfce7' : '#fee2e2' }]}>
+              <Ionicons name={isHere ? 'checkmark-circle' : 'close-circle'} size={13} color={isHere ? '#16a34a' : '#ef4444'} />
+              <Text style={[styles.presenceBadgeText, { color: isHere ? '#16a34a' : '#ef4444' }]}>
+                {isHere
+                  ? (item.attendance?.checkInTime ? formatTime(item.attendance.checkInTime) : 'Présent')
+                  : 'Absent'}
+              </Text>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+};
+
 // ─── Phase Confirm Card ───────────────────────────────────────────────────────
-const PhaseCard = ({ phase, phaseData, onConfirm, submitting }) => {
+const PhaseCard = ({ phase, phaseData, onConfirm, submitting, agents }) => {
   const meta = PHASE_META[phase];
   const [checklist, setChecklist] = useState(phaseData?.checklist || { ...DEFAULT_CHECKLIST });
   const confirmedAlready = phaseData?.confirmed;
   const allChecked = Object.values(checklist).every(Boolean);
+
+  // Show agents section only for preparation (briefing) and setup (mise en place)
+  const showAgents = (phase === 'preparation' || phase === 'setup') && agents && agents.length > 0;
+  const phaseAgentLabel = phase === 'preparation' ? 'Briefing' : 'Mise en place';
 
   useEffect(() => {
     if (phaseData?.checklist) setChecklist(phaseData.checklist);
@@ -85,6 +141,28 @@ const PhaseCard = ({ phase, phaseData, onConfirm, submitting }) => {
   const toggleItem = (key) => {
     if (confirmedAlready) return;
     setChecklist(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // Auto-suggest agentsPresent based on actual attendance
+  const handleAgentsPresentTap = () => {
+    if (confirmedAlready) return;
+    if (!checklist.agentsPresent && agents && agents.length > 0) {
+      const presentCount = agents.filter(a => a.isPresent || !!a.attendance?.checkInTime).length;
+      const pct = Math.round((presentCount / agents.length) * 100);
+      if (pct >= 70) {
+        // Suggest auto-check
+        Alert.alert(
+          'Agents présents',
+          `${presentCount}/${agents.length} agents présents (${pct}%). Confirmer leur présence pour le ${phaseAgentLabel} ?`,
+          [
+            { text: 'Annuler', style: 'cancel' },
+            { text: 'Confirmer', onPress: () => setChecklist(prev => ({ ...prev, agentsPresent: true })) },
+          ]
+        );
+        return;
+      }
+    }
+    setChecklist(prev => ({ ...prev, agentsPresent: !prev.agentsPresent }));
   };
 
   const handleConfirm = () => {
@@ -117,6 +195,15 @@ const PhaseCard = ({ phase, phaseData, onConfirm, submitting }) => {
       </View>
 
       <View style={styles.phaseBody}>
+        {/* Agents presence — always visible for preparation & setup */}
+        {showAgents && (
+          <AgentPresenceSection
+            agents={agents}
+            phaseLabel={phaseAgentLabel}
+            color={meta.color}
+          />
+        )}
+
         {confirmedAlready ? (
           <View style={styles.confirmedBox}>
             <Ionicons name="checkmark-circle" size={22} color="#16a34a" />
@@ -128,16 +215,21 @@ const PhaseCard = ({ phase, phaseData, onConfirm, submitting }) => {
             {meta.checklistLabels.map(item => (
               <TouchableOpacity
                 key={item.key}
-                onPress={() => toggleItem(item.key)}
+                onPress={item.key === 'agentsPresent' ? handleAgentsPresentTap : () => toggleItem(item.key)}
                 style={[styles.checkItem, checklist[item.key] && styles.checkItemChecked]}
                 activeOpacity={0.7}
               >
                 <View style={[styles.checkbox, checklist[item.key] && { backgroundColor: '#16a34a', borderColor: '#16a34a' }]}>
-                  {checklist[item.key] && <Ionicons name="checkmark" size={14} color="#fff" strokeWidth={3} />}
+                  {checklist[item.key] && <Ionicons name="checkmark" size={14} color="#fff" />}
                 </View>
                 <Text style={[styles.checkLabel, checklist[item.key] && styles.checkLabelDone]}>
                   {item.label}
                 </Text>
+                {item.key === 'agentsPresent' && agents && agents.length > 0 && (
+                  <Text style={[styles.agentCountHint, { color: meta.color }]}>
+                    {agents.filter(a => a.isPresent || !!a.attendance?.checkInTime).length}/{agents.length}
+                  </Text>
+                )}
               </TouchableOpacity>
             ))}
 
@@ -152,7 +244,7 @@ const PhaseCard = ({ phase, phaseData, onConfirm, submitting }) => {
               ) : (
                 <>
                   <Ionicons name="checkmark-circle" size={18} color="#fff" />
-                  <Text style={styles.confirmBtnText}>Confirmer {phase === 'preparation' ? 'Préparation' : phase === 'setup' ? 'Mise en place' : 'Exécution'}</Text>
+                  <Text style={styles.confirmBtnText}>Confirmer {phase === 'preparation' ? 'le Briefing' : phase === 'setup' ? 'la Mise en place' : "l'Exécution"}</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -438,18 +530,21 @@ const PhaseManagerScreen = ({ route, navigation }) => {
           phaseData={phases.phases?.preparation}
           onConfirm={handleConfirmPhase}
           submitting={submitting}
+          agents={agents}
         />
         <PhaseCard
           phase="setup"
           phaseData={phases.phases?.setup}
           onConfirm={handleConfirmPhase}
           submitting={submitting}
+          agents={agents}
         />
         <PhaseCard
           phase="execution"
           phaseData={phases.phases?.execution}
           onConfirm={handleConfirmPhase}
           submitting={submitting}
+          agents={agents}
         />
 
         {/* Zone confirmation (phase 2) */}
@@ -581,6 +676,34 @@ const styles = StyleSheet.create({
   presenceDot: { width: 8, height: 8, borderRadius: 4, alignSelf: 'flex-end' },
   presenceText: { fontSize: 12, fontWeight: '600' },
   checkInTime: { fontSize: 11, color: '#9ca3af' },
+
+  // ── Agent Presence Section ────────────────────────────────
+  presenceSection: {
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    gap: 6,
+  },
+  presenceSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  presenceSectionTitle: { fontSize: 12, fontWeight: '700', flex: 1 },
+  presencePct: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  presencePctText: { fontSize: 11, fontWeight: '700' },
+  presenceBar: { height: 5, backgroundColor: '#e5e7eb', borderRadius: 4, overflow: 'hidden', marginBottom: 6 },
+  presenceBarFill: { height: 5, borderRadius: 4 },
+  presenceAgentRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
+  },
+  presenceAvatar: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  presenceAvatarText: { fontSize: 12, fontWeight: '800' },
+  presenceAgentName: { fontSize: 13, fontWeight: '600', color: '#1f2937' },
+  presenceZone: { fontSize: 11, color: '#6b7280', marginTop: 1 },
+  presenceBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10 },
+  presenceBadgeText: { fontSize: 11, fontWeight: '700' },
+
+  // ── Checklist agent count hint ───────────────────────────
+  agentCountHint: { fontSize: 11, fontWeight: '700', marginLeft: 'auto' },
 });
 
 export default PhaseManagerScreen;
