@@ -21,6 +21,7 @@ import UsersEnhanced from './pages/UsersEnhanced';
 import UsersResponsive from './pages/UsersResponsive';
 import Events from './pages/Events';
 import EventDetails from './pages/EventDetails';
+import EventChronology from './pages/EventChronology';
 import Attendance from './pages/Attendance';
 import AttendanceVerification from './pages/AttendanceVerification';
 import Assignments from './pages/Assignments';
@@ -155,6 +156,14 @@ function App() {
           element={
             <ProtectedRoute>
               <EventDetails />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/events/:id/chronology"
+          element={
+            <ProtectedRoute>
+              <EventChronology />
             </ProtectedRoute>
           }
         />

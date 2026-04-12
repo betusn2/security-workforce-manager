@@ -476,6 +476,14 @@ const startServer = async () => {
       console.error('⚠️ Missing columns migration error (continuing):', error.message);
     }
 
+    // Run event phases migration (adds preparation + setup phase columns)
+    try {
+      const migrateEventPhases = require('./migrations/add-event-phases');
+      await migrateEventPhases();
+    } catch (error) {
+      console.error('⚠️ Event phases migration error (continuing):', error.message);
+    }
+
     // Create default admin user if no users exist
     try {
       const userCount = await db.User.count();

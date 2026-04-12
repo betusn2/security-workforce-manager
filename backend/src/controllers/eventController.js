@@ -219,7 +219,13 @@ exports.createEvent = async (req, res) => {
       requiredAgents, recurrence, notes,
       // Additional fields from enhanced frontend
       priority, color, recurrenceType, recurrenceEndDate,
-      contactName, contactPhone, supervisorId, agentCreationBuffer
+      contactName, contactPhone, supervisorId, agentCreationBuffer, agentCreationUnit,
+      // Phase 1 – Préparation
+      preparationStartDate, preparationEndDate, preparationStartTime, preparationEndTime,
+      preparationTolerance, preparationAgentsCount, preparationResponsableId, preparationObservations,
+      // Phase 2 – Mise en place
+      setupStartDate, setupEndDate, setupStartTime, setupEndTime,
+      setupTolerance, setupAgentsCount, setupResponsableId, setupObservations
     } = req.body;
 
     const event = await Event.create({
@@ -236,6 +242,7 @@ exports.createEvent = async (req, res) => {
       checkOutTime,
       lateThreshold: lateThreshold || 15,
       agentCreationBuffer: agentCreationBuffer || 120,
+      agentCreationUnit: agentCreationUnit || 'hours',
       requiredAgents: requiredAgents || 1,
       status: 'scheduled',
       priority: priority || 'medium',
@@ -247,7 +254,25 @@ exports.createEvent = async (req, res) => {
       supervisorId: supervisorId || null,
       recurrence,
       notes,
-      createdBy: req.user.id
+      createdBy: req.user.id,
+      // Phase 1
+      preparationStartDate: preparationStartDate || null,
+      preparationEndDate: preparationEndDate || null,
+      preparationStartTime: preparationStartTime || null,
+      preparationEndTime: preparationEndTime || null,
+      preparationTolerance: preparationTolerance || 15,
+      preparationAgentsCount: preparationAgentsCount || 0,
+      preparationResponsableId: preparationResponsableId || null,
+      preparationObservations: preparationObservations || null,
+      // Phase 2
+      setupStartDate: setupStartDate || null,
+      setupEndDate: setupEndDate || null,
+      setupStartTime: setupStartTime || null,
+      setupEndTime: setupEndTime || null,
+      setupTolerance: setupTolerance || 15,
+      setupAgentsCount: setupAgentsCount || 0,
+      setupResponsableId: setupResponsableId || null,
+      setupObservations: setupObservations || null
     });
 
     await logActivity({
@@ -305,8 +330,15 @@ exports.updateEvent = async (req, res) => {
     const allowedFields = [
       'name', 'description', 'type', 'location', 'latitude', 'longitude',
       'geoRadius', 'startDate', 'endDate', 'checkInTime', 'checkOutTime',
-      'lateThreshold', 'agentCreationBuffer', 'requiredAgents', 'status', 'recurrence', 'notes',
-      'supervisorId', 'priority', 'color', 'recurrenceType', 'recurrenceEndDate', 'contactName', 'contactPhone'
+      'lateThreshold', 'agentCreationBuffer', 'agentCreationUnit', 'requiredAgents',
+      'status', 'recurrence', 'notes',
+      'supervisorId', 'priority', 'color', 'recurrenceType', 'recurrenceEndDate', 'contactName', 'contactPhone',
+      // Phase 1 – Préparation
+      'preparationStartDate', 'preparationEndDate', 'preparationStartTime', 'preparationEndTime',
+      'preparationTolerance', 'preparationAgentsCount', 'preparationResponsableId', 'preparationObservations',
+      // Phase 2 – Mise en place
+      'setupStartDate', 'setupEndDate', 'setupStartTime', 'setupEndTime',
+      'setupTolerance', 'setupAgentsCount', 'setupResponsableId', 'setupObservations'
     ];
 
     allowedFields.forEach(field => {
@@ -675,3 +707,103 @@ exports.getEventNotificationStats = async (req, res) => {
     });
   }
 };
+
+// ─── Chronologie de l'événement ───────────────────────────────────────────────
+exports.getEventChronology = async (req, res) => {
+  try {
+    const event = await Event.findByPk(req.params.id, {
+      include: [
+        { model: User, as: 'supervisor', attributes: ['id', 'firstName', 'lastName', 'profilePhoto'] },
+        {
+          model: Assignment,
+          as: 'assignments',
+          required: false,
+          include: [{ model: User, as: 'agent', attributes: ['id', 'firstName', 'lastName', 'profilePhoto', 'employeeId'] }]
+        },
+        {
+          model: Attendance,
+          as: 'attendances',
+          required: false,
+          include: [{ model: User, as: 'agent', attributes: ['id', 'firstName', 'lastName'] }]
+        }
+      ]
+    });
+
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Événement non trouvé' });
+    }
+
+    const ev = event.toJSON();
+
+    // Build phase summary
+    const buildPhase = (name, label, icon, startDate, endDate, startTime, endTime, tolerance, agentsCount, observations, responsableId, attendances) => {
+      const planned = (startDate && startTime) ? `${startDate} ${startTime}` : null;
+      const phasePresentAttendances = (attendances || []).filter(a => a.phase === name);
+      return {
+        phase: name,
+        label,
+        icon,
+        planned: { startDate, endDate, startTime, endTime },
+        tolerance: tolerance || 15,
+        agentsRequired: agentsCount || 0,
+        observations: observations || null,
+        responsableId,
+        attendances: phasePresentAttendances,
+        presentCount: phasePresentAttendances.filter(a => a.status !== 'absent').length,
+        absentCount: phasePresentAttendances.filter(a => a.status === 'absent').length,
+        lateCount: phasePresentAttendances.filter(a => a.status === 'late').length,
+      };
+    };
+
+    // Attendances (may or may not have a phase column)
+    const allAttendances = ev.attendances || [];
+
+    const chronology = [
+      buildPhase(
+        'preparation', 'Préparation', '🛠️',
+        ev.preparationStartDate, ev.preparationEndDate,
+        ev.preparationStartTime, ev.preparationEndTime,
+        ev.preparationTolerance, ev.preparationAgentsCount,
+        ev.preparationObservations, ev.preparationResponsableId,
+        allAttendances
+      ),
+      buildPhase(
+        'setup', 'Mise en place', '📦',
+        ev.setupStartDate, ev.setupEndDate,
+        ev.setupStartTime, ev.setupEndTime,
+        ev.setupTolerance, ev.setupAgentsCount,
+        ev.setupObservations, ev.setupResponsableId,
+        allAttendances
+      ),
+      buildPhase(
+        'execution', 'Pointage / Exécution', '📍',
+        ev.startDate, ev.endDate,
+        ev.checkInTime, ev.checkOutTime,
+        ev.lateThreshold, ev.requiredAgents,
+        ev.notes, ev.supervisorId,
+        allAttendances
+      )
+    ];
+
+    res.json({
+      success: true,
+      data: {
+        event: {
+          id: ev.id,
+          name: ev.name,
+          location: ev.location,
+          status: ev.status,
+          color: ev.color,
+          priority: ev.priority,
+          supervisor: ev.supervisor
+        },
+        chronology,
+        assignments: ev.assignments || []
+      }
+    });
+  } catch (error) {
+    console.error('getEventChronology error:', error);
+    res.status(500).json({ success: false, message: 'Erreur chronologie événement' });
+  }
+};
+

@@ -197,6 +197,7 @@ export const eventsAPI = {
   getToday: () => api.get('/events/today').catch(handleApiError),
   getMyEvents: (params) => api.get('/events/my-events', { params }).catch(handleApiError),
   getStats: (id) => api.get(`/events/${id}/stats`).catch(handleApiError),
+  getChronology: (id) => api.get(`/events/${id}/chronology`).catch(handleApiError),
 };
 
 // Assignments API - IMPORTANT: Corrigé pour le check-in

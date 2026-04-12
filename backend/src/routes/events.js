@@ -17,6 +17,7 @@ router.get('/', paginationQuery, validate, eventController.getEvents);
 // Routes avec ID - Les routes spécifiques AVANT la route générique /:id
 router.get('/:id/notification-stats', uuidParam(), validate, eventController.getEventNotificationStats);
 router.get('/:id/stats', uuidParam(), validate, eventController.getEventStats);
+router.get('/:id/chronology', uuidParam(), validate, eventController.getEventChronology);
 
 // Get event by ID (DOIT être APRÈS toutes les autres routes /:id/*)
 router.get('/:id', uuidParam(), validate, eventController.getEventById);

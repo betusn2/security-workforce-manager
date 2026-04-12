@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   FiPlus, FiSearch, FiEdit2, FiTrash2, FiMapPin,
   FiClock, FiUsers, FiCalendar, FiCheck, FiCopy,
@@ -46,6 +47,7 @@ const RECURRENCE_OPTIONS = [
 
 // Modal de détails de l'événement
 const EventDetailsModal = ({ isOpen, onClose, event, onEdit, onDelete, onDuplicate }) => {
+  const navigate = useNavigate();
   const [zones, setZones] = useState([]);
   const [loadingZones, setLoadingZones] = useState(false);
   const [zoneManagerOpen, setZoneManagerOpen] = useState(false);
@@ -398,12 +400,20 @@ const EventDetailsModal = ({ isOpen, onClose, event, onEdit, onDelete, onDuplica
 
           {/* Actions */}
           <div className="flex justify-between pt-4 border-t">
-            <button
-              onClick={() => { onClose(); onDuplicate(event); }}
-              className="btn-secondary flex items-center gap-2"
-            >
-              <FiCopy /> Dupliquer
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { onClose(); onDuplicate(event); }}
+                className="btn-secondary flex items-center gap-2"
+              >
+                <FiCopy /> Dupliquer
+              </button>
+              <button
+                onClick={() => { onClose(); navigate(`/events/${event.id}/chronology`); }}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition-colors font-medium text-sm"
+              >
+                <FiActivity /> Chronologie
+              </button>
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={() => { onClose(); onDelete(event.id); }}
@@ -453,7 +463,9 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
     checkInTime: '08:00',
     checkOutTime: '18:00',
     lateThreshold: 15,
-    agentCreationBuffer: 120,
+    agentCreationBuffer: 2,
+    agentCreationUnit: 'hours',
+    agentCreationCustom: false,
     requiredAgents: 1,
     recurrenceType: 'none',
     recurrenceEndDate: '',
@@ -461,6 +473,24 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
     contactPhone: '',
     contactName: '',
     supervisorId: '',
+    // Phase 1 – Préparation
+    preparationStartDate: '',
+    preparationEndDate: '',
+    preparationStartTime: '',
+    preparationEndTime: '',
+    preparationTolerance: 15,
+    preparationAgentsCount: 0,
+    preparationResponsableId: '',
+    preparationObservations: '',
+    // Phase 2 – Mise en place
+    setupStartDate: '',
+    setupEndDate: '',
+    setupStartTime: '',
+    setupEndTime: '',
+    setupTolerance: 15,
+    setupAgentsCount: 0,
+    setupResponsableId: '',
+    setupObservations: '',
   });
   const [loading, setLoading] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -488,6 +518,20 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
 
   useEffect(() => {
     if (event) {
+      // Convert legacy agentCreationBuffer (minutes) to new unit-based format
+      const legacyBuffer = event.agentCreationBuffer || 120;
+      const legacyUnit = event.agentCreationUnit || 'hours';
+      let bufferValue = legacyBuffer;
+      let bufferUnit = legacyUnit;
+      let isCustom = false;
+      if (legacyUnit === 'hours') {
+        bufferValue = legacyBuffer / 60;
+        if (![2, 4, 8, 24].includes(bufferValue)) isCustom = true;
+      } else if (legacyUnit === 'minutes') {
+        bufferValue = legacyBuffer;
+        isCustom = true;
+      }
+
       setFormData({
         name: event.name || '',
         description: event.description || '',
@@ -511,6 +555,27 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
         contactName: event.contactName || '',
         supervisorId: event.supervisorId || '',
         status: event.status || 'scheduled',
+        agentCreationBuffer: bufferValue,
+        agentCreationUnit: bufferUnit,
+        agentCreationCustom: isCustom,
+        // Phase 1
+        preparationStartDate: event.preparationStartDate || '',
+        preparationEndDate: event.preparationEndDate || '',
+        preparationStartTime: event.preparationStartTime?.substring(0, 5) || '',
+        preparationEndTime: event.preparationEndTime?.substring(0, 5) || '',
+        preparationTolerance: event.preparationTolerance ?? 15,
+        preparationAgentsCount: event.preparationAgentsCount ?? 0,
+        preparationResponsableId: event.preparationResponsableId || '',
+        preparationObservations: event.preparationObservations || '',
+        // Phase 2
+        setupStartDate: event.setupStartDate || '',
+        setupEndDate: event.setupEndDate || '',
+        setupStartTime: event.setupStartTime?.substring(0, 5) || '',
+        setupEndTime: event.setupEndTime?.substring(0, 5) || '',
+        setupTolerance: event.setupTolerance ?? 15,
+        setupAgentsCount: event.setupAgentsCount ?? 0,
+        setupResponsableId: event.setupResponsableId || '',
+        setupObservations: event.setupObservations || '',
       });
     } else {
       const today = new Date().toISOString().split('T')[0];
@@ -529,7 +594,9 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
         checkInTime: '08:00',
         checkOutTime: '18:00',
         lateThreshold: 15,
-        agentCreationBuffer: 120,
+        agentCreationBuffer: 2,
+        agentCreationUnit: 'hours',
+        agentCreationCustom: false,
         requiredAgents: 1,
         recurrenceType: 'none',
         recurrenceEndDate: '',
@@ -537,6 +604,24 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
         contactPhone: '',
         contactName: '',
         supervisorId: '',
+        // Phase 1
+        preparationStartDate: '',
+        preparationEndDate: '',
+        preparationStartTime: '',
+        preparationEndTime: '',
+        preparationTolerance: 15,
+        preparationAgentsCount: 0,
+        preparationResponsableId: '',
+        preparationObservations: '',
+        // Phase 2
+        setupStartDate: '',
+        setupEndDate: '',
+        setupStartTime: '',
+        setupEndTime: '',
+        setupTolerance: 15,
+        setupAgentsCount: 0,
+        setupResponsableId: '',
+        setupObservations: '',
       });
     }
   }, [event]);
@@ -552,6 +637,12 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
         setLoading(false);
         return;
       }
+
+      // Convert unit-based buffer back to minutes for backend
+      const bufferUnitsInMinutes = { minutes: 1, hours: 60, days: 1440, weeks: 10080 };
+      const agentCreationBufferMinutes = Math.round(
+        parseFloat(formData.agentCreationBuffer || 2) * (bufferUnitsInMinutes[formData.agentCreationUnit] || 60)
+      );
 
       // Préparer les données à envoyer - uniquement les champs nécessaires
       const dataToSend = {
@@ -577,6 +668,26 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
         contactName: formData.contactName,
         supervisorId: formData.supervisorId || null,
         status: formData.status,
+        agentCreationBuffer: agentCreationBufferMinutes,
+        agentCreationUnit: formData.agentCreationUnit,
+        // Phase 1 – Préparation
+        preparationStartDate: formData.preparationStartDate || null,
+        preparationEndDate: formData.preparationEndDate || null,
+        preparationStartTime: formData.preparationStartTime || null,
+        preparationEndTime: formData.preparationEndTime || null,
+        preparationTolerance: formData.preparationTolerance,
+        preparationAgentsCount: formData.preparationAgentsCount,
+        preparationResponsableId: formData.preparationResponsableId || null,
+        preparationObservations: formData.preparationObservations || null,
+        // Phase 2 – Mise en place
+        setupStartDate: formData.setupStartDate || null,
+        setupEndDate: formData.setupEndDate || null,
+        setupStartTime: formData.setupStartTime || null,
+        setupEndTime: formData.setupEndTime || null,
+        setupTolerance: formData.setupTolerance,
+        setupAgentsCount: formData.setupAgentsCount,
+        setupResponsableId: formData.setupResponsableId || null,
+        setupObservations: formData.setupObservations || null,
       };
 
       console.log('📤 Données envoyées:', dataToSend);
@@ -802,12 +913,15 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
             </div>
           </div>
 
-          {/* Dates et Horaires */}
-          <div className="border rounded-lg p-4 bg-blue-50">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
-              <FiCalendar className="mr-2 text-blue-600" />
-              Dates et Horaires
+          {/* Dates et Horaire début de l'événement (Phase 3 – Exécution/Pointage) */}
+          <div className="border-2 border-green-200 rounded-lg p-4 bg-green-50">
+            <h3 className="text-sm font-semibold text-green-800 mb-1 flex items-center gap-2">
+              <span className="text-lg">📍</span>
+              <FiCalendar className="text-green-600" />
+              Dates et Horaire début de l'événement
+              <span className="ml-auto text-xs font-normal bg-green-200 text-green-800 px-2 py-0.5 rounded-full">Phase 3 – Pointage</span>
             </h3>
+            <p className="text-xs text-green-700 mb-3">Horaires officiels de l'événement (check-in / check-out des agents)</p>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
@@ -871,17 +985,49 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
               
               <div>
                 <label className="label">Création agent autorisée</label>
-                <select
-                  value={formData.agentCreationBuffer || 120}
-                  onChange={(e) => setFormData({ ...formData, agentCreationBuffer: parseInt(e.target.value) })}
-                  className="input"
-                  title="Délai avant le début de l'événement pendant lequel la création d'agents est autorisée"
-                >
-                  <option value={30}>30 min avant</option>
-                  <option value={60}>1h avant</option>
-                  <option value={90}>1h30 avant</option>
-                  <option value={120}>2h avant</option>
-                </select>
+                <div className="space-y-2">
+                  <select
+                    value={formData.agentCreationCustom ? 'custom' : `${formData.agentCreationBuffer}_${formData.agentCreationUnit}`}
+                    onChange={(e) => {
+                      if (e.target.value === 'custom') {
+                        setFormData({ ...formData, agentCreationCustom: true });
+                      } else {
+                        const [val, unit] = e.target.value.split('_');
+                        setFormData({ ...formData, agentCreationBuffer: parseFloat(val), agentCreationUnit: unit, agentCreationCustom: false });
+                      }
+                    }}
+                    className="input"
+                    title="Fenêtre de temps avant l'événement pendant laquelle les agents peuvent pointer"
+                  >
+                    <option value="2_hours">2h avant</option>
+                    <option value="4_hours">4h avant</option>
+                    <option value="8_hours">8h avant</option>
+                    <option value="24_hours">24h avant</option>
+                    <option value="custom">Personnalisé…</option>
+                  </select>
+                  {formData.agentCreationCustom && (
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        value={formData.agentCreationBuffer}
+                        onChange={(e) => setFormData({ ...formData, agentCreationBuffer: parseFloat(e.target.value) || 1 })}
+                        className="input w-24"
+                        placeholder="Ex: 3"
+                      />
+                      <select
+                        value={formData.agentCreationUnit}
+                        onChange={(e) => setFormData({ ...formData, agentCreationUnit: e.target.value })}
+                        className="input flex-1"
+                      >
+                        <option value="hours">Heure(s)</option>
+                        <option value="days">Jour(s)</option>
+                        <option value="weeks">Semaine(s)</option>
+                        <option value="minutes">Minute(s)</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
               </div>
               
               <div>
@@ -911,6 +1057,168 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
                   <FiUsers className="text-gray-400" />
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* ── Phase 1 : Préparation ───────────────────────────────────── */}
+          <div className="border-2 border-blue-200 rounded-lg p-4 bg-blue-50">
+            <h3 className="text-sm font-semibold text-blue-800 mb-1 flex items-center gap-2">
+              <span className="text-lg">🛠️</span>
+              Phase 1 – Préparation
+              <span className="ml-auto text-xs font-normal bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full">Optionnel</span>
+            </h3>
+            <p className="text-xs text-blue-700 mb-3">Installation, briefing, vérification du matériel avant l'événement</p>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <label className="label text-xs">Date début prép.</label>
+                <input type="date" value={formData.preparationStartDate}
+                  onChange={(e) => setFormData({ ...formData, preparationStartDate: e.target.value })}
+                  className="input text-sm" />
+              </div>
+              <div>
+                <label className="label text-xs">Date fin prép.</label>
+                <input type="date" value={formData.preparationEndDate}
+                  onChange={(e) => setFormData({ ...formData, preparationEndDate: e.target.value })}
+                  min={formData.preparationStartDate}
+                  className="input text-sm" />
+              </div>
+              <div>
+                <label className="label text-xs">Heure début</label>
+                <input type="time" value={formData.preparationStartTime}
+                  onChange={(e) => setFormData({ ...formData, preparationStartTime: e.target.value })}
+                  className="input text-sm" />
+              </div>
+              <div>
+                <label className="label text-xs">Heure fin</label>
+                <input type="time" value={formData.preparationEndTime}
+                  onChange={(e) => setFormData({ ...formData, preparationEndTime: e.target.value })}
+                  className="input text-sm" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+              <div>
+                <label className="label text-xs">Tolérance retard (min)</label>
+                <div className="flex items-center gap-2">
+                  <input type="range" min="0" max="60" value={formData.preparationTolerance}
+                    onChange={(e) => setFormData({ ...formData, preparationTolerance: parseInt(e.target.value) })}
+                    className="flex-1" />
+                  <span className="w-12 text-center font-medium text-gray-700 text-sm">{formData.preparationTolerance} min</span>
+                </div>
+              </div>
+              <div>
+                <label className="label text-xs">Agents requis phase 1</label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setFormData({ ...formData, preparationAgentsCount: Math.max(0, formData.preparationAgentsCount - 1) })}
+                    className="p-1.5 bg-gray-200 rounded hover:bg-gray-300 text-sm">-</button>
+                  <input type="number" min="0" value={formData.preparationAgentsCount}
+                    onChange={(e) => setFormData({ ...formData, preparationAgentsCount: Math.max(0, parseInt(e.target.value) || 0) })}
+                    className="input text-center w-16 text-sm" />
+                  <button type="button" onClick={() => setFormData({ ...formData, preparationAgentsCount: formData.preparationAgentsCount + 1 })}
+                    className="p-1.5 bg-gray-200 rounded hover:bg-gray-300 text-sm">+</button>
+                </div>
+              </div>
+              <div>
+                <label className="label text-xs">Responsable phase 1</label>
+                <select value={formData.preparationResponsableId}
+                  onChange={(e) => setFormData({ ...formData, preparationResponsableId: e.target.value })}
+                  className="input text-sm" disabled={loadingSupervisors}>
+                  <option value="">-- Aucun --</option>
+                  {supervisors.map(s => (
+                    <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <label className="label text-xs">Observations / Instructions phase 1</label>
+              <textarea value={formData.preparationObservations}
+                onChange={(e) => setFormData({ ...formData, preparationObservations: e.target.value })}
+                className="input resize-none text-sm" rows="2"
+                placeholder="Ex: Vérifier les badges, briefer les agents, tester les radios..." />
+            </div>
+          </div>
+
+          {/* ── Phase 2 : Mise en place ─────────────────────────────────── */}
+          <div className="border-2 border-yellow-200 rounded-lg p-4 bg-yellow-50">
+            <h3 className="text-sm font-semibold text-yellow-800 mb-1 flex items-center gap-2">
+              <span className="text-lg">📦</span>
+              Phase 2 – Mise en place
+              <span className="ml-auto text-xs font-normal bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded-full">Optionnel</span>
+            </h3>
+            <p className="text-xs text-yellow-700 mb-3">Déploiement sur site, positionnement des agents, ouverture des zones</p>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <label className="label text-xs">Date début MeP</label>
+                <input type="date" value={formData.setupStartDate}
+                  onChange={(e) => setFormData({ ...formData, setupStartDate: e.target.value })}
+                  className="input text-sm" />
+              </div>
+              <div>
+                <label className="label text-xs">Date fin MeP</label>
+                <input type="date" value={formData.setupEndDate}
+                  onChange={(e) => setFormData({ ...formData, setupEndDate: e.target.value })}
+                  min={formData.setupStartDate}
+                  className="input text-sm" />
+              </div>
+              <div>
+                <label className="label text-xs">Heure début</label>
+                <input type="time" value={formData.setupStartTime}
+                  onChange={(e) => setFormData({ ...formData, setupStartTime: e.target.value })}
+                  className="input text-sm" />
+              </div>
+              <div>
+                <label className="label text-xs">Heure fin</label>
+                <input type="time" value={formData.setupEndTime}
+                  onChange={(e) => setFormData({ ...formData, setupEndTime: e.target.value })}
+                  className="input text-sm" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+              <div>
+                <label className="label text-xs">Tolérance retard (min)</label>
+                <div className="flex items-center gap-2">
+                  <input type="range" min="0" max="60" value={formData.setupTolerance}
+                    onChange={(e) => setFormData({ ...formData, setupTolerance: parseInt(e.target.value) })}
+                    className="flex-1" />
+                  <span className="w-12 text-center font-medium text-gray-700 text-sm">{formData.setupTolerance} min</span>
+                </div>
+              </div>
+              <div>
+                <label className="label text-xs">Agents requis phase 2</label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setFormData({ ...formData, setupAgentsCount: Math.max(0, formData.setupAgentsCount - 1) })}
+                    className="p-1.5 bg-gray-200 rounded hover:bg-gray-300 text-sm">-</button>
+                  <input type="number" min="0" value={formData.setupAgentsCount}
+                    onChange={(e) => setFormData({ ...formData, setupAgentsCount: Math.max(0, parseInt(e.target.value) || 0) })}
+                    className="input text-center w-16 text-sm" />
+                  <button type="button" onClick={() => setFormData({ ...formData, setupAgentsCount: formData.setupAgentsCount + 1 })}
+                    className="p-1.5 bg-gray-200 rounded hover:bg-gray-300 text-sm">+</button>
+                </div>
+              </div>
+              <div>
+                <label className="label text-xs">Responsable phase 2</label>
+                <select value={formData.setupResponsableId}
+                  onChange={(e) => setFormData({ ...formData, setupResponsableId: e.target.value })}
+                  className="input text-sm" disabled={loadingSupervisors}>
+                  <option value="">-- Aucun --</option>
+                  {supervisors.map(s => (
+                    <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <label className="label text-xs">Observations / Instructions phase 2</label>
+              <textarea value={formData.setupObservations}
+                onChange={(e) => setFormData({ ...formData, setupObservations: e.target.value })}
+                className="input resize-none text-sm" rows="2"
+                placeholder="Ex: Ouvrir portails à 16h, positionner agents aux entrées, activer radios..." />
             </div>
           </div>
 

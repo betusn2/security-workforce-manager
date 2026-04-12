@@ -120,6 +120,41 @@ module.exports = (sequelize, DataTypes) => {
     notes: {
       type: DataTypes.TEXT,
       allowNull: true
+    },
+
+    // ── Phase 1 : Préparation ──────────────────────────────────────────────
+    preparationStartDate: { type: DataTypes.DATEONLY, allowNull: true },
+    preparationEndDate:   { type: DataTypes.DATEONLY, allowNull: true },
+    preparationStartTime: { type: DataTypes.TIME,     allowNull: true },
+    preparationEndTime:   { type: DataTypes.TIME,     allowNull: true },
+    preparationTolerance: { type: DataTypes.INTEGER,  defaultValue: 15 },
+    preparationAgentsCount: { type: DataTypes.INTEGER, defaultValue: 0 },
+    preparationResponsableId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: { model: 'users', key: 'id' }
+    },
+    preparationObservations: { type: DataTypes.TEXT, allowNull: true },
+
+    // ── Phase 2 : Mise en place ───────────────────────────────────────────
+    setupStartDate: { type: DataTypes.DATEONLY, allowNull: true },
+    setupEndDate:   { type: DataTypes.DATEONLY, allowNull: true },
+    setupStartTime: { type: DataTypes.TIME,     allowNull: true },
+    setupEndTime:   { type: DataTypes.TIME,     allowNull: true },
+    setupTolerance: { type: DataTypes.INTEGER,  defaultValue: 15 },
+    setupAgentsCount: { type: DataTypes.INTEGER, defaultValue: 0 },
+    setupResponsableId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: { model: 'users', key: 'id' }
+    },
+    setupObservations: { type: DataTypes.TEXT, allowNull: true },
+
+    // ── Agent creation buffer – unit ─────────────────────────────────────
+    agentCreationUnit: {
+      type: DataTypes.ENUM('minutes', 'hours', 'days', 'weeks'),
+      defaultValue: 'hours',
+      comment: 'Unit for agentCreationBuffer (minutes/hours/days/weeks)'
     }
   }, {
     tableName: 'events',
