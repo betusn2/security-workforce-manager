@@ -492,7 +492,6 @@ const EventChronology = () => {
           body { font-size: 12px; }
         }
       `}</style>
-    </div>
     </>
     )}
     </div>
