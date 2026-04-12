@@ -184,6 +184,19 @@ export const facialAPI = {
   verifyCheckin: (data) => api.post('/face-recognition/verify', data),
 
   /**
+   * Vérification rapide via cache événement (~200-400ms)
+   * POST /api/face-recognition/verify-fast
+   * { userId, photo, eventId }
+   */
+  verifyFast: (data) => api.post('/face-recognition/verify-fast', data),
+
+  /**
+   * Pré-chauffer le cache face pour un événement
+   * POST /api/face-recognition/warm-cache/:eventId
+   */
+  warmCache: (eventId) => api.post(`/face-recognition/warm-cache/${eventId}`),
+
+  /**
    * Identifier qui est sur la photo (sans userId connu)
    * POST /api/face-recognition/identify
    */

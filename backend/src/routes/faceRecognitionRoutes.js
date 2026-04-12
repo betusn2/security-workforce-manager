@@ -17,6 +17,15 @@ router.post('/register', authenticate, faceRecognitionController.registerFace);
 // Face verification (for attendance)
 router.post('/verify', authenticate, faceRecognitionController.verifyFace);
 
+// ⚡ FAST verify: event-scoped descriptor cache, no DB query, ~200-400ms
+router.post('/verify-fast', authenticate, faceRecognitionController.verifyFast);
+
+// Pre-warm event descriptors cache (call before event starts)
+router.post('/warm-cache/:eventId', authenticate, faceRecognitionController.warmCache);
+
+// Cache stats
+router.get('/cache-stats', authenticate, authorize('admin', 'supervisor'), faceRecognitionController.getCacheStats);
+
 // Face identification (1:N matching) - admin/supervisor only
 router.post('/identify', authenticate, authorize('admin', 'supervisor'), faceRecognitionController.identifyFace);
 

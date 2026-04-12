@@ -1716,6 +1716,7 @@ const CheckInScreen = ({ route, navigation }) => {
         <View style={[StyleSheet.absoluteFill, { zIndex: 999, elevation: 20 }]}>
           <AutoFacialCheckIn
             userId={userId || userProfile?.id}
+            eventId={selectedEvent?.id || null}
             onSuccess={(score, photo) => {
               setFacialScore(score);
               setCapturedPhoto(photo);

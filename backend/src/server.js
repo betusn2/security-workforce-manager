@@ -540,6 +540,18 @@ const startServer = async () => {
     startScheduler(io);
     console.log('✅ Scheduler mis à jour avec Socket.IO');
 
+    // ✅ Pre-warm TensorFlow face recognition models (async, non-blocking)
+    // Ensures first verify request is fast instead of waiting 3-8s for cold TF load
+    setTimeout(async () => {
+      try {
+        const faceApiNode = require('./services/faceApiNodeService');
+        await faceApiNode.init();
+        console.log('✅ [FaceRecog] TF models pre-warmed — first verify will be fast');
+      } catch (e) {
+        console.warn('⚠️ [FaceRecog] Model warmup skipped (non-blocking):', e.message);
+      }
+    }, 8000);
+
   } catch (error) {
     console.error('❌ Unable to connect to database after retries:', error.message);
     console.error('⚠️  Server is running but API calls will fail until DB is available.');

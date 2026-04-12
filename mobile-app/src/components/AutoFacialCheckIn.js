@@ -1,8 +1,10 @@
 /**
- * AUTO FACIAL CHECK-IN — v3 Analyse Temps Reel
- * =============================================
+ * AUTO FACIAL CHECK-IN — v4 Fast (< 400ms)
+ * ==========================================
  * Reconnaissance CONTINUE — 0 clic requis.
- *  - Capture toutes les 1.6s (pas de compte a rebours)
+ *  - Capture toutes les 1.0s (pas de compte a rebours)
+ *  - Image 480px / qualite 0.55 → ~15KB base64
+ *  - Endpoint /verify-fast : cache evenement en RAM → ~200-400ms
  *  - Guide intelligent : lunettes, eclairage, distance, position
  *  - Score anime en temps reel
  *  - Validation AUTOMATIQUE des que score >= 50%
@@ -10,6 +12,7 @@
  *
  * Props :
  *   userId        : ID de l'utilisateur
+ *   eventId       : ID de l'evenement (pour cache fast-verify)
  *   onSuccess     : (score, photo) => void
  *   onMaxAttempts : () => void
  *   onCancel      : () => void
@@ -36,7 +39,7 @@ const { width: W, height: H } = Dimensions.get('window');
 // ── Config ────────────────────────────────────────────────────────────────
 const MIN_SCORE   = 50;    // seuil de validation (%)
 const MAX_NO_FACE = 8;     // frames sans visage avant abandon
-const CAPTURE_MS  = 1600;  // intervalle entre captures (ms)
+const CAPTURE_MS  = 1000;  // intervalle entre captures (ms) — réduit de 1600→1000ms
 
 // ── Ovale centre horizontal & vertical ────────────────────────────────────
 const OVAL_W    = Math.round(W * 0.64);
@@ -56,7 +59,7 @@ const GUIDE = {
   server:   { icon: 'cloud-offline-outline', msg: 'Connexion en cours... Patientez',               color: '#64748b' },
 };
 
-export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, onCancel }) {
+export default function AutoFacialCheckIn({ userId, eventId, onSuccess, onMaxAttempts, onCancel }) {
   const [permission, setPermission] = useState(null);
   const [phase,      setPhase]      = useState('init');   // init|scanning|success|blocked
   const [liveScore,  setLiveScore]  = useState(null);
@@ -70,7 +73,9 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
   const noFaceCount = useRef(0);
   const lowCount    = useRef(0);
   const userIdRef   = useRef(userId);
+  const eventIdRef  = useRef(eventId);
   useEffect(() => { userIdRef.current = userId; }, [userId]);
+  useEffect(() => { eventIdRef.current = eventId; }, [eventId]);
 
   // ── Animations ────────────────────────────────────────────────────────
   const scoreAnim   = useRef(new Animated.Value(0)).current;
@@ -132,20 +137,31 @@ export default function AutoFacialCheckIn({ userId, onSuccess, onMaxAttempts, on
 
     try {
       const raw = await cameraRef.current.takePictureAsync({
-        quality: 0.88,
+        quality: 0.5,
         base64: false,
       });
 
+      // 480px width + compress 0.55 → ~15KB base64 (vs 80KB avant)
       const compressed = await ImageManipulator.manipulateAsync(
         raw.uri,
-        [{ resize: { width: 640 } }],
-        { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        [{ resize: { width: 480 } }],
+        { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG, base64: true }
       );
 
-      const res  = await facialAPI.verifyCheckin({
-        userId: userIdRef.current,
-        image:  `data:image/jpeg;base64,${compressed.base64}`,
-      });
+      // Utilise /verify-fast si eventId disponible (cache RAM → ~200ms)
+      // Sinon fallback sur /verify classique
+      const apiCall = eventIdRef.current
+        ? facialAPI.verifyFast({
+            userId:  userIdRef.current,
+            image:   `data:image/jpeg;base64,${compressed.base64}`,
+            eventId: eventIdRef.current,
+          })
+        : facialAPI.verifyCheckin({
+            userId: userIdRef.current,
+            image:  `data:image/jpeg;base64,${compressed.base64}`,
+          });
+
+      const res  = await apiCall;
 
       const data  = res.data?.data || res.data;
       const raw_s = data?.score ?? data?.similarity ?? data?.confidence ?? 0;

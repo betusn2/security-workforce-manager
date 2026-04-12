@@ -811,3 +811,138 @@ function logActivity(action, userId, details = {}) {
   console.log(`[ACTIVITY] ${action} - User ${userId}:`, details);
   // Could also store in database for audit trail
 }
+
+// ============================================
+// ⚡ FAST VERIFY — event-scoped cache
+// ============================================
+
+/**
+ * POST /face-recognition/verify-fast
+ * Body: { userId, image, eventId }
+ *
+ * Flow:
+ *   1. Extract descriptor from incoming image (TF inference — only 1× per request)
+ *   2. Look up stored descriptor from in-memory cache (0 DB queries on cache hit)
+ *   3. Compute euclidean distance in pure JS (~0.1 ms for 30 agents)
+ *   → Total: ~200-400 ms vs 3-10 s with old approach
+ */
+exports.verifyFast = async (req, res) => {
+  const t0 = Date.now();
+  try {
+    const { userId, image, eventId } = req.body;
+
+    if (!userId || !image) {
+      return res.status(400).json({ success: false, message: 'userId et image sont requis' });
+    }
+
+    // Lockout check
+    const lockout = checkLockout(userId);
+    if (lockout.locked) {
+      return res.status(429).json({
+        success: false, verified: false, errorCode: 'ACCOUNT_LOCKED',
+        message: `Compte bloqué. Réessayez dans ${Math.ceil(lockout.remainingTime / 60000)} min`,
+        remainingTime: lockout.remainingTime,
+      });
+    }
+
+    const faceApiNode = require('../services/faceApiNodeService');
+    const faceCache   = require('../services/faceDescriptorCache');
+
+    // 1. Extract descriptor from incoming photo (the only TF inference call)
+    const capturedDescriptor = await faceApiNode.extractDescriptor(image);
+
+    if (!capturedDescriptor) {
+      return res.json({
+        success: true, verified: false, faceDetected: false,
+        confidence: 0, errorCode: 'NO_FACE',
+        message: 'Aucun visage détecté — repositionnez votre visage',
+        ms: Date.now() - t0,
+      });
+    }
+
+    // 2. Get stored reference descriptor from cache (0 DB query on hit)
+    const storedDescriptor = await faceCache.getUserDescriptor(userId, eventId);
+
+    if (!storedDescriptor) {
+      return res.status(400).json({
+        success: false, verified: false,
+        errorCode: 'NOT_REGISTERED',
+        message: 'Visage non enregistré — contactez un administrateur',
+        ms: Date.now() - t0,
+      });
+    }
+
+    // 3. Compare — pure JS, microsecond range
+    const distance   = faceCache.euclideanDistance(capturedDescriptor, storedDescriptor);
+    const confidence = Math.max(0, Math.round((1 - Math.min(distance, 1.0)) * 100));
+    const isVerified = confidence >= faceApiNode.MATCH_THRESHOLD_SCORE;
+
+    const ms = Date.now() - t0;
+    console.log(`[VerifyFast] userId=${userId} score=${confidence}% verified=${isVerified} ms=${ms}`);
+
+    trackAttempt(userId, isVerified);
+    if (isVerified) {
+      resetAttempts(userId);
+      logActivity('FACE_VERIFIED_FAST', userId, { confidence, eventId, ms });
+    } else {
+      logActivity('FACE_VERIFICATION_FAILED_FAST', userId, { confidence, eventId, ms });
+      checkForAnomalies(userId, { verified: false, confidence, errorCode: 'FACE_MISMATCH' });
+    }
+
+    return res.json({
+      success: true,
+      verified: isVerified,
+      confidence,
+      score: confidence,
+      faceDetected: true,
+      source: 'fast-cache',
+      ms,
+      message: isVerified
+        ? `Identité confirmée (${confidence}%)`
+        : `Identité non confirmée (${confidence}%)`,
+      errorCode: isVerified ? null : 'FACE_MISMATCH',
+    });
+  } catch (err) {
+    console.error('[VerifyFast] Error:', err.message);
+    return res.status(503).json({
+      success: false, verified: false,
+      errorCode: 'SERVICE_UNAVAILABLE',
+      message: 'Service de reconnaissance temporairement indisponible',
+      ms: Date.now() - t0,
+    });
+  }
+};
+
+/**
+ * POST /face-recognition/warm-cache/:eventId
+ * Pre-load all agent descriptors for an event into RAM.
+ * Call this when an event starts to ensure first check-in is instant.
+ */
+exports.warmCache = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const faceCache = require('../services/faceDescriptorCache');
+    const descriptors = await faceCache.loadEventDescriptors(eventId);
+    return res.json({
+      success: true,
+      message: `Cache réchauffé: ${descriptors.size} agent(s) chargés`,
+      agentCount: descriptors.size,
+      eventId,
+    });
+  } catch (err) {
+    console.error('[WarmCache] Error:', err.message);
+    return res.status(500).json({ success: false, message: 'Erreur lors du chargement du cache' });
+  }
+};
+
+/**
+ * GET /face-recognition/cache-stats
+ */
+exports.getCacheStats = async (req, res) => {
+  try {
+    const faceCache = require('../services/faceDescriptorCache');
+    return res.json({ success: true, data: faceCache.getCacheStats() });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur cache stats' });
+  }
+};
