@@ -484,6 +484,14 @@ const startServer = async () => {
       console.error('⚠️ Event phases migration error (continuing):', error.message);
     }
 
+    // Run phase confirmations migration (adds confirmation + checklist + zone columns)
+    try {
+      const migratePhaseConfirmations = require('./migrations/add-phase-confirmations');
+      await migratePhaseConfirmations();
+    } catch (error) {
+      console.error('⚠️ Phase confirmations migration error (continuing):', error.message);
+    }
+
     // Create default admin user if no users exist
     try {
       const userCount = await db.User.count();

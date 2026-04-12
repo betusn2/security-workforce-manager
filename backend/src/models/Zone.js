@@ -80,7 +80,11 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       defaultValue: 0,
       comment: 'Ordre d\'affichage'
-    }
+    },
+    // ── Zone mise en place – confirmation ───────────────────────
+    setupConfirmed:   { type: DataTypes.BOOLEAN, defaultValue: false },
+    setupConfirmedAt: { type: DataTypes.DATE,    allowNull: true },
+    setupConfirmedBy: { type: DataTypes.UUID,    allowNull: true },
   }, {
     tableName: 'zones',
     timestamps: true,

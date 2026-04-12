@@ -200,6 +200,14 @@ export const eventsAPI = {
   getChronology: (id) => api.get(`/events/${id}/chronology`).catch(handleApiError),
 };
 
+// Phase management API
+export const phaseAPI = {
+  getStatus: (eventId) => api.get(`/events/${eventId}/phases`).catch(handleApiError),
+  confirmPhase: (eventId, phase, checklist) => api.post(`/events/${eventId}/phases/${phase}/confirm`, { checklist }).catch(handleApiError),
+  confirmSetupZones: (eventId, zoneIds) => api.post(`/events/${eventId}/phases/setup/zones`, { zoneIds }).catch(handleApiError),
+  getSupervisedAgents: (eventId) => api.get(`/events/${eventId}/supervised-agents`).catch(handleApiError),
+};
+
 // Assignments API - IMPORTANT: Corrigé pour le check-in
 export const assignmentsAPI = {
   getAll: (params) => api.get('/assignments', { params }).catch(handleApiError),

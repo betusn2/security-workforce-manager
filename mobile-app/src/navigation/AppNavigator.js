@@ -22,6 +22,7 @@ import ReportsScreen from '../screens/ReportsScreen';
 import UsersScreen from '../screens/UsersScreen';
 import AssignmentsScreen from '../screens/AssignmentsScreen';
 import ChatScreen from '../screens/ChatScreen';
+import PhaseManagerScreen from '../screens/PhaseManagerScreen';
 
 // Placeholder screen for features not yet implemented
 const ComingSoonScreen = ({ navigation, route }) => (
@@ -208,6 +209,7 @@ const AppStack = () => {
     <Stack.Screen name="AdminUsers"       component={UsersScreen}       options={{ title: 'Gestion Agents',     headerBackTitleVisible: false }} />
     <Stack.Screen name="MyAssignments"    component={AssignmentsScreen} options={{ title: 'Mes Affectations',    headerBackTitleVisible: false }} />
     <Stack.Screen name="Chat"             component={ChatScreen}        options={{ headerShown: false }} />
+    <Stack.Screen name="PhaseManager"     component={PhaseManagerScreen} options={{ headerShown: false }} />
   </Stack.Navigator>
   );
 };

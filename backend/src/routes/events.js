@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const eventController = require('../controllers/eventController');
+const phaseController = require('../controllers/phaseController');
 const { authenticate, authorize } = require('../middlewares/auth');
 const { eventValidation, validate, uuidParam, paginationQuery } = require('../middlewares/validator');
 
@@ -18,6 +19,12 @@ router.get('/', paginationQuery, validate, eventController.getEvents);
 router.get('/:id/notification-stats', uuidParam(), validate, eventController.getEventNotificationStats);
 router.get('/:id/stats', uuidParam(), validate, eventController.getEventStats);
 router.get('/:id/chronology', uuidParam(), validate, eventController.getEventChronology);
+
+// ── Phase management routes (responsable) ──────────────────────────────────
+router.get('/:id/phases', uuidParam(), validate, phaseController.getPhaseStatus);
+router.post('/:id/phases/:phase/confirm', authorize('admin', 'supervisor'), uuidParam(), validate, phaseController.confirmPhase);
+router.post('/:id/phases/setup/zones', authorize('admin', 'supervisor'), uuidParam(), validate, phaseController.confirmSetupZones);
+router.get('/:id/supervised-agents', uuidParam(), validate, phaseController.getSupervisedAgents);
 
 // Get event by ID (DOIT être APRÈS toutes les autres routes /:id/*)
 router.get('/:id', uuidParam(), validate, eventController.getEventById);

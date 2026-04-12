@@ -83,6 +83,10 @@ export const eventsAPI = {
   create: (data) => api.post('/events', data),
   update: (id, data) => api.put(`/events/${id}`, data),
   delete: (id) => api.delete(`/events/${id}`),
+  getPhases: (id) => api.get(`/events/${id}/phases`),
+  confirmPhase: (id, phase, checklist) => api.post(`/events/${id}/phases/${phase}/confirm`, { checklist }),
+  confirmSetupZones: (id, zoneIds) => api.post(`/events/${id}/phases/setup/zones`, { zoneIds }),
+  getSupervisedAgents: (id) => api.get(`/events/${id}/supervised-agents`),
 };
 
 export const assignmentsAPI = {

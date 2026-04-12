@@ -6,6 +6,7 @@ import {
   FiAlertCircle, FiUser, FiShield
 } from 'react-icons/fi';
 import { eventsAPI } from '../services/api';
+import PhaseManager from '../components/PhaseManager';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -228,6 +229,7 @@ const EventChronology = () => {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('chronology');  // 'chronology' | 'phases'
 
   const fetchChronology = async () => {
     setLoading(true);
@@ -330,6 +332,32 @@ const EventChronology = () => {
         </div>
       </div>
 
+      {/* Tab selector */}
+      <div className="max-w-4xl mx-auto px-6 mt-4 print:hidden">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+          <button
+            onClick={() => setActiveTab('chronology')}
+            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
+              activeTab === 'chronology'
+                ? 'bg-white shadow text-gray-800'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            📅 Chronologie
+          </button>
+          <button
+            onClick={() => setActiveTab('phases')}
+            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
+              activeTab === 'phases'
+                ? 'bg-white shadow text-gray-800'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            🛡️ Gestion phases
+          </button>
+        </div>
+      </div>
+
       {/* Summary stats */}
       <div className="max-w-4xl mx-auto px-6 -mt-4 mb-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -361,6 +389,15 @@ const EventChronology = () => {
         </div>
       </div>
 
+      {/* Tab content */}
+      {activeTab === 'phases' && (
+        <div className="max-w-4xl mx-auto px-6 pb-10 print:hidden">
+          <PhaseManager eventId={id} />
+        </div>
+      )}
+
+      {activeTab === 'chronology' && (
+      <>
       {/* Timeline */}
       <div className="max-w-4xl mx-auto px-6 pb-10">
         <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
@@ -455,6 +492,9 @@ const EventChronology = () => {
           body { font-size: 12px; }
         }
       `}</style>
+    </div>
+    </>
+    )}
     </div>
   );
 };

@@ -155,7 +155,26 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.ENUM('minutes', 'hours', 'days', 'weeks'),
       defaultValue: 'hours',
       comment: 'Unit for agentCreationBuffer (minutes/hours/days/weeks)'
-    }
+    },
+
+    // ── Phase 1 – Confirmation ────────────────────────────────
+    preparationConfirmed:    { type: DataTypes.BOOLEAN, defaultValue: false },
+    preparationConfirmedAt:  { type: DataTypes.DATE,    allowNull: true },
+    preparationConfirmedBy:  { type: DataTypes.UUID,    allowNull: true },
+    preparationChecklist:    { type: DataTypes.JSON,    allowNull: true },
+
+    // ── Phase 2 – Confirmation ────────────────────────────────
+    setupConfirmed:          { type: DataTypes.BOOLEAN, defaultValue: false },
+    setupConfirmedAt:        { type: DataTypes.DATE,    allowNull: true },
+    setupConfirmedBy:        { type: DataTypes.UUID,    allowNull: true },
+    setupChecklist:          { type: DataTypes.JSON,    allowNull: true },
+    setupZonesConfirmed:     { type: DataTypes.JSON,    allowNull: true },
+
+    // ── Phase 3 – Confirmation ────────────────────────────────
+    executionConfirmed:      { type: DataTypes.BOOLEAN, defaultValue: false },
+    executionConfirmedAt:    { type: DataTypes.DATE,    allowNull: true },
+    executionConfirmedBy:    { type: DataTypes.UUID,    allowNull: true },
+    executionChecklist:      { type: DataTypes.JSON,    allowNull: true },
   }, {
     tableName: 'events',
     timestamps: true,

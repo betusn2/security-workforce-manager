@@ -234,6 +234,22 @@ const EventDetailScreen = ({ route, navigation }) => {
           <Ionicons name="warning-outline" size={22} color="#fff" />
           <Text style={styles.actionButtonText}>Signaler un incident</Text>
         </TouchableOpacity>
+
+        {/* Phase manager button for supervisors/admins */}
+        {(user?.role === 'admin' || user?.role === 'supervisor') && (
+          <TouchableOpacity
+            style={[styles.actionButton, styles.phaseBtn]}
+            onPress={() =>
+              navigation.navigate('PhaseManager', {
+                eventId: currentEvent?.id || eventId,
+                eventName: currentEvent?.name,
+              })
+            }
+          >
+            <Ionicons name="shield-checkmark-outline" size={22} color="#fff" />
+            <Text style={styles.actionButtonText}>Gestion des phases</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </ScrollView>
   );
@@ -369,6 +385,9 @@ const styles = StyleSheet.create({
   },
   incidentBtn: {
     backgroundColor: '#ef4444',
+  },
+  phaseBtn: {
+    backgroundColor: '#7c3aed',
   },
   actionButtonText: {
     color: '#fff',
