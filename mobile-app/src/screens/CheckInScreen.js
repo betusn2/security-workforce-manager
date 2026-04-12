@@ -122,6 +122,11 @@ const CheckInScreen = ({ route, navigation }) => {
   const [supervisor,  setSupervisor]    = useState(null);
   const [agents,      setAgents]        = useState([]);
 
+  // Phases & supervised agents
+  const [eventPhases,      setEventPhases]      = useState(null);
+  const [supervisedAgents, setSupervisedAgents] = useState([]);
+  const [phasesLoading,    setPhasesLoading]    = useState(false);
+
   // Camera
   const [cameraPermission, setCameraPermission] = useState(null);
   const [cameraActive,     setCameraActive]     = useState(false);
@@ -682,6 +687,20 @@ const CheckInScreen = ({ route, navigation }) => {
       setIsWithinGeofence(dist <= (event.geoRadius || 200));
     }
     // requestCamera() est lazy — uniquement quand l'utilisateur appuie sur le bouton caméra
+
+    // Charger phases + agents supervisés pour l'événement sélectionné
+    if (event?.id) {
+      setPhasesLoading(true);
+      try {
+        const [phRes, agRes] = await Promise.all([
+          eventsAPI.getPhases(event.id).catch(() => null),
+          eventsAPI.getSupervisedAgents(event.id).catch(() => null),
+        ]);
+        setEventPhases(phRes?.data?.data || null);
+        setSupervisedAgents(Array.isArray(agRes?.data?.data) ? agRes.data.data : []);
+      } catch (_) {}
+      finally { setPhasesLoading(false); }
+    }
   };
 
   const requestCamera = async () => {
@@ -1211,6 +1230,119 @@ const CheckInScreen = ({ route, navigation }) => {
             <Text style={styles.notYetText}>Non pointé</Text>
           )}
         </View>
+
+        {/* ── Phase Actuelle + Checklist ──────────────────── */}
+        {selectedEvent && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconCircle, { backgroundColor: '#2563eb22' }]}>
+                <Ionicons name="layers-outline" size={18} color="#2563eb" />
+              </View>
+              <Text style={[styles.cardTitle, { marginLeft: 10, flex: 1 }]}>Phases de l'événement</Text>
+              {phasesLoading && <ActivityIndicator size="small" color="#2563eb" />}
+              {(userProfile?.role === 'supervisor' || userProfile?.role === 'admin') && !phasesLoading && (
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('PhaseManager', {
+                    eventId: selectedEvent.id,
+                    eventName: selectedEvent.name,
+                  })}
+                >
+                  <Ionicons name="settings-outline" size={18} color="#64748b" />
+                </TouchableOpacity>
+              )}
+            </View>
+            {[
+              { key: 'preparation', label: 'Ph.1 — Préparation',       icon: 'build-outline',    color: '#2563eb', bg: '#eff6ff' },
+              { key: 'setup',       label: 'Ph.2 — Mise en place',      icon: 'cube-outline',     color: '#d97706', bg: '#fffbeb' },
+              { key: 'execution',   label: 'Ph.3 — Pointage/Exécution', icon: 'location-outline', color: '#16a34a', bg: '#f0fdf4' },
+            ].map(({ key, label, icon, color, bg }) => {
+              const ph = eventPhases?.[key];
+              const confirmed = ph?.confirmed || false;
+              const cl = ph?.checklist || {};
+              const items = [
+                { k: 'phaseStarted',  l: 'Phase commencée' },
+                { k: 'agentsPresent', l: key === 'setup' ? 'Agents positionnés' : key === 'execution' ? 'Agents au poste' : 'Agents présents' },
+                { k: 'zonesVerified', l: key === 'execution' ? 'Zones sécurisées' : 'Zones vérifiées' },
+                { k: 'phaseDone',     l: 'Phase terminée' },
+              ];
+              const doneCount = items.filter(i => cl[i.k]).length;
+              return (
+                <View key={key} style={[styles.phaseRow, { borderLeftColor: color }]}>
+                  <View style={styles.phaseRowHeader}>
+                    <View style={[styles.phaseIconBg, { backgroundColor: bg }]}>
+                      <Ionicons name={icon} size={13} color={color} />
+                    </View>
+                    <Text style={[styles.phaseRowLabel, { color }]}>{label}</Text>
+                    <View style={{ flex: 1 }} />
+                    {confirmed
+                      ? <View style={styles.phaseConfirmedBadge}>
+                          <Ionicons name="checkmark-circle" size={13} color="#16a34a" />
+                          <Text style={styles.phaseConfirmedText}>OK</Text>
+                        </View>
+                      : <Text style={styles.phaseProgressText}>{doneCount}/4</Text>
+                    }
+                  </View>
+                  <View style={styles.checklistGrid}>
+                    {items.map(({ k, l }) => (
+                      <View key={k} style={styles.checklistItem}>
+                        <Ionicons
+                          name={cl[k] ? 'checkbox' : 'square-outline'}
+                          size={15}
+                          color={cl[k] ? '#16a34a' : '#94a3b8'}
+                        />
+                        <Text style={[styles.checklistLabel, cl[k] && styles.checklistLabelDone]}>{l}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {/* ── Agents Supervisés ────────────────────────────── */}
+        {(userProfile?.role === 'supervisor' || userProfile?.role === 'admin') && supervisedAgents.length > 0 && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconCircle, { backgroundColor: '#10b98122' }]}>
+                <Ionicons name="people" size={18} color="#10b981" />
+              </View>
+              <Text style={[styles.cardTitle, { marginLeft: 10, flex: 1 }]}>Mes Agents</Text>
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeText}>{supervisedAgents.length}</Text>
+              </View>
+            </View>
+            {supervisedAgents.map((ag) => {
+              const present = ag.checkedIn || !!ag.attendance?.checkInTime;
+              return (
+                <View key={ag.id || ag.userId} style={styles.supervisedAgentRow}>
+                  <View style={[styles.avatarSmall, { backgroundColor: present ? '#10b98133' : '#f1f5f9' }]}>
+                    <Text style={[styles.avatarSmallText, { color: present ? '#10b981' : '#64748b' }]}>
+                      {(ag.firstName?.[0] || ag.name?.[0] || 'A').toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.supervisedAgentName}>
+                      {ag.firstName} {ag.lastName || ag.name}
+                    </Text>
+                    {ag.zone?.name && <Text style={styles.agentZoneBadge}>Zone: {ag.zone.name}</Text>}
+                    {ag.matricule && <Text style={styles.agentMatricule}>{ag.matricule}</Text>}
+                  </View>
+                  <View style={[styles.presenceBadge, { backgroundColor: present ? '#dcfce7' : '#fee2e2' }]}>
+                    <View style={[styles.presenceDot, { backgroundColor: present ? '#16a34a' : '#ef4444' }]} />
+                    <Text style={[styles.presenceText, { color: present ? '#16a34a' : '#ef4444' }]}>
+                      {present
+                        ? ag.attendance?.checkInTime
+                          ? new Date(ag.attendance.checkInTime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+                          : 'Présent'
+                        : 'Absent'}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         {/* ── Superviseur / Agents ──────────────────────── */}
         {supervisor && (
@@ -2046,6 +2178,44 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563eb', borderRadius: 12, paddingVertical: 15, gap: 8,
   },
   caSubmitBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  // ── Phase rows ──────────────────────────────────────────────
+  phaseRow: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#e2e8f0',
+    paddingLeft: 12,
+    paddingVertical: 8,
+    marginBottom: 8,
+    backgroundColor: '#fafafa',
+    borderRadius: 8,
+  },
+  phaseRowHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  phaseIconBg: { width: 24, height: 24, borderRadius: 6, justifyContent: 'center', alignItems: 'center' },
+  phaseRowLabel: { fontSize: 12, fontWeight: '700' },
+  phaseConfirmedBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#dcfce7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
+  phaseConfirmedText: { fontSize: 11, fontWeight: '700', color: '#16a34a' },
+  phaseProgressText: { fontSize: 11, fontWeight: '700', color: '#94a3b8' },
+  checklistGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  checklistItem: { flexDirection: 'row', alignItems: 'center', gap: 4, width: '48%' },
+  checklistLabel: { fontSize: 11, color: '#64748b', flex: 1 },
+  checklistLabelDone: { color: '#16a34a', fontWeight: '600' },
+
+  // ── Supervised agents ───────────────────────────────────────
+  supervisedAgentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  avatarSmall: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  avatarSmallText: { fontSize: 14, fontWeight: '800' },
+  supervisedAgentName: { fontSize: 13, fontWeight: '700', color: '#0f172a' },
+  agentZoneBadge: { fontSize: 11, color: '#64748b', marginTop: 1 },
+  agentMatricule: { fontSize: 11, color: '#94a3b8' },
+  presenceBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, gap: 4 },
+  presenceDot: { width: 7, height: 7, borderRadius: 4 },
+  presenceText: { fontSize: 11, fontWeight: '700' },
 });
 
 export default CheckInScreen;
