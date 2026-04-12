@@ -1397,6 +1397,80 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
   );
 };
 
+// ─── Phase helper (pure, no hooks) ──────────────────────────────────────────
+const PHASE_INFO = {
+  preparation: { label: 'Préparation', icon: '🛠️', bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-300' },
+  setup:       { label: 'Mise en place', icon: '📦', bg: 'bg-yellow-100', text: 'text-yellow-800', border: 'border-yellow-300' },
+  execution:   { label: 'Pointage', icon: '📍', bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-300' },
+  upcoming:    { label: 'À venir', icon: '🕐', bg: 'bg-gray-100', text: 'text-gray-600', border: 'border-gray-200' },
+  done:        { label: 'Terminé', icon: '✅', bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200' },
+};
+
+function combineDateTime(dateStr, timeStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (!d || isNaN(d)) return null;
+  if (timeStr) {
+    const [h, m] = timeStr.split(':').map(Number);
+    d.setHours(h || 0, m || 0, 0, 0);
+  } else {
+    d.setHours(0, 0, 0, 0);
+  }
+  return d;
+}
+
+function getCurrentPhase(event, now = new Date()) {
+  // Phase 1 – Préparation
+  const prepStart = combineDateTime(event.preparationStartDate, event.preparationStartTime);
+  const prepEnd   = combineDateTime(event.preparationEndDate,   event.preparationEndTime);
+  // Phase 2 – Mise en place
+  const setupStart = combineDateTime(event.setupStartDate, event.setupStartTime);
+  const setupEnd   = combineDateTime(event.setupEndDate,   event.setupEndTime);
+  // Phase 3 – Exécution (always present if event has startDate)
+  const execStart = combineDateTime(event.startDate, event.checkInTime);
+  const execEnd   = combineDateTime(event.endDate,   event.checkOutTime);
+
+  if (!execStart) return null;
+
+  // Before anything
+  const earliest = prepStart || setupStart || execStart;
+  if (now < earliest) return 'upcoming';
+
+  // Execution phase (check first so even without prep/setup it shows)
+  if (execStart && execEnd && now >= execStart && now <= execEnd) return 'execution';
+  if (execStart && !execEnd && now >= execStart) return 'execution';
+
+  // Mise en place
+  if (setupStart && setupEnd && now >= setupStart && now <= setupEnd) return 'setup';
+  if (setupStart && !setupEnd && now >= setupStart) return 'setup';
+
+  // Préparation
+  if (prepStart && prepEnd && now >= prepStart && now <= prepEnd) return 'preparation';
+  if (prepStart && !prepEnd && now >= prepStart) return 'preparation';
+
+  // Between phases — show next upcoming phase
+  if (prepEnd && now < (setupStart || execStart)) return 'preparation'; // just ended, still relevant
+  if (setupEnd && now < execStart) return 'setup';
+
+  // After execution end
+  if (execEnd && now > execEnd) return 'done';
+
+  return 'upcoming';
+}
+
+const PhaseBadge = ({ event, now }) => {
+  const phase = getCurrentPhase(event, now);
+  if (!phase) return null;
+  const info = PHASE_INFO[phase];
+  if (!info) return null;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${info.bg} ${info.text} ${info.border}`}>
+      <span>{info.icon}</span>
+      {info.label}
+    </span>
+  );
+};
+
 const Events = () => {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1410,6 +1484,13 @@ const Events = () => {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [viewMode, setViewMode] = useState('grid'); // 'grid' ou 'list'
   const [showFilters, setShowFilters] = useState(false);
+  const [now, setNow] = useState(new Date());
+
+  // Refresh phase every 60 seconds for real-time accuracy
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     fetchEvents();
@@ -1788,13 +1869,14 @@ const Events = () => {
 
               <div className="flex justify-between items-start mb-3">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <h3 className="font-semibold text-lg text-gray-900 truncate">{event.name}</h3>
                     {getTimeIndicator(event)}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs text-gray-500 capitalize">{event.type}</span>
                     {getPriorityBadge(event.priority)}
+                    <PhaseBadge event={event} now={now} />
                   </div>
                 </div>
                 {getStatusBadge(event.status)}
@@ -1852,6 +1934,51 @@ const Events = () => {
                 </div>
               )}
 
+              {/* Phase progress indicator for active events */}
+              {event.status === 'active' && (() => {
+                const phase = getCurrentPhase(event, now);
+                if (!phase || phase === 'upcoming' || phase === 'done') return null;
+                const phases = [
+                  event.preparationStartDate ? 'preparation' : null,
+                  event.setupStartDate ? 'setup' : null,
+                  'execution',
+                ].filter(Boolean);
+                const total = phases.length;
+                const current = phases.indexOf(phase);
+                if (current < 0) return null;
+                const pct = Math.round(((current + 1) / total) * 100);
+                const info = PHASE_INFO[phase];
+                return (
+                  <div className="mt-3 pt-3 border-t">
+                    <div className="flex justify-between text-xs text-gray-500 mb-1">
+                      <span className="font-medium">Progression phases</span>
+                      <span className={`font-bold ${info.text}`}>{info.icon} {info.label}</span>
+                    </div>
+                    <div className="flex gap-1">
+                      {phases.map((p, i) => {
+                        const pi = PHASE_INFO[p];
+                        const active = p === phase;
+                        const done = i < current;
+                        return (
+                          <div key={p} className={`flex-1 h-1.5 rounded-full transition-all duration-300 ${done ? 'bg-gray-400' : active ? (p === 'preparation' ? 'bg-blue-500' : p === 'setup' ? 'bg-yellow-500' : 'bg-green-500') : 'bg-gray-200'}`} />
+                        );
+                      })}
+                    </div>
+                    <div className="flex gap-1 mt-1">
+                      {phases.map((p, i) => {
+                        const pi = PHASE_INFO[p];
+                        const active = p === phase;
+                        return (
+                          <div key={p} className={`flex-1 text-center text-xs ${active ? `font-semibold ${pi.text}` : 'text-gray-400'}`}>
+                            {pi.icon}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Actions */}
               <div className="flex justify-end space-x-1 mt-4 pt-4 border-t opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
@@ -1897,6 +2024,7 @@ const Events = () => {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden lg:table-cell">Horaires</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agents</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phase</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
@@ -1916,7 +2044,7 @@ const Events = () => {
                       />
                       <div>
                         <p className="font-medium text-gray-900">{event.name}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           <span className="text-xs text-gray-500">{event.type}</span>
                           {getPriorityBadge(event.priority)}
                         </div>
@@ -1939,6 +2067,9 @@ const Events = () => {
                     <span className={`text-sm font-medium ${(event.assignedAgentsCount || 0) >= event.requiredAgents ? 'text-green-600' : 'text-orange-600'}`}>
                       {event.assignedAgentsCount || 0}/{event.requiredAgents}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <PhaseBadge event={event} now={now} />
                   </td>
                   <td className="px-4 py-3">
                     {getStatusBadge(event.status)}
