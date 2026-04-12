@@ -1,1395 +1,1184 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FiPlus, FiSearch, FiEdit2, FiTrash2, FiMapPin,
   FiClock, FiUsers, FiCalendar, FiCheck, FiCopy,
   FiAlertTriangle, FiRepeat, FiEye, FiX, FiFilter,
   FiChevronDown, FiChevronUp, FiActivity, FiTrendingUp,
-  FiUserCheck, FiUserX, FiAlertCircle, FiCheckCircle,
-  FiInfo, FiFlag, FiLayers, FiShield
+  FiAlertCircle, FiCheckCircle, FiInfo, FiFlag, FiLayers,
+  FiRefreshCw, FiGrid, FiList, FiBarChart2, FiShield,
+  FiUser, FiMail, FiPhone, FiZap, FiMaximize2,
+  FiStar, FiNavigation, FiBookmark
 } from 'react-icons/fi';
-import { eventsAPI, zonesAPI, usersAPI } from '../services/api';
+import { eventsAPI, usersAPI, zonesAPI } from '../services/api';
 import { toast } from 'react-toastify';
-import { format, formatDistanceToNow, isToday, isTomorrow, isPast, isFuture, differenceInDays } from 'date-fns';
+import {
+  format, formatDistanceToNow, isToday, isTomorrow, isPast, isFuture,
+  differenceInDays, startOfDay, endOfDay, startOfWeek, endOfWeek,
+  startOfMonth, endOfMonth, addDays
+} from 'date-fns';
 import { fr } from 'date-fns/locale';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import MiniMap from '../components/MiniMap';
 import ZoneManager from '../components/ZoneManager';
 
-// Couleurs prédéfinies pour les événements
+// ─── Constants ───────────────────────────────────────────────────────────────
+
 const EVENT_COLORS = [
-  { name: 'Bleu', value: '#3B82F6', bg: 'bg-blue-500' },
-  { name: 'Vert', value: '#10B981', bg: 'bg-green-500' },
-  { name: 'Rouge', value: '#EF4444', bg: 'bg-red-500' },
-  { name: 'Orange', value: '#F97316', bg: 'bg-orange-500' },
-  { name: 'Violet', value: '#8B5CF6', bg: 'bg-purple-500' },
-  { name: 'Rose', value: '#EC4899', bg: 'bg-pink-500' },
-  { name: 'Jaune', value: '#EAB308', bg: 'bg-yellow-500' },
-  { name: 'Cyan', value: '#06B6D4', bg: 'bg-cyan-500' },
+  { name: 'Bleu',   value: '#3B82F6' },
+  { name: 'Vert',   value: '#10B981' },
+  { name: 'Rouge',  value: '#EF4444' },
+  { name: 'Orange', value: '#F97316' },
+  { name: 'Violet', value: '#8B5CF6' },
+  { name: 'Rose',   value: '#EC4899' },
+  { name: 'Jaune',  value: '#EAB308' },
+  { name: 'Cyan',   value: '#06B6D4' },
+  { name: 'Indigo', value: '#6366F1' },
+  { name: 'Teal',   value: '#14B8A6' },
 ];
 
-// Options de priorité
 const PRIORITY_OPTIONS = [
-  { value: 'low', label: 'Basse', color: 'text-gray-500', bg: 'bg-gray-100', icon: FiFlag },
-  { value: 'medium', label: 'Moyenne', color: 'text-blue-500', bg: 'bg-blue-100', icon: FiFlag },
-  { value: 'high', label: 'Haute', color: 'text-orange-500', bg: 'bg-orange-100', icon: FiAlertTriangle },
-  { value: 'critical', label: 'Critique', color: 'text-red-500', bg: 'bg-red-100', icon: FiAlertCircle },
+  { value: 'low',      label: 'Basse',    color: 'text-gray-500',   bg: 'bg-gray-100',   dot: 'bg-gray-400' },
+  { value: 'medium',   label: 'Moyenne',  color: 'text-blue-600',   bg: 'bg-blue-100',   dot: 'bg-blue-400' },
+  { value: 'high',     label: 'Haute',    color: 'text-orange-600', bg: 'bg-orange-100', dot: 'bg-orange-400' },
+  { value: 'critical', label: 'Critique', color: 'text-red-600',    bg: 'bg-red-100',    dot: 'bg-red-500' },
 ];
 
-// Options de récurrence
+const STATUS_CONFIG = {
+  draft:     { label: 'Brouillon',  class: 'bg-gray-100 text-gray-700',   dot: 'bg-gray-400' },
+  scheduled: { label: 'Planifié',   class: 'bg-blue-100 text-blue-700',   dot: 'bg-blue-500' },
+  active:    { label: 'Actif',      class: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
+  completed: { label: 'Terminé',    class: 'bg-purple-100 text-purple-700', dot: 'bg-purple-400' },
+  cancelled: { label: 'Annulé',     class: 'bg-red-100 text-red-700',     dot: 'bg-red-400' },
+};
+
 const RECURRENCE_OPTIONS = [
-  { value: 'none', label: 'Aucune' },
-  { value: 'daily', label: 'Quotidien' },
-  { value: 'weekly', label: 'Hebdomadaire' },
-  { value: 'biweekly', label: 'Toutes les 2 semaines' },
-  { value: 'monthly', label: 'Mensuel' },
+  { value: 'none',      label: 'Aucune' },
+  { value: 'daily',     label: 'Quotidien' },
+  { value: 'weekly',    label: 'Hebdomadaire' },
+  { value: 'biweekly',  label: 'Toutes les 2 semaines' },
+  { value: 'monthly',   label: 'Mensuel' },
 ];
 
-// Modal de détails de l'événement
-const EventDetailsModal = ({ isOpen, onClose, event, onEdit, onDelete, onDuplicate }) => {
-  const navigate = useNavigate();
-  const [zones, setZones] = useState([]);
-  const [loadingZones, setLoadingZones] = useState(false);
-  const [zoneManagerOpen, setZoneManagerOpen] = useState(false);
+const TYPE_OPTIONS = [
+  { value: 'regular',   label: 'Régulier',  icon: '🏢' },
+  { value: 'special',   label: 'Spécial',   icon: '⭐' },
+  { value: 'emergency', label: 'Urgence',   icon: '🚨' },
+];
 
-  useEffect(() => {
-    if (isOpen && event?.id) {
-      fetchZones();
-    } else {
-      setZones([]);
-    }
-  }, [isOpen, event?.id]);
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-  const fetchZones = async () => {
-    if (!event?.id) return;
-    setLoadingZones(true);
-    try {
-      const res = await zonesAPI.getByEvent(event.id);
-      setZones(res.data.data || []);
-    } catch (error) {
-      console.error('Error fetching zones:', error);
-      setZones([]);
-    } finally {
-      setLoadingZones(false);
-    }
-  };
+const getPriorityInfo = (priority) =>
+  PRIORITY_OPTIONS.find(p => p.value === priority) || PRIORITY_OPTIONS[1];
 
-  if (!isOpen || !event) return null;
+const getStatusConfig = (status) =>
+  STATUS_CONFIG[status] || STATUS_CONFIG.draft;
 
-  const getPriorityInfo = (priority) => {
-    return PRIORITY_OPTIONS.find(p => p.value === priority) || PRIORITY_OPTIONS[1];
-  };
+const computePhase = (event) => {
+  if (!event) return null;
+  const now = new Date();
+  const start = new Date(event.startDate);
+  const end = new Date(event.endDate);
+  if (isPast(end))       return { label: 'Terminé',       color: 'bg-gray-100 text-gray-600',   icon: '✅', bar: 'bg-gray-400' };
+  if (event.status === 'cancelled') return { label: 'Annulé', color: 'bg-red-100 text-red-600', icon: '❌', bar: 'bg-red-400' };
+  if (isFuture(start)) {
+    const days = differenceInDays(start, now);
+    if (days > 1)        return { label: `Dans ${days}j`,   color: 'bg-gray-100 text-gray-500',   icon: '🕐', bar: 'bg-gray-300' };
+    return               { label: 'Demain',                color: 'bg-blue-100 text-blue-700',   icon: '⏰', bar: 'bg-blue-400' };
+  }
+  if (event.status === 'active') {
+    const [ciH, ciM] = (event.checkInTime || '08:00').split(':').map(Number);
+    const [coH, coM] = (event.checkOutTime || '18:00').split(':').map(Number);
+    const checkIn  = new Date(start); checkIn.setHours(ciH, ciM, 0);
+    const checkOut = new Date(start); checkOut.setHours(coH, coM, 0);
+    const prep     = addDays(start, -1);
+    if (now < prep) return { label: 'Préparation',      color: 'bg-blue-100 text-blue-700',   icon: '🛠️', bar: 'bg-blue-500' };
+    if (now < checkIn) return { label: 'Mise en place', color: 'bg-yellow-100 text-yellow-700',icon: '📦', bar: 'bg-yellow-500' };
+    if (now <= checkOut)return{ label: 'Pointage',      color: 'bg-green-100 text-green-700', icon: '📍', bar: 'bg-green-500' };
+    return               { label: 'Clôture',            color: 'bg-purple-100 text-purple-700',icon: '🔒', bar: 'bg-purple-500' };
+  }
+  return { label: isToday(start) ? "Aujourd'hui" : 'En attente', color: 'bg-orange-100 text-orange-700', icon: '⏳', bar: 'bg-orange-400' };
+};
 
-  const priorityInfo = getPriorityInfo(event.priority);
-  const PriorityIcon = priorityInfo.icon;
+const getTimeIndicator = (event) => {
+  const start = new Date(event.startDate);
+  const end   = new Date(event.endDate);
+  if (isToday(start))    return { label: "Aujourd'hui", class: 'bg-emerald-100 text-emerald-700 font-semibold' };
+  if (isTomorrow(start)) return { label: 'Demain',       class: 'bg-blue-100 text-blue-700' };
+  if (isPast(end))       return { label: 'Passé',        class: 'bg-gray-100 text-gray-500' };
+  const days = differenceInDays(start, new Date());
+  if (days <= 7)         return { label: `Dans ${days}j`, class: 'bg-orange-100 text-orange-700' };
+  return null;
+};
 
-  const getTimeStatus = () => {
-    const startDate = new Date(event.startDate);
-    const endDate = new Date(event.endDate);
-    const now = new Date();
+const agentCompleteness = (event) => {
+  const assigned = event.assignedAgentsCount || 0;
+  const required = event.requiredAgents || 1;
+  const pct = Math.min(100, Math.round((assigned / required) * 100));
+  if (pct >= 100) return { pct, icon: '✅', color: 'text-green-600', bar: 'bg-green-500', label: 'Complet' };
+  if (pct >= 70)  return { pct, icon: '⚠️', color: 'text-orange-600', bar: 'bg-orange-400', label: 'Partiel' };
+  return              { pct, icon: '🚨', color: 'text-red-600', bar: 'bg-red-500', label: 'Incomplet' };
+};
 
-    if (isPast(endDate)) {
-      return { label: 'Terminé', class: 'text-gray-500' };
-    }
-    if (isToday(startDate)) {
-      return { label: "Aujourd'hui", class: 'text-green-600 font-semibold' };
-    }
-    if (isTomorrow(startDate)) {
-      return { label: 'Demain', class: 'text-blue-600' };
-    }
-    if (isFuture(startDate)) {
-      const days = differenceInDays(startDate, now);
-      return { label: `Dans ${days} jours`, class: 'text-gray-600' };
-    }
-    return { label: 'En cours', class: 'text-green-600' };
-  };
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
-  const timeStatus = getTimeStatus();
+const PhaseBadge = ({ event }) => {
+  const phase = computePhase(event);
+  if (!phase) return null;
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${phase.color}`}>
+      <span>{phase.icon}</span> {phase.label}
+    </span>
+  );
+};
+
+const StatusBadge = ({ status }) => {
+  const cfg = getStatusConfig(status);
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.class}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+      {cfg.label}
+    </span>
+  );
+};
+
+const PriorityBadge = ({ priority }) => {
+  const info = getPriorityInfo(priority);
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${info.bg} ${info.color} font-medium`}>
+      <FiFlag size={10} />
+      {info.label}
+    </span>
+  );
+};
+
+// ─── Stats Row ────────────────────────────────────────────────────────────────
+
+const StatsRow = ({ events, loading, onRefresh, lastRefresh }) => {
+  const stats = useMemo(() => {
+    const total     = events.length;
+    const active    = events.filter(e => e.status === 'active').length;
+    const scheduled = events.filter(e => e.status === 'scheduled').length;
+    const today     = events.filter(e => isToday(new Date(e.startDate))).length;
+    const missing   = events.filter(e => (e.assignedAgentsCount || 0) < e.requiredAgents).length;
+    const prep      = events.filter(e => {
+      const p = computePhase(e);
+      return p?.label === 'Préparation';
+    }).length;
+    const setup     = events.filter(e => {
+      const p = computePhase(e);
+      return p?.label === 'Mise en place';
+    }).length;
+    const checkin   = events.filter(e => {
+      const p = computePhase(e);
+      return p?.label === 'Pointage';
+    }).length;
+    return { total, active, scheduled, today, missing, prep, setup, checkin };
+  }, [events]);
+
+  const cards = [
+    { label: 'Total',          value: stats.total,     icon: FiBarChart2,   color: 'text-gray-700',   bg: 'bg-gray-100',    border: 'border-gray-200' },
+    { label: 'Actifs',         value: stats.active,    icon: FiActivity,    color: 'text-green-600',  bg: 'bg-green-50',    border: 'border-green-200' },
+    { label: 'Planifiés',      value: stats.scheduled, icon: FiCalendar,    color: 'text-blue-600',   bg: 'bg-blue-50',     border: 'border-blue-200' },
+    { label: "Aujourd'hui",    value: stats.today,     icon: FiStar,        color: 'text-emerald-600',bg: 'bg-emerald-50',  border: 'border-emerald-200' },
+    { label: 'Agents manquants', value: stats.missing, icon: FiAlertTriangle, color: 'text-red-600',  bg: 'bg-red-50',      border: 'border-red-200', urgent: stats.missing > 0 },
+    { label: 'Préparation',    value: stats.prep,      icon: FiZap,         color: 'text-blue-500',   bg: 'bg-blue-50',     border: 'border-blue-100' },
+    { label: 'Mise en place',  value: stats.setup,     icon: FiLayers,      color: 'text-yellow-600', bg: 'bg-yellow-50',   border: 'border-yellow-200' },
+    { label: 'Pointage',       value: stats.checkin,   icon: FiCheckCircle, color: 'text-green-500',  bg: 'bg-green-50',    border: 'border-green-100' },
+  ];
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header avec couleur */}
-        <div
-          className="p-6 text-white rounded-t-xl"
-          style={{ backgroundColor: event.color || '#3B82F6' }}
-        >
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="px-2 py-1 bg-white bg-opacity-20 rounded text-sm">
-                  {event.type === 'regular' ? 'Régulier' : event.type === 'special' ? 'Spécial' : 'Urgence'}
-                </span>
-                <span className={`px-2 py-1 rounded text-sm flex items-center gap-1 ${priorityInfo.bg} ${priorityInfo.color}`}>
-                  <PriorityIcon size={12} />
-                  {priorityInfo.label}
-                </span>
-              </div>
-              <h2 className="text-2xl font-bold">{event.name}</h2>
-              <p className={`mt-1 ${timeStatus.class} bg-white bg-opacity-20 inline-block px-2 py-1 rounded`}>
-                {timeStatus.label}
-              </p>
-            </div>
-            <button onClick={onClose} className="p-2 hover:bg-white hover:bg-opacity-20 rounded-full">
-              <FiX size={24} />
-            </button>
-          </div>
-        </div>
-
-        <div className="p-6 space-y-6">
-          {/* Description */}
-          {event.description && (
-            <div>
-              <h3 className="font-semibold text-gray-700 mb-2 flex items-center">
-                <FiInfo className="mr-2" /> Description
-              </h3>
-              <p className="text-gray-600 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">
-                {event.description}
-              </p>
-            </div>
-          )}
-
-          {/* Informations principales en grille */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-blue-50 p-4 rounded-lg text-center">
-              <FiCalendar className="mx-auto text-blue-500 mb-2" size={24} />
-              <p className="text-sm text-gray-500">Date début</p>
-              <p className="font-semibold">{format(new Date(event.startDate), 'dd MMM yyyy', { locale: fr })}</p>
-            </div>
-            <div className="bg-blue-50 p-4 rounded-lg text-center">
-              <FiCalendar className="mx-auto text-blue-500 mb-2" size={24} />
-              <p className="text-sm text-gray-500">Date fin</p>
-              <p className="font-semibold">{format(new Date(event.endDate), 'dd MMM yyyy', { locale: fr })}</p>
-            </div>
-            <div className="bg-green-50 p-4 rounded-lg text-center">
-              <FiClock className="mx-auto text-green-500 mb-2" size={24} />
-              <p className="text-sm text-gray-500">Check-in</p>
-              <p className="font-semibold">{event.checkInTime}</p>
-            </div>
-            <div className="bg-orange-50 p-4 rounded-lg text-center">
-              <FiClock className="mx-auto text-orange-500 mb-2" size={24} />
-              <p className="text-sm text-gray-500">Check-out</p>
-              <p className="font-semibold">{event.checkOutTime}</p>
-            </div>
-          </div>
-
-          {/* Localisation avec carte */}
-          <div>
-            <h3 className="font-semibold text-gray-700 mb-2 flex items-center">
-              <FiMapPin className="mr-2" /> Localisation
-            </h3>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <p className="text-gray-700 mb-3">{event.location}</p>
-              {event.latitude && event.longitude && (
-                <div className="h-48 rounded-lg overflow-hidden">
-                  <MiniMap
-                    latitude={event.latitude}
-                    longitude={event.longitude}
-                    geoRadius={event.geoRadius}
-                    height="192px"
-                    draggable={false}
-                  />
-                </div>
-              )}
-              <div className="mt-2 flex items-center gap-4 text-sm text-gray-500">
-                {event.latitude && event.longitude && (
-                  <span>GPS: {event.latitude}, {event.longitude}</span>
-                )}
-                <span>Rayon: {event.geoRadius}m</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Agents */}
-          <div>
-            <h3 className="font-semibold text-gray-700 mb-2 flex items-center">
-              <FiUsers className="mr-2" /> Agents
-            </h3>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-gray-50 p-4 rounded-lg text-center">
-                <p className="text-3xl font-bold text-gray-700">{event.requiredAgents}</p>
-                <p className="text-sm text-gray-500">Requis</p>
-              </div>
-              <div className="bg-green-50 p-4 rounded-lg text-center">
-                <p className="text-3xl font-bold text-green-600">{event.assignedAgentsCount || 0}</p>
-                <p className="text-sm text-gray-500">Assignés</p>
-              </div>
-              <div className={`p-4 rounded-lg text-center ${(event.assignedAgentsCount || 0) >= event.requiredAgents ? 'bg-green-50' : 'bg-red-50'}`}>
-                <p className={`text-3xl font-bold ${(event.assignedAgentsCount || 0) >= event.requiredAgents ? 'text-green-600' : 'text-red-600'}`}>
-                  {(event.assignedAgentsCount || 0) - event.requiredAgents}
-                </p>
-                <p className="text-sm text-gray-500">
-                  {(event.assignedAgentsCount || 0) >= event.requiredAgents ? 'Complet' : 'Manquants'}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Zones */}
-          <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-5 border border-purple-100">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-200">
-                  <FiLayers className="text-white" size={20} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-gray-800 text-lg">Zones de l'evenement</h3>
-                  <p className="text-sm text-gray-500">
-                    {zones.length === 0 ? 'Aucune zone configuree' : `${zones.length} zone(s) configuree(s)`}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setZoneManagerOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-all shadow-md hover:shadow-lg font-medium text-sm"
-              >
-                <FiPlus size={16} />
-                {zones.length === 0 ? 'Creer des zones' : 'Gerer les zones'}
-              </button>
-            </div>
-
-            {loadingZones ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="w-8 h-8 border-3 border-purple-500 border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : zones.length === 0 ? (
-              <div className="bg-white rounded-xl p-8 text-center border-2 border-dashed border-purple-200">
-                <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <FiLayers className="text-purple-400" size={32} />
-                </div>
-                <h4 className="font-semibold text-gray-700 mb-2">Organisez votre evenement</h4>
-                <p className="text-gray-500 text-sm mb-4 max-w-sm mx-auto">
-                  Creez des zones pour mieux repartir vos agents et superviseurs sur le terrain
-                </p>
-                <div className="flex flex-wrap justify-center gap-2 mb-4">
-                  <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">Entree principale</span>
-                  <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">Sortie secours</span>
-                  <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">Zone VIP</span>
-                  <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">Parking</span>
-                </div>
-                <button
-                  onClick={() => setZoneManagerOpen(true)}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-all font-medium"
-                >
-                  <FiPlus size={18} />
-                  Commencer a creer des zones
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {/* Stats resumees */}
-                <div className="grid grid-cols-3 gap-3 mb-4">
-                  <div className="bg-white rounded-lg p-3 text-center shadow-sm">
-                    <p className="text-2xl font-bold text-purple-600">{zones.length}</p>
-                    <p className="text-xs text-gray-500">Zones</p>
-                  </div>
-                  <div className="bg-white rounded-lg p-3 text-center shadow-sm">
-                    <p className="text-2xl font-bold text-blue-600">
-                      {zones.reduce((sum, z) => sum + (z.requiredAgents || 1), 0)}
-                    </p>
-                    <p className="text-xs text-gray-500">Agents requis</p>
-                  </div>
-                  <div className="bg-white rounded-lg p-3 text-center shadow-sm">
-                    <p className="text-2xl font-bold text-orange-600">
-                      {zones.reduce((sum, z) => sum + (z.requiredSupervisors || 0), 0)}
-                    </p>
-                    <p className="text-xs text-gray-500">Superviseurs</p>
-                  </div>
-                </div>
-
-                {/* Liste des zones */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {zones.map(zone => {
-                    const stats = zone.stats || {};
-                    const agentsFilled = (stats.assignedAgents || 0) >= (zone.requiredAgents || 1);
-                    const supervisorsFilled = (stats.assignedSupervisors || 0) >= (zone.requiredSupervisors || 0);
-
-                    return (
-                      <div
-                        key={zone.id}
-                        className="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border-l-4"
-                        style={{ borderLeftColor: zone.color }}
-                      >
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold"
-                              style={{ backgroundColor: zone.color }}
-                            >
-                              {zone.name.charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <h4 className="font-semibold text-gray-800">{zone.name}</h4>
-                              <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
-                                {zone.type === 'entry' ? 'Entree' :
-                                 zone.type === 'exit' ? 'Sortie' :
-                                 zone.type === 'vip' ? 'VIP' :
-                                 zone.type === 'parking' ? 'Parking' :
-                                 zone.type === 'backstage' ? 'Backstage' :
-                                 zone.type === 'security_post' ? 'Poste Securite' :
-                                 'General'}
-                              </span>
-                            </div>
-                          </div>
-                          {zone.priority === 'high' && (
-                            <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
-                              Haute priorite
-                            </span>
-                          )}
-                          {zone.priority === 'critical' && (
-                            <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                              Critique
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-4 text-sm">
-                          <div className="flex items-center gap-1.5">
-                            <FiUsers className={agentsFilled ? 'text-green-500' : 'text-gray-400'} size={14} />
-                            <span className={agentsFilled ? 'text-green-600 font-medium' : 'text-gray-600'}>
-                              {stats.assignedAgents || 0}/{zone.requiredAgents || 1}
-                            </span>
-                            <span className="text-gray-400 text-xs">agents</span>
-                            {agentsFilled && <FiCheck className="text-green-500" size={12} />}
-                          </div>
-
-                          {zone.requiredSupervisors > 0 && (
-                            <div className="flex items-center gap-1.5">
-                              <FiShield className={supervisorsFilled ? 'text-green-500' : 'text-gray-400'} size={14} />
-                              <span className={supervisorsFilled ? 'text-green-600 font-medium' : 'text-gray-600'}>
-                                {stats.assignedSupervisors || 0}/{zone.requiredSupervisors}
-                              </span>
-                              <span className="text-gray-400 text-xs">resp.</span>
-                              {supervisorsFilled && <FiCheck className="text-green-500" size={12} />}
-                            </div>
-                          )}
-                        </div>
-
-                        {zone.instructions && (
-                          <p className="mt-2 text-xs text-gray-500 bg-gray-50 p-2 rounded-lg line-clamp-2">
-                            {zone.instructions}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Récurrence */}
-          {event.recurrenceType && event.recurrenceType !== 'none' && (
-            <div className="flex items-center gap-2 p-3 bg-purple-50 rounded-lg">
-              <FiRepeat className="text-purple-500" />
-              <span className="text-purple-700">
-                Récurrence: {RECURRENCE_OPTIONS.find(r => r.value === event.recurrenceType)?.label || event.recurrenceType}
-              </span>
-            </div>
-          )}
-
-          {/* Notes */}
-          {event.notes && (
-            <div>
-              <h3 className="font-semibold text-gray-700 mb-2">Notes</h3>
-              <p className="text-gray-600 bg-yellow-50 p-4 rounded-lg border-l-4 border-yellow-400">
-                {event.notes}
-              </p>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex justify-between pt-4 border-t">
-            <div className="flex gap-2">
-              <button
-                onClick={() => { onClose(); onDuplicate(event); }}
-                className="btn-secondary flex items-center gap-2"
-              >
-                <FiCopy /> Dupliquer
-              </button>
-              <button
-                onClick={() => { onClose(); navigate(`/events/${event.id}/chronology`); }}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition-colors font-medium text-sm"
-              >
-                <FiActivity /> Chronologie
-              </button>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => { onClose(); onDelete(event.id); }}
-                className="btn-danger flex items-center gap-2"
-              >
-                <FiTrash2 /> Supprimer
-              </button>
-              <button
-                onClick={() => { onClose(); onEdit(event); }}
-                className="btn-primary flex items-center gap-2"
-              >
-                <FiEdit2 /> Modifier
-              </button>
-            </div>
-          </div>
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Tableau de bord temps réel</h2>
+        <div className="flex items-center gap-2 text-xs text-gray-400">
+          {lastRefresh && <span>Mis à jour {formatDistanceToNow(lastRefresh, { locale: fr, addSuffix: true })}</span>}
+          <button onClick={onRefresh} disabled={loading}
+            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+            title="Actualiser">
+            <FiRefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+          </button>
         </div>
       </div>
-
-      {/* Zone Manager Modal */}
-      {zoneManagerOpen && (
-        <ZoneManager
-          isOpen={zoneManagerOpen}
-          onClose={() => {
-            setZoneManagerOpen(false);
-            fetchZones();
-          }}
-          eventId={event.id}
-        />
-      )}
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">
+        {cards.map(({ label, value, icon: Icon, color, bg, border, urgent }) => (
+          <div key={label}
+            className={`relative rounded-xl border p-3 flex flex-col gap-1 transition-shadow hover:shadow-md ${bg} ${border} ${urgent ? 'ring-2 ring-red-300 animate-pulse' : ''}`}>
+            <div className="flex items-center justify-between">
+              <Icon size={16} className={color} />
+              {urgent && <span className="w-2 h-2 rounded-full bg-red-500" />}
+            </div>
+            <p className={`text-2xl font-extrabold ${color}`}>
+              {loading ? <span className="inline-block w-6 h-5 bg-gray-200 rounded animate-pulse" /> : value}
+            </p>
+            <p className="text-xs text-gray-500 leading-tight">{label}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
 
-const EventModal = ({ isOpen, onClose, event, onSave }) => {
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    type: 'regular',
-    priority: 'medium',
-    color: '#3B82F6',
-    location: '',
-    latitude: '',
-    longitude: '',
-    geoRadius: 100,
-    startDate: '',
-    endDate: '',
-    checkInTime: '08:00',
-    checkOutTime: '18:00',
-    lateThreshold: 15,
-    agentCreationBuffer: 2,
-    agentCreationUnit: 'hours',
-    agentCreationCustom: false,
-    requiredAgents: 1,
-    recurrenceType: 'none',
-    recurrenceEndDate: '',
-    notes: '',
-    contactPhone: '',
-    contactName: '',
-    supervisorId: '',
-    // Phase 1 – Préparation
-    preparationStartDate: '',
-    preparationEndDate: '',
-    preparationStartTime: '',
-    preparationEndTime: '',
-    preparationTolerance: 15,
-    preparationAgentsCount: 0,
-    preparationResponsableId: '',
-    preparationObservations: '',
-    // Phase 2 – Mise en place
-    setupStartDate: '',
-    setupEndDate: '',
-    setupStartTime: '',
-    setupEndTime: '',
-    setupTolerance: 15,
-    setupAgentsCount: 0,
-    setupResponsableId: '',
-    setupObservations: '',
-  });
-  const [loading, setLoading] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [supervisors, setSupervisors] = useState([]);
-  const [loadingSupervisors, setLoadingSupervisors] = useState(false);
+// ─── Event Card ───────────────────────────────────────────────────────────────
 
-  // Charger les superviseurs disponibles
-  useEffect(() => {
-    if (isOpen) {
-      loadSupervisors();
-    }
-  }, [isOpen]);
-
-  const loadSupervisors = async () => {
-    setLoadingSupervisors(true);
-    try {
-      const response = await usersAPI.getSupervisors();
-      setSupervisors(response.data?.data || []);
-    } catch (error) {
-      console.error('Error loading supervisors:', error);
-    } finally {
-      setLoadingSupervisors(false);
-    }
-  };
-
-  useEffect(() => {
-    if (event) {
-      // Convert legacy agentCreationBuffer (minutes) to new unit-based format
-      const legacyBuffer = event.agentCreationBuffer || 120;
-      const legacyUnit = event.agentCreationUnit || 'hours';
-      let bufferValue = legacyBuffer;
-      let bufferUnit = legacyUnit;
-      let isCustom = false;
-      if (legacyUnit === 'hours') {
-        bufferValue = legacyBuffer / 60;
-        if (![2, 4, 8, 24].includes(bufferValue)) isCustom = true;
-      } else if (legacyUnit === 'minutes') {
-        bufferValue = legacyBuffer;
-        isCustom = true;
-      }
-
-      setFormData({
-        name: event.name || '',
-        description: event.description || '',
-        type: event.type || 'regular',
-        location: event.location || '',
-        latitude: event.latitude || '',
-        longitude: event.longitude || '',
-        geoRadius: event.geoRadius || 100,
-        startDate: event.startDate?.split('T')[0] || '',
-        endDate: event.endDate?.split('T')[0] || '',
-        checkInTime: event.checkInTime?.substring(0, 5) || '08:00',
-        checkOutTime: event.checkOutTime?.substring(0, 5) || '18:00',
-        lateThreshold: event.lateThreshold || 15,
-        requiredAgents: event.requiredAgents || 1,
-        priority: event.priority || 'medium',
-        color: event.color || '#3B82F6',
-        recurrenceType: event.recurrenceType || 'none',
-        recurrenceEndDate: event.recurrenceEndDate?.split('T')[0] || '',
-        notes: event.notes || '',
-        contactPhone: event.contactPhone || '',
-        contactName: event.contactName || '',
-        supervisorId: event.supervisorId || '',
-        status: event.status || 'scheduled',
-        agentCreationBuffer: bufferValue,
-        agentCreationUnit: bufferUnit,
-        agentCreationCustom: isCustom,
-        // Phase 1
-        preparationStartDate: event.preparationStartDate || '',
-        preparationEndDate: event.preparationEndDate || '',
-        preparationStartTime: event.preparationStartTime?.substring(0, 5) || '',
-        preparationEndTime: event.preparationEndTime?.substring(0, 5) || '',
-        preparationTolerance: event.preparationTolerance ?? 15,
-        preparationAgentsCount: event.preparationAgentsCount ?? 0,
-        preparationResponsableId: event.preparationResponsableId || '',
-        preparationObservations: event.preparationObservations || '',
-        // Phase 2
-        setupStartDate: event.setupStartDate || '',
-        setupEndDate: event.setupEndDate || '',
-        setupStartTime: event.setupStartTime?.substring(0, 5) || '',
-        setupEndTime: event.setupEndTime?.substring(0, 5) || '',
-        setupTolerance: event.setupTolerance ?? 15,
-        setupAgentsCount: event.setupAgentsCount ?? 0,
-        setupResponsableId: event.setupResponsableId || '',
-        setupObservations: event.setupObservations || '',
-      });
-    } else {
-      const today = new Date().toISOString().split('T')[0];
-      setFormData({
-        name: '',
-        description: '',
-        type: 'regular',
-        priority: 'medium',
-        color: '#3B82F6',
-        location: '',
-        latitude: '',
-        longitude: '',
-        geoRadius: 100,
-        startDate: today,
-        endDate: today,
-        checkInTime: '08:00',
-        checkOutTime: '18:00',
-        lateThreshold: 15,
-        agentCreationBuffer: 2,
-        agentCreationUnit: 'hours',
-        agentCreationCustom: false,
-        requiredAgents: 1,
-        recurrenceType: 'none',
-        recurrenceEndDate: '',
-        notes: '',
-        contactPhone: '',
-        contactName: '',
-        supervisorId: '',
-        // Phase 1
-        preparationStartDate: '',
-        preparationEndDate: '',
-        preparationStartTime: '',
-        preparationEndTime: '',
-        preparationTolerance: 15,
-        preparationAgentsCount: 0,
-        preparationResponsableId: '',
-        preparationObservations: '',
-        // Phase 2
-        setupStartDate: '',
-        setupEndDate: '',
-        setupStartTime: '',
-        setupEndTime: '',
-        setupTolerance: 15,
-        setupAgentsCount: 0,
-        setupResponsableId: '',
-        setupObservations: '',
-      });
-    }
-  }, [event]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-
-    try {
-      // Validation
-      if (new Date(formData.endDate) < new Date(formData.startDate)) {
-        toast.error('La date de fin doit être après la date de début');
-        setLoading(false);
-        return;
-      }
-
-      // Convert unit-based buffer back to minutes for backend
-      const bufferUnitsInMinutes = { minutes: 1, hours: 60, days: 1440, weeks: 10080 };
-      const agentCreationBufferMinutes = Math.round(
-        parseFloat(formData.agentCreationBuffer || 2) * (bufferUnitsInMinutes[formData.agentCreationUnit] || 60)
-      );
-
-      // Préparer les données à envoyer - uniquement les champs nécessaires
-      const dataToSend = {
-        name: formData.name,
-        description: formData.description,
-        type: formData.type,
-        location: formData.location,
-        latitude: formData.latitude,
-        longitude: formData.longitude,
-        geoRadius: formData.geoRadius,
-        startDate: formData.startDate,
-        endDate: formData.endDate,
-        checkInTime: formData.checkInTime?.substring(0, 5) || '08:00',
-        checkOutTime: formData.checkOutTime?.substring(0, 5) || '18:00',
-        lateThreshold: formData.lateThreshold,
-        requiredAgents: formData.requiredAgents,
-        priority: formData.priority,
-        color: formData.color,
-        recurrenceType: formData.recurrenceType,
-        recurrenceEndDate: formData.recurrenceEndDate || null,
-        notes: formData.notes,
-        contactPhone: formData.contactPhone,
-        contactName: formData.contactName,
-        supervisorId: formData.supervisorId || null,
-        status: formData.status,
-        agentCreationBuffer: agentCreationBufferMinutes,
-        agentCreationUnit: formData.agentCreationUnit,
-        // Phase 1 – Préparation
-        preparationStartDate: formData.preparationStartDate || null,
-        preparationEndDate: formData.preparationEndDate || null,
-        preparationStartTime: formData.preparationStartTime || null,
-        preparationEndTime: formData.preparationEndTime || null,
-        preparationTolerance: formData.preparationTolerance,
-        preparationAgentsCount: formData.preparationAgentsCount,
-        preparationResponsableId: formData.preparationResponsableId || null,
-        preparationObservations: formData.preparationObservations || null,
-        // Phase 2 – Mise en place
-        setupStartDate: formData.setupStartDate || null,
-        setupEndDate: formData.setupEndDate || null,
-        setupStartTime: formData.setupStartTime || null,
-        setupEndTime: formData.setupEndTime || null,
-        setupTolerance: formData.setupTolerance,
-        setupAgentsCount: formData.setupAgentsCount,
-        setupResponsableId: formData.setupResponsableId || null,
-        setupObservations: formData.setupObservations || null,
-      };
-
-      console.log('📤 Données envoyées:', dataToSend);
-
-      if (event && event.id) {
-        const response = await eventsAPI.update(event.id, dataToSend);
-        console.log('✅ Réponse du serveur:', response.data);
-        toast.success('Événement mis à jour avec succès');
-      } else {
-        await eventsAPI.create(dataToSend);
-        toast.success('Événement créé avec succès');
-      }
-      onSave();
-      onClose();
-    } catch (error) {
-      console.error('❌ Erreur:', error);
-      toast.error(error.response?.data?.message || 'Erreur lors de l\'enregistrement');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getPriorityInfo = (priority) => {
-    return PRIORITY_OPTIONS.find(p => p.value === priority) || PRIORITY_OPTIONS[1];
-  };
-
-  if (!isOpen) return null;
+const EventCard = ({ event, onView, onEdit, onDelete, onDuplicate, onChronology }) => {
+  const timeInd  = getTimeIndicator(event);
+  const agents   = agentCompleteness(event);
+  const phase    = computePhase(event);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header avec couleur sélectionnée */}
-        <div
-          className="p-6 border-b transition-colors duration-300"
-          style={{ backgroundColor: formData.color + '20' }}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-4 h-12 rounded"
-                style={{ backgroundColor: formData.color }}
-              />
-              <div>
-                <h2 className="text-xl font-semibold text-gray-800">
-                  {event ? 'Modifier l\'événement' : 'Nouvel événement'}
-                </h2>
-                <p className="text-sm text-gray-500">
-                  {event ? 'Modifiez les détails ci-dessous' : 'Remplissez les informations pour créer un nouvel événement'}
-                </p>
-              </div>
+    <div
+      className={`group relative bg-white rounded-2xl border overflow-hidden cursor-pointer
+        transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5
+        ${agents.label === 'Incomplet' && event.status === 'active' ? 'border-red-300 shadow-red-100 shadow-md' : 'border-gray-100 shadow-sm'}`}
+      onClick={() => onView(event)}
+    >
+      {/* Color top bar */}
+      <div className="h-1.5" style={{ backgroundColor: event.color || '#3B82F6' }} />
+
+      <div className="p-4">
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5 mb-1">
+              {timeInd && (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${timeInd.class}`}>
+                  {timeInd.label}
+                </span>
+              )}
+              <PhaseBadge event={event} />
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full">
+            <h3 className="font-bold text-gray-900 text-base leading-tight truncate">{event.name}</h3>
+          </div>
+          <StatusBadge status={event.status} />
+        </div>
+
+        {/* Badges row */}
+        <div className="flex flex-wrap items-center gap-1.5 mb-3">
+          <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+            {TYPE_OPTIONS.find(t => t.value === event.type)?.icon} {TYPE_OPTIONS.find(t => t.value === event.type)?.label || event.type}
+          </span>
+          <PriorityBadge priority={event.priority} />
+        </div>
+
+        {/* Location */}
+        <div className="flex items-center gap-1.5 text-sm text-gray-500 mb-2">
+          <FiMapPin size={13} className={event.latitude && event.longitude ? 'text-green-500' : 'text-gray-400'} />
+          <span className="truncate">{event.location}</span>
+          {event.latitude && event.longitude
+            ? <span className="ml-auto flex-shrink-0 text-xs px-1.5 py-0.5 bg-green-100 text-green-600 rounded font-medium">GPS ✓</span>
+            : <span className="ml-auto flex-shrink-0 text-xs px-1.5 py-0.5 bg-red-50 text-red-400 rounded font-medium">GPS ✕</span>
+          }
+        </div>
+
+        {/* Dates */}
+        <div className="flex items-center gap-1.5 text-sm text-gray-500 mb-2">
+          <FiCalendar size={13} className="text-gray-400" />
+          <span>{format(new Date(event.startDate), 'dd MMM', { locale: fr })}</span>
+          {event.startDate !== event.endDate && (
+            <>
+              <span className="text-gray-300">→</span>
+              <span>{format(new Date(event.endDate), 'dd MMM yyyy', { locale: fr })}</span>
+            </>
+          )}
+        </div>
+
+        {/* Horaires */}
+        <div className="flex items-center gap-1.5 text-sm text-gray-500 mb-3">
+          <FiClock size={13} className="text-gray-400" />
+          <span>{event.checkInTime} — {event.checkOutTime}</span>
+        </div>
+
+        {/* Agents progress */}
+        <div className="mb-3">
+          <div className="flex items-center justify-between text-sm mb-1">
+            <div className="flex items-center gap-1.5">
+              <FiUsers size={13} className="text-gray-400" />
+              <span className={`font-semibold ${agents.color}`}>{event.assignedAgentsCount || 0}</span>
+              <span className="text-gray-400">/</span>
+              <span className="text-gray-600 font-medium">{event.requiredAgents}</span>
+              <span className="text-gray-400 text-xs">agents</span>
+            </div>
+            <span className={`text-xs font-semibold ${agents.color}`}>{agents.icon} {agents.label}</span>
+          </div>
+          <div className="w-full bg-gray-100 rounded-full h-1.5">
+            <div className={`h-1.5 rounded-full transition-all ${agents.bar}`} style={{ width: `${agents.pct}%` }} />
+          </div>
+        </div>
+
+        {/* Zones */}
+        {(event.totalZones != null) && (
+          <div className="flex items-center gap-2 text-xs text-gray-500 mb-3">
+            <FiLayers size={12} />
+            <span>
+              <span className="font-semibold text-gray-700">{event.completedZones || 0}</span>/{event.totalZones} zones complètes
+            </span>
+            {event.totalZones > 0 && (event.completedZones || 0) < event.totalZones && (
+              <span className="text-orange-500 font-medium">·  {event.totalZones - (event.completedZones || 0)} incomplète(s)</span>
+            )}
+          </div>
+        )}
+
+        {/* Director */}
+        {event.directorName && (
+          <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-3">
+            <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold">
+              {event.directorName[0]?.toUpperCase()}
+            </div>
+            <span className="truncate">{event.directorName}</span>
+          </div>
+        )}
+
+        {/* Recurrence */}
+        {event.recurrenceType && event.recurrenceType !== 'none' && (
+          <div className="flex items-center gap-1.5 text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-lg mb-3">
+            <FiRepeat size={11} />
+            {RECURRENCE_OPTIONS.find(r => r.value === event.recurrenceType)?.label}
+          </div>
+        )}
+
+        {/* Phase progress bar (active only) */}
+        {event.status === 'active' && phase && (
+          <div className="mt-1">
+            <div className={`h-1 rounded-full ${phase.bar} opacity-60`} />
+          </div>
+        )}
+      </div>
+
+      {/* Hover action overlay */}
+      <div className="absolute inset-x-0 bottom-0 bg-white border-t border-gray-100 px-3 py-2
+        flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 translate-y-2 group-hover:translate-y-0">
+        <button onClick={e => { e.stopPropagation(); onView(event); }}
+          className="p-1.5 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Voir">
+          <FiEye size={15} />
+        </button>
+        <button onClick={e => { e.stopPropagation(); onEdit(event); }}
+          className="p-1.5 rounded-lg text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors" title="Modifier">
+          <FiEdit2 size={15} />
+        </button>
+        <button onClick={e => { e.stopPropagation(); onDuplicate(event); }}
+          className="p-1.5 rounded-lg text-gray-500 hover:text-purple-600 hover:bg-purple-50 transition-colors" title="Dupliquer">
+          <FiCopy size={15} />
+        </button>
+        <button onClick={e => { e.stopPropagation(); onChronology(event); }}
+          className="p-1.5 rounded-lg text-gray-500 hover:text-orange-600 hover:bg-orange-50 transition-colors" title="Chronologie">
+          <FiBarChart2 size={15} />
+        </button>
+        <button onClick={e => { e.stopPropagation(); onDelete(event.id); }}
+          className="p-1.5 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50 transition-colors" title="Supprimer">
+          <FiTrash2 size={15} />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ─── Details Modal ────────────────────────────────────────────────────────────
+
+const EventDetailsModal = ({ isOpen, onClose, event, onEdit, onDelete, onDuplicate, onChronology }) => {
+  const [zones, setZones]       = useState([]);
+  const [zonesLoading, setZonesLoading] = useState(false);
+  const [showZoneManager, setShowZoneManager] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && event?.id) {
+      setZonesLoading(true);
+      zonesAPI.getByEvent(event.id)
+        .then(r => setZones(r?.data?.data?.zones || []))
+        .catch(() => setZones([]))
+        .finally(() => setZonesLoading(false));
+    }
+  }, [isOpen, event?.id]);
+
+  if (!isOpen || !event) return null;
+
+  const priority = getPriorityInfo(event.priority);
+  const agents   = agentCompleteness(event);
+  const phase    = computePhase(event);
+  const timeInd  = getTimeIndicator(event);
+
+  const SUGGESTED_ZONES = ['Entrée principale', 'Sortie secours', 'Zone VIP', 'Parking'];
+
+  if (showZoneManager) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[95vh] overflow-y-auto">
+          <div className="flex items-center justify-between p-4 border-b">
+            <h3 className="font-bold text-gray-800">Gestion des Zones — {event.name}</h3>
+            <button onClick={() => setShowZoneManager(false)} className="p-2 hover:bg-gray-100 rounded-full">
+              <FiX />
+            </button>
+          </div>
+          <ZoneManager eventId={event.id} eventName={event.name} onClose={() => setShowZoneManager(false)} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto shadow-2xl">
+
+        {/* Header */}
+        <div className="relative p-6 text-white rounded-t-2xl overflow-hidden"
+          style={{ backgroundColor: event.color || '#3B82F6' }}>
+          <div className="absolute inset-0 opacity-10"
+            style={{ backgroundImage: 'repeating-linear-gradient(45deg, white 0, white 1px, transparent 0, transparent 50%)', backgroundSize: '12px 12px' }} />
+          <div className="relative flex justify-between items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className="px-2.5 py-1 bg-white bg-opacity-20 rounded-full text-sm font-medium">
+                  {TYPE_OPTIONS.find(t => t.value === event.type)?.icon} {TYPE_OPTIONS.find(t => t.value === event.type)?.label}
+                </span>
+                <span className={`px-2.5 py-1 rounded-full text-sm font-medium bg-white bg-opacity-20`}>
+                  <FiFlag className="inline mr-1" size={11} />{priority.label}
+                </span>
+                {timeInd && (
+                  <span className="px-2.5 py-1 bg-white bg-opacity-30 rounded-full text-sm font-bold">{timeInd.label}</span>
+                )}
+              </div>
+              <h2 className="text-2xl font-extrabold leading-tight">{event.name}</h2>
+              {phase && (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-sm opacity-90">{phase.icon} Phase : <strong>{phase.label}</strong></span>
+                </div>
+              )}
+            </div>
+            <button onClick={onClose} className="p-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex-shrink-0 transition-colors">
               <FiX size={20} />
             </button>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Nom et Description */}
-          <div className="space-y-4">
-            <div>
-              <label className="label">Nom de l'événement *</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="input text-lg font-medium"
-                placeholder="Ex: Surveillance Centre Commercial"
-                required
-              />
-            </div>
+        <div className="p-6 space-y-5">
 
-            <div>
-              <label className="label">Description</label>
-              <textarea
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="input resize-none"
-                rows="3"
-                placeholder="Décrivez l'événement, les objectifs, les consignes spéciales..."
-              />
-              <p className="text-xs text-gray-400 mt-1">{formData.description?.length || 0}/500 caractères</p>
-            </div>
+          {/* Status row */}
+          <div className="flex flex-wrap gap-2 items-center">
+            <StatusBadge status={event.status} />
+            {event.recurrenceType && event.recurrenceType !== 'none' && (
+              <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full font-medium">
+                <FiRepeat size={11} />
+                {RECURRENCE_OPTIONS.find(r => r.value === event.recurrenceType)?.label}
+              </span>
+            )}
           </div>
 
-          {/* Type, Priorité, Couleur */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="label">Type *</label>
-              <select
-                value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                className="input"
-              >
-                <option value="regular">Régulier</option>
-                <option value="special">Spécial</option>
-                <option value="emergency">Urgence</option>
-              </select>
+          {/* Description */}
+          {event.description && (
+            <div className="p-4 bg-gray-50 rounded-xl border-l-4 border-gray-300">
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{event.description}</p>
             </div>
+          )}
 
-            <div>
-              <label className="label">Priorité</label>
-              <select
-                value={formData.priority}
-                onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                className={`input ${getPriorityInfo(formData.priority).color}`}
-              >
-                {PRIORITY_OPTIONS.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+          {/* Key info grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { icon: FiCalendar, label: 'Début',    val: format(new Date(event.startDate), 'dd MMM yyyy', { locale: fr }), bg: 'bg-blue-50', color: 'text-blue-500' },
+              { icon: FiCalendar, label: 'Fin',      val: format(new Date(event.endDate),   'dd MMM yyyy', { locale: fr }), bg: 'bg-blue-50', color: 'text-blue-500' },
+              { icon: FiClock,    label: 'Check-in', val: event.checkInTime, bg: 'bg-green-50',  color: 'text-green-500' },
+              { icon: FiClock,    label: 'Check-out',val: event.checkOutTime, bg: 'bg-orange-50', color: 'text-orange-500' },
+            ].map(({ icon: Icon, label, val, bg, color }) => (
+              <div key={label} className={`${bg} p-3.5 rounded-xl text-center`}>
+                <Icon className={`mx-auto mb-1.5 ${color}`} size={20} />
+                <p className="text-xs text-gray-500 mb-0.5">{label}</p>
+                <p className="font-bold text-gray-800 text-sm">{val}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Location */}
+          <div className="rounded-xl border overflow-hidden">
+            <div className="flex items-center gap-2 p-3 bg-gray-50 border-b">
+              <FiMapPin className="text-gray-500" size={16} />
+              <span className="font-semibold text-gray-700 text-sm">Localisation</span>
             </div>
-
-            <div>
-              <label className="label">Couleur</label>
-              <div className="flex gap-2 flex-wrap">
-                {EVENT_COLORS.map(color => (
-                  <button
-                    key={color.value}
-                    type="button"
-                    onClick={() => setFormData({ ...formData, color: color.value })}
-                    className={`w-8 h-8 rounded-full transition-transform hover:scale-110 ${
-                      formData.color === color.value ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : ''
-                    }`}
-                    style={{ backgroundColor: color.value }}
-                    title={color.name}
-                  />
-                ))}
+            <div className="p-4 space-y-3">
+              <p className="text-gray-700">{event.location}</p>
+              {event.latitude && event.longitude && (
+                <div className="rounded-xl overflow-hidden border">
+                  <MiniMap latitude={event.latitude} longitude={event.longitude}
+                    geoRadius={event.geoRadius} height="180px" draggable={false} />
+                </div>
+              )}
+              <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+                {event.latitude && event.longitude
+                  ? <span className="flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 rounded-lg font-medium">
+                      <FiNavigation size={11} /> GPS: {parseFloat(event.latitude).toFixed(4)}, {parseFloat(event.longitude).toFixed(4)}
+                    </span>
+                  : <span className="flex items-center gap-1 px-2 py-1 bg-red-50 text-red-600 rounded-lg">
+                      <FiAlertCircle size={11} /> Coordonnées GPS manquantes
+                    </span>
+                }
+                <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg">Rayon: {event.geoRadius || 100}m</span>
               </div>
             </div>
           </div>
 
-          {/* Section Localisation */}
-          <div className="border rounded-lg p-4 bg-gray-50">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
-              <FiMapPin className="mr-2 text-primary-600" />
-              Localisation de l'événement
-            </h3>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="space-y-4">
-                <AddressAutocomplete
-                  value={formData.location}
-                  onChange={(address) => setFormData({ ...formData, location: address })}
-                  onCoordinatesChange={(coords) => {
-                    if (coords) {
-                      setFormData(prev => ({
-                        ...prev,
-                        location: coords.address || prev.location,
-                        latitude: coords.latitude.toFixed(6),
-                        longitude: coords.longitude.toFixed(6)
-                      }));
-                      toast.success('Position GPS mise à jour');
-                    }
-                  }}
-                  label="Adresse *"
-                  placeholder="Rechercher une adresse sur la carte..."
-                  required
-                  initialCoordinates={
-                    formData.latitude && formData.longitude
-                      ? { lat: parseFloat(formData.latitude), lng: parseFloat(formData.longitude) }
-                      : null
-                  }
-                />
-
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="label text-xs">
-                      Latitude
-                      {formData.latitude && <FiCheckCircle className="inline ml-1 text-green-500" size={10} />}
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.latitude}
-                      onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
-                      className={`input text-sm font-mono ${formData.latitude ? 'bg-green-50 border-green-300' : ''}`}
-                      placeholder="Latitude"
-                    />
-                  </div>
-                  <div>
-                    <label className="label text-xs">
-                      Longitude
-                      {formData.longitude && <FiCheckCircle className="inline ml-1 text-green-500" size={10} />}
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.longitude}
-                      onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
-                      className={`input text-sm font-mono ${formData.longitude ? 'bg-green-50 border-green-300' : ''}`}
-                      placeholder="Longitude"
-                    />
-                  </div>
-                  <div>
-                    <label className="label text-xs">Rayon (m)</label>
-                    <input
-                      type="number"
-                      value={formData.geoRadius}
-                      onChange={(e) => setFormData({ ...formData, geoRadius: parseInt(e.target.value) || 100 })}
-                      className="input text-sm"
-                      min="10"
-                      max="1000"
-                    />
-                  </div>
+          {/* Agents */}
+          <div className="rounded-xl border overflow-hidden">
+            <div className="flex items-center gap-2 p-3 bg-gray-50 border-b">
+              <FiUsers className="text-gray-500" size={16} />
+              <span className="font-semibold text-gray-700 text-sm">Agents</span>
+            </div>
+            <div className="p-4">
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div className="bg-gray-50 p-3 rounded-xl text-center">
+                  <p className="text-2xl font-extrabold text-gray-700">{event.requiredAgents}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Requis</p>
+                </div>
+                <div className="bg-green-50 p-3 rounded-xl text-center">
+                  <p className="text-2xl font-extrabold text-green-600">{event.assignedAgentsCount || 0}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Assignés</p>
+                </div>
+                <div className={`p-3 rounded-xl text-center ${agents.label === 'Complet' ? 'bg-emerald-50' : 'bg-red-50'}`}>
+                  <p className={`text-2xl font-extrabold ${agents.color}`}>
+                    {(event.assignedAgentsCount || 0) - event.requiredAgents}
+                  </p>
+                  <p className={`text-xs mt-0.5 font-semibold ${agents.color}`}>{agents.label}</p>
                 </div>
               </div>
-
-              <div>
-                <MiniMap
-                  latitude={formData.latitude}
-                  longitude={formData.longitude}
-                  geoRadius={formData.geoRadius}
-                  height="180px"
-                  draggable={true}
-                  onPositionChange={(coords) => {
-                    setFormData(prev => ({
-                      ...prev,
-                      latitude: coords.latitude.toFixed(6),
-                      longitude: coords.longitude.toFixed(6)
-                    }));
-                  }}
-                />
+              <div className="w-full bg-gray-100 rounded-full h-2">
+                <div className={`h-2 rounded-full transition-all ${agents.bar}`} style={{ width: `${agents.pct}%` }} />
               </div>
+              <p className={`text-xs mt-1.5 font-medium ${agents.color}`}>{agents.pct}% — {agents.icon} {agents.label}</p>
             </div>
           </div>
 
-          {/* Dates et Horaire début de l'événement (Phase 3 – Exécution/Pointage) */}
-          <div className="border-2 border-green-200 rounded-lg p-4 bg-green-50">
-            <h3 className="text-sm font-semibold text-green-800 mb-1 flex items-center gap-2">
-              <span className="text-lg">📍</span>
-              <FiCalendar className="text-green-600" />
-              Dates et Horaire début de l'événement
-              <span className="ml-auto text-xs font-normal bg-green-200 text-green-800 px-2 py-0.5 rounded-full">Phase 3 – Pointage</span>
-            </h3>
-            <p className="text-xs text-green-700 mb-3">Horaires officiels de l'événement (check-in / check-out des agents)</p>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <label className="label">Date début *</label>
-                <input
-                  type="date"
-                  value={formData.startDate}
-                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                  className="input"
-                  required
-                />
+          {/* Zones */}
+          <div className="rounded-xl border overflow-hidden">
+            <div className="flex items-center justify-between p-3 bg-gray-50 border-b">
+              <div className="flex items-center gap-2">
+                <FiLayers className="text-gray-500" size={16} />
+                <span className="font-semibold text-gray-700 text-sm">Zones</span>
+                {zones.length > 0 && (
+                  <span className="text-xs bg-gray-200 text-gray-600 rounded-full px-2">{zones.length}</span>
+                )}
               </div>
-              <div>
-                <label className="label">Date fin *</label>
-                <input
-                  type="date"
-                  value={formData.endDate}
-                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                  className="input"
-                  min={formData.startDate}
-                  required
-                />
-              </div>
-              <div>
-                <label className="label">Heure d'arrivée *</label>
-                <input
-                  type="time"
-                  value={formData.checkInTime}
-                  onChange={(e) => setFormData({ ...formData, checkInTime: e.target.value })}
-                  className="input"
-                  required
-                />
-              </div>
-              <div>
-                <label className="label">Heure de départ *</label>
-                <input
-                  type="time"
-                  value={formData.checkOutTime}
-                  onChange={(e) => setFormData({ ...formData, checkOutTime: e.target.value })}
-                  className="input"
-                  required
-                />
-              </div>
+              <button onClick={() => setShowZoneManager(true)}
+                className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+                <FiMaximize2 size={12} /> Gérer les zones
+              </button>
             </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
-              <div>
-                <label className="label">Tolérance retard (min)</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="range"
-                    min="0"
-                    max="60"
-                    value={formData.lateThreshold}
-                    onChange={(e) => setFormData({ ...formData, lateThreshold: parseInt(e.target.value) })}
-                    className="flex-1"
-                  />
-                  <span className="w-12 text-center font-medium text-gray-700">{formData.lateThreshold} min</span>
+            <div className="p-4">
+              {zonesLoading ? (
+                <div className="flex justify-center py-4">
+                  <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                 </div>
-              </div>
-              
-              <div>
-                <label className="label">Création agent autorisée</label>
+              ) : zones.length === 0 ? (
+                <div className="text-center py-4">
+                  <FiLayers className="mx-auto text-gray-300 mb-2" size={32} />
+                  <p className="text-sm text-gray-500 mb-3">Aucune zone configurée</p>
+                  <p className="text-xs text-gray-400 mb-3">Zones suggérées :</p>
+                  <div className="flex flex-wrap gap-2 justify-center mb-3">
+                    {SUGGESTED_ZONES.map(z => (
+                      <span key={z} className="text-xs px-2.5 py-1 bg-blue-50 text-blue-600 rounded-full border border-blue-200">{z}</span>
+                    ))}
+                  </div>
+                  <button onClick={() => setShowZoneManager(true)}
+                    className="btn-primary text-sm flex items-center gap-1.5 mx-auto">
+                    <FiPlus size={14} /> Créer des zones
+                  </button>
+                </div>
+              ) : (
                 <div className="space-y-2">
-                  <select
-                    value={formData.agentCreationCustom ? 'custom' : `${formData.agentCreationBuffer}_${formData.agentCreationUnit}`}
-                    onChange={(e) => {
-                      if (e.target.value === 'custom') {
-                        setFormData({ ...formData, agentCreationCustom: true });
-                      } else {
-                        const [val, unit] = e.target.value.split('_');
-                        setFormData({ ...formData, agentCreationBuffer: parseFloat(val), agentCreationUnit: unit, agentCreationCustom: false });
-                      }
-                    }}
-                    className="input"
-                    title="Fenêtre de temps avant l'événement pendant laquelle les agents peuvent pointer"
-                  >
-                    <option value="2_hours">2h avant</option>
-                    <option value="4_hours">4h avant</option>
-                    <option value="8_hours">8h avant</option>
-                    <option value="24_hours">24h avant</option>
-                    <option value="custom">Personnalisé…</option>
-                  </select>
-                  {formData.agentCreationCustom && (
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
-                        min="1"
-                        value={formData.agentCreationBuffer}
-                        onChange={(e) => setFormData({ ...formData, agentCreationBuffer: parseFloat(e.target.value) || 1 })}
-                        className="input w-24"
-                        placeholder="Ex: 3"
-                      />
-                      <select
-                        value={formData.agentCreationUnit}
-                        onChange={(e) => setFormData({ ...formData, agentCreationUnit: e.target.value })}
-                        className="input flex-1"
-                      >
-                        <option value="hours">Heure(s)</option>
-                        <option value="days">Jour(s)</option>
-                        <option value="weeks">Semaine(s)</option>
-                        <option value="minutes">Minute(s)</option>
-                      </select>
+                  {zones.slice(0, 4).map(zone => (
+                    <div key={zone.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-blue-500" />
+                        <span className="text-sm font-medium text-gray-700">{zone.name}</span>
+                        <span className="text-xs text-gray-400">{zone.requiredAgents || 0} agents</span>
+                      </div>
+                      <StatusBadge status={zone.status || 'scheduled'} />
                     </div>
+                  ))}
+                  {zones.length > 4 && (
+                    <button onClick={() => setShowZoneManager(true)}
+                      className="w-full text-xs text-blue-600 hover:text-blue-800 py-2 text-center">
+                      Voir {zones.length - 4} zones de plus →
+                    </button>
                   )}
                 </div>
-              </div>
-              
-              <div>
-                <label className="label">Agents requis *</label>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, requiredAgents: Math.max(1, formData.requiredAgents - 1) })}
-                    className="p-2 bg-gray-200 rounded hover:bg-gray-300"
-                  >
-                    -
-                  </button>
-                  <input
-                    type="number"
-                    min="1"
-                    value={formData.requiredAgents}
-                    onChange={(e) => setFormData({ ...formData, requiredAgents: Math.max(1, parseInt(e.target.value) || 1) })}
-                    className="input text-center w-20"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, requiredAgents: formData.requiredAgents + 1 })}
-                    className="p-2 bg-gray-200 rounded hover:bg-gray-300"
-                  >
-                    +
-                  </button>
-                  <FiUsers className="text-gray-400" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Phase 1 : Préparation ───────────────────────────────────── */}
-          <div className="border-2 border-blue-200 rounded-lg p-4 bg-blue-50">
-            <h3 className="text-sm font-semibold text-blue-800 mb-1 flex items-center gap-2">
-              <span className="text-lg">🛠️</span>
-              Phase 1 – Préparation
-              <span className="ml-auto text-xs font-normal bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full">Optionnel</span>
-            </h3>
-            <p className="text-xs text-blue-700 mb-3">Installation, briefing, vérification du matériel avant l'événement</p>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div>
-                <label className="label text-xs">Date début prép.</label>
-                <input type="date" value={formData.preparationStartDate}
-                  onChange={(e) => setFormData({ ...formData, preparationStartDate: e.target.value })}
-                  className="input text-sm" />
-              </div>
-              <div>
-                <label className="label text-xs">Date fin prép.</label>
-                <input type="date" value={formData.preparationEndDate}
-                  onChange={(e) => setFormData({ ...formData, preparationEndDate: e.target.value })}
-                  min={formData.preparationStartDate}
-                  className="input text-sm" />
-              </div>
-              <div>
-                <label className="label text-xs">Heure début</label>
-                <input type="time" value={formData.preparationStartTime}
-                  onChange={(e) => setFormData({ ...formData, preparationStartTime: e.target.value })}
-                  className="input text-sm" />
-              </div>
-              <div>
-                <label className="label text-xs">Heure fin</label>
-                <input type="time" value={formData.preparationEndTime}
-                  onChange={(e) => setFormData({ ...formData, preparationEndTime: e.target.value })}
-                  className="input text-sm" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
-              <div>
-                <label className="label text-xs">Tolérance retard (min)</label>
-                <div className="flex items-center gap-2">
-                  <input type="range" min="0" max="60" value={formData.preparationTolerance}
-                    onChange={(e) => setFormData({ ...formData, preparationTolerance: parseInt(e.target.value) })}
-                    className="flex-1" />
-                  <span className="w-12 text-center font-medium text-gray-700 text-sm">{formData.preparationTolerance} min</span>
-                </div>
-              </div>
-              <div>
-                <label className="label text-xs">Agents requis phase 1</label>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setFormData({ ...formData, preparationAgentsCount: Math.max(0, formData.preparationAgentsCount - 1) })}
-                    className="p-1.5 bg-gray-200 rounded hover:bg-gray-300 text-sm">-</button>
-                  <input type="number" min="0" value={formData.preparationAgentsCount}
-                    onChange={(e) => setFormData({ ...formData, preparationAgentsCount: Math.max(0, parseInt(e.target.value) || 0) })}
-                    className="input text-center w-16 text-sm" />
-                  <button type="button" onClick={() => setFormData({ ...formData, preparationAgentsCount: formData.preparationAgentsCount + 1 })}
-                    className="p-1.5 bg-gray-200 rounded hover:bg-gray-300 text-sm">+</button>
-                </div>
-              </div>
-              <div>
-                <label className="label text-xs">Responsable phase 1</label>
-                <select value={formData.preparationResponsableId}
-                  onChange={(e) => setFormData({ ...formData, preparationResponsableId: e.target.value })}
-                  className="input text-sm" disabled={loadingSupervisors}>
-                  <option value="">-- Aucun --</option>
-                  {supervisors.map(s => (
-                    <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <label className="label text-xs">Observations / Instructions phase 1</label>
-              <textarea value={formData.preparationObservations}
-                onChange={(e) => setFormData({ ...formData, preparationObservations: e.target.value })}
-                className="input resize-none text-sm" rows="2"
-                placeholder="Ex: Vérifier les badges, briefer les agents, tester les radios..." />
-            </div>
-          </div>
-
-          {/* ── Phase 2 : Mise en place ─────────────────────────────────── */}
-          <div className="border-2 border-yellow-200 rounded-lg p-4 bg-yellow-50">
-            <h3 className="text-sm font-semibold text-yellow-800 mb-1 flex items-center gap-2">
-              <span className="text-lg">📦</span>
-              Phase 2 – Mise en place
-              <span className="ml-auto text-xs font-normal bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded-full">Optionnel</span>
-            </h3>
-            <p className="text-xs text-yellow-700 mb-3">Déploiement sur site, positionnement des agents, ouverture des zones</p>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div>
-                <label className="label text-xs">Date début MeP</label>
-                <input type="date" value={formData.setupStartDate}
-                  onChange={(e) => setFormData({ ...formData, setupStartDate: e.target.value })}
-                  className="input text-sm" />
-              </div>
-              <div>
-                <label className="label text-xs">Date fin MeP</label>
-                <input type="date" value={formData.setupEndDate}
-                  onChange={(e) => setFormData({ ...formData, setupEndDate: e.target.value })}
-                  min={formData.setupStartDate}
-                  className="input text-sm" />
-              </div>
-              <div>
-                <label className="label text-xs">Heure début</label>
-                <input type="time" value={formData.setupStartTime}
-                  onChange={(e) => setFormData({ ...formData, setupStartTime: e.target.value })}
-                  className="input text-sm" />
-              </div>
-              <div>
-                <label className="label text-xs">Heure fin</label>
-                <input type="time" value={formData.setupEndTime}
-                  onChange={(e) => setFormData({ ...formData, setupEndTime: e.target.value })}
-                  className="input text-sm" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
-              <div>
-                <label className="label text-xs">Tolérance retard (min)</label>
-                <div className="flex items-center gap-2">
-                  <input type="range" min="0" max="60" value={formData.setupTolerance}
-                    onChange={(e) => setFormData({ ...formData, setupTolerance: parseInt(e.target.value) })}
-                    className="flex-1" />
-                  <span className="w-12 text-center font-medium text-gray-700 text-sm">{formData.setupTolerance} min</span>
-                </div>
-              </div>
-              <div>
-                <label className="label text-xs">Agents requis phase 2</label>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setFormData({ ...formData, setupAgentsCount: Math.max(0, formData.setupAgentsCount - 1) })}
-                    className="p-1.5 bg-gray-200 rounded hover:bg-gray-300 text-sm">-</button>
-                  <input type="number" min="0" value={formData.setupAgentsCount}
-                    onChange={(e) => setFormData({ ...formData, setupAgentsCount: Math.max(0, parseInt(e.target.value) || 0) })}
-                    className="input text-center w-16 text-sm" />
-                  <button type="button" onClick={() => setFormData({ ...formData, setupAgentsCount: formData.setupAgentsCount + 1 })}
-                    className="p-1.5 bg-gray-200 rounded hover:bg-gray-300 text-sm">+</button>
-                </div>
-              </div>
-              <div>
-                <label className="label text-xs">Responsable phase 2</label>
-                <select value={formData.setupResponsableId}
-                  onChange={(e) => setFormData({ ...formData, setupResponsableId: e.target.value })}
-                  className="input text-sm" disabled={loadingSupervisors}>
-                  <option value="">-- Aucun --</option>
-                  {supervisors.map(s => (
-                    <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <label className="label text-xs">Observations / Instructions phase 2</label>
-              <textarea value={formData.setupObservations}
-                onChange={(e) => setFormData({ ...formData, setupObservations: e.target.value })}
-                className="input resize-none text-sm" rows="2"
-                placeholder="Ex: Ouvrir portails à 16h, positionner agents aux entrées, activer radios..." />
-            </div>
-          </div>
-
-          {/* Directeur de l'événement */}
-          <div className="border rounded-lg p-4 bg-yellow-50 border-yellow-200">
-            <h3 className="text-sm font-semibold text-yellow-800 mb-3 flex items-center">
-              <FiShield className="mr-2" />
-              Directeur de l'événement <span className="ml-2 text-xs font-normal text-yellow-600">(Optionnel)</span>
-            </h3>
-            <p className="text-xs text-yellow-700 mb-3">
-              Choisissez un directeur global pour cet événement (optionnel). Ce rôle est distinct des responsables de zone affectés à l'événement. Peut être un Admin, Responsable ou tout utilisateur.
-            </p>
-            <div>
-              <label className="label">Directeur de l'événement <span className="text-gray-400 font-normal">(optionnel)</span></label>
-              <select
-                value={formData.supervisorId}
-                onChange={(e) => setFormData({ ...formData, supervisorId: e.target.value })}
-                className="input"
-                disabled={loadingSupervisors}
-              >
-                <option value="">-- Aucun directeur --</option>
-                {supervisors.map(sup => (
-                  <option key={sup.id} value={sup.id}>
-                    {sup.firstName} {sup.lastName} - {sup.employeeId} {sup.role === 'admin' ? '(Admin)' : sup.role === 'supervisor' ? '(Responsable)' : ''}
-                  </option>
-                ))}
-              </select>
-              {loadingSupervisors && (
-                <p className="text-xs text-gray-500 mt-1">Chargement...</p>
               )}
-              {formData.supervisorId && (
-                <div className="mt-3 p-3 bg-white rounded-lg border border-yellow-300">
-                  <div className="flex items-center gap-3">
-                    {(() => {
-                      const selectedSup = supervisors.find(s => s.id === formData.supervisorId);
-                      if (!selectedSup) return null;
-                      return (
-                        <>
-                          {selectedSup.profilePhoto ? (
-                            <img
-                              src={selectedSup.profilePhoto}
-                              alt=""
-                              className="w-10 h-10 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-700 font-medium">
-                              {selectedSup.firstName?.[0]}{selectedSup.lastName?.[0]}
-                            </div>
-                          )}
-                          <div>
-                            <p className="font-medium text-gray-800">
-                              {selectedSup.firstName} {selectedSup.lastName}
-                            </p>
-                            <p className="text-xs text-gray-500">{selectedSup.email}</p>
-                          </div>
-                          <span className="ml-auto px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-medium rounded">
-                            Superviseur
-                          </span>
-                        </>
-                      );
-                    })()}
-                  </div>
-                  <p className="text-xs text-yellow-600 mt-2">
-                    Ce responsable pourra être affecté à plusieurs zones de cet événement.
+            </div>
+          </div>
+
+          {/* Director */}
+          {event.directorName && (
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold flex-shrink-0">
+                {event.directorName[0]?.toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500">Directeur événement</p>
+                <p className="font-semibold text-gray-800 truncate">{event.directorName}</p>
+                {event.directorEmail && (
+                  <p className="text-xs text-gray-400 flex items-center gap-1 truncate">
+                    <FiMail size={10} /> {event.directorEmail}
                   </p>
-                </div>
-              )}
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Contact */}
+          {(event.contactName || event.contactPhone) && (
+            <div className="p-3 bg-blue-50 rounded-xl flex items-center gap-3">
+              <FiPhone className="text-blue-500" />
+              <div>
+                <p className="text-xs text-blue-600 font-medium">Contact sur site</p>
+                {event.contactName && <p className="text-sm font-semibold text-gray-800">{event.contactName}</p>}
+                {event.contactPhone && <p className="text-sm text-gray-600">{event.contactPhone}</p>}
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          {event.notes && (
+            <div className="p-4 bg-yellow-50 rounded-xl border-l-4 border-yellow-400">
+              <p className="text-xs font-semibold text-yellow-700 mb-1 uppercase tracking-wide">Notes</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{event.notes}</p>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center justify-between pt-4 border-t gap-3 flex-wrap">
+            <div className="flex gap-2">
+              <button onClick={() => { onClose(); onDuplicate(event); }}
+                className="btn-secondary text-sm flex items-center gap-1.5">
+                <FiCopy size={14} /> Dupliquer
+              </button>
+              <button onClick={() => { onClose(); onChronology(event); }}
+                className="btn-secondary text-sm flex items-center gap-1.5">
+                <FiBarChart2 size={14} /> Chronologie
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { onClose(); onDelete(event.id); }}
+                className="btn-danger text-sm flex items-center gap-1.5">
+                <FiTrash2 size={14} /> Supprimer
+              </button>
+              <button onClick={() => { onClose(); onEdit(event); }}
+                className="btn-primary text-sm flex items-center gap-1.5">
+                <FiEdit2 size={14} /> Modifier
+              </button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
-          {/* Options avancées */}
-          <div className="border rounded-lg overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="w-full p-4 bg-gray-50 flex items-center justify-between hover:bg-gray-100 transition-colors"
-            >
-              <span className="font-medium text-gray-700 flex items-center">
-                <FiActivity className="mr-2" /> Options avancées
-              </span>
-              {showAdvanced ? <FiChevronUp /> : <FiChevronDown />}
+// ─── Create / Edit Modal ──────────────────────────────────────────────────────
+
+const EventModal = ({ isOpen, onClose, event, onSave }) => {
+  const today = new Date().toISOString().split('T')[0];
+  const emptyForm = {
+    name: '', description: '', type: 'regular', priority: 'medium',
+    color: '#3B82F6', location: '', latitude: '', longitude: '', geoRadius: 100,
+    startDate: today, endDate: today,
+    checkInTime: '08:00', checkOutTime: '18:00',
+    lateThreshold: 15, requiredAgents: 1,
+    recurrenceType: 'none', recurrenceEndDate: '',
+    notes: '', contactPhone: '', contactName: '',
+    directorId: '', directorName: '', directorEmail: '',
+    phase1Enabled: false, phase1StartDate: '', phase1EndDate: '',
+    phase1StartTime: '', phase1EndTime: '', phase1ResponsibleId: '', phase1Instructions: '',
+    phase2Enabled: false, phase2StartDate: '', phase2EndDate: '',
+    phase2StartTime: '', phase2EndTime: '', phase2ResponsibleId: '', phase2Instructions: '',
+  };
+
+  const [formData, setFormData] = useState(emptyForm);
+  const [loading,  setLoading]  = useState(false);
+  const [activeTab, setActiveTab] = useState('basic');
+  const [admins, setAdmins] = useState([]);
+  const [errors, setErrors] = useState({});
+
+  useEffect(() => {
+    if (isOpen) {
+      usersAPI.getAll({ role: 'admin,supervisor', limit: 100 })
+        .then(r => setAdmins(r?.data?.data?.users || []))
+        .catch(() => setAdmins([]));
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (event) {
+      setFormData({
+        ...emptyForm,
+        ...event,
+        startDate:        event.startDate?.split('T')[0] || today,
+        endDate:          event.endDate?.split('T')[0]   || today,
+        priority:         event.priority || 'medium',
+        color:            event.color || '#3B82F6',
+        recurrenceType:   event.recurrenceType || 'none',
+        recurrenceEndDate: event.recurrenceEndDate?.split('T')[0] || '',
+        contactPhone:     event.contactPhone || '',
+        contactName:      event.contactName  || '',
+      });
+    } else {
+      setFormData(emptyForm);
+    }
+    setActiveTab('basic');
+    setErrors({});
+  }, [event, isOpen]);
+
+  const set = (key, val) => setFormData(p => ({ ...p, [key]: val }));
+
+  const validate = () => {
+    const e = {};
+    if (!formData.name.trim())     e.name = 'Le nom est requis';
+    if (!formData.location.trim()) e.location = "L'adresse est requise";
+    if (!formData.startDate)       e.startDate = 'La date de début est requise';
+    if (!formData.endDate)         e.endDate = 'La date de fin est requise';
+    if (formData.endDate < formData.startDate) e.endDate = 'La date de fin doit être après le début';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validate()) { setActiveTab('basic'); return; }
+    setLoading(true);
+    try {
+      if (event) {
+        await eventsAPI.update(event.id, formData);
+        toast.success('Événement mis à jour ✓');
+      } else {
+        await eventsAPI.create(formData);
+        toast.success('Événement créé ✓');
+      }
+      onSave();
+      onClose();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Erreur lors de l\'enregistrement');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  const TABS = [
+    { id: 'basic',    label: 'Infos de base',   icon: FiInfo },
+    { id: 'location', label: 'Localisation',    icon: FiMapPin },
+    { id: 'schedule', label: 'Dates & Horaires',icon: FiCalendar },
+    { id: 'phases',   label: 'Phases',          icon: FiActivity },
+    { id: 'advanced', label: 'Avancé',          icon: FiZap },
+  ];
+
+  const selectedDirector = admins.find(a => a.id === formData.directorId || a.id === parseInt(formData.directorId));
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[94vh] flex flex-col shadow-2xl">
+
+        {/* Header */}
+        <div className="p-5 border-b flex items-center justify-between flex-shrink-0 rounded-t-2xl"
+          style={{ backgroundColor: formData.color + '15', borderColor: formData.color + '30' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-1 h-12 rounded-full" style={{ backgroundColor: formData.color }} />
+            <div>
+              <h2 className="text-lg font-bold text-gray-800">
+                {event ? 'Modifier l\'événement' : 'Nouvel événement'}
+              </h2>
+              <p className="text-sm text-gray-500">{event ? event.name : 'Remplissez les informations ci-dessous'}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+            <FiX size={20} />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b bg-gray-50 flex-shrink-0 overflow-x-auto">
+          {TABS.map(({ id, label, icon: Icon }) => (
+            <button key={id} onClick={() => setActiveTab(id)}
+              className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors
+                ${activeTab === id
+                  ? 'border-current text-blue-600 bg-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}
+              style={activeTab === id ? { borderBottomColor: formData.color } : {}}>
+              <Icon size={14} /> {label}
+              {(id === 'basic' && (errors.name)) ||
+               (id === 'location' && errors.location) ||
+               (id === 'schedule' && (errors.startDate || errors.endDate))
+                ? <span className="w-2 h-2 rounded-full bg-red-500" /> : null}
             </button>
+          ))}
+        </div>
 
-            {showAdvanced && (
-              <div className="p-4 space-y-4 border-t">
-                {/* Récurrence */}
-                <div className="grid grid-cols-2 gap-4">
+        {/* Body */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
+          <div className="p-6 space-y-5">
+
+            {/* TAB: Infos de base */}
+            {activeTab === 'basic' && (
+              <>
+                <div>
+                  <label className="label">Nom de l'événement *</label>
+                  <input value={formData.name} onChange={e => set('name', e.target.value)}
+                    className={`input text-lg font-medium ${errors.name ? 'border-red-400' : ''}`}
+                    placeholder="Ex: Surveillance Centre Commercial" />
+                  {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
+                </div>
+
+                <div>
+                  <label className="label">Description</label>
+                  <textarea value={formData.description} onChange={e => set('description', e.target.value)}
+                    className="input resize-none" rows="3"
+                    placeholder="Décrivez l'événement, consignes spéciales..." />
+                  <p className="text-xs text-gray-400 mt-1">{(formData.description || '').length}/500</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="label flex items-center">
-                      <FiRepeat className="mr-2 text-purple-500" /> Récurrence
-                    </label>
-                    <select
-                      value={formData.recurrenceType}
-                      onChange={(e) => setFormData({ ...formData, recurrenceType: e.target.value })}
-                      className="input"
-                    >
-                      {RECURRENCE_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
+                    <label className="label">Type *</label>
+                    <select value={formData.type} onChange={e => set('type', e.target.value)} className="input">
+                      {TYPE_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.icon} {t.label}</option>)}
                     </select>
                   </div>
-                  {formData.recurrenceType !== 'none' && (
-                    <div>
-                      <label className="label">Fin de récurrence</label>
-                      <input
-                        type="date"
-                        value={formData.recurrenceEndDate}
-                        onChange={(e) => setFormData({ ...formData, recurrenceEndDate: e.target.value })}
-                        className="input"
-                        min={formData.endDate}
-                      />
+                  <div>
+                    <label className="label">Priorité</label>
+                    <select value={formData.priority} onChange={e => set('priority', e.target.value)}
+                      className={`input font-medium ${getPriorityInfo(formData.priority).color}`}>
+                      {PRIORITY_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Couleur</label>
+                    <div className="flex gap-2 flex-wrap pt-1">
+                      {EVENT_COLORS.map(c => (
+                        <button key={c.value} type="button" onClick={() => set('color', c.value)}
+                          className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${formData.color === c.value ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : ''}`}
+                          style={{ backgroundColor: c.value }} title={c.name} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Director */}
+                <div>
+                  <label className="label flex items-center gap-1.5"><FiShield size={13} /> Directeur événement</label>
+                  <select value={formData.directorId} onChange={e => {
+                    const a = admins.find(x => x.id === parseInt(e.target.value));
+                    setFormData(p => ({ ...p, directorId: e.target.value, directorName: a ? `${a.firstName} ${a.lastName}` : '', directorEmail: a?.email || '' }));
+                  }} className="input">
+                    <option value="">— Sélectionner un responsable —</option>
+                    {admins.map(a => (
+                      <option key={a.id} value={a.id}>{a.firstName} {a.lastName} ({a.role})</option>
+                    ))}
+                  </select>
+                  {selectedDirector && (
+                    <div className="mt-2 flex items-center gap-3 p-2.5 bg-blue-50 rounded-xl">
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold flex-shrink-0">
+                        {selectedDirector.firstName?.[0]?.toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">{selectedDirector.firstName} {selectedDirector.lastName}</p>
+                        <p className="text-xs text-gray-500">{selectedDirector.email}</p>
+                      </div>
                     </div>
                   )}
+                </div>
+              </>
+            )}
+
+            {/* TAB: Localisation */}
+            {activeTab === 'location' && (
+              <>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="space-y-4">
+                    <AddressAutocomplete
+                      value={formData.location}
+                      onChange={val => set('location', val)}
+                      onCoordinatesChange={coords => {
+                        if (coords) {
+                          setFormData(p => ({ ...p, latitude: coords.latitude, longitude: coords.longitude }));
+                          toast.success('Coordonnées GPS détectées ✓');
+                        }
+                      }}
+                      label="Adresse *"
+                      placeholder="Rechercher une adresse..."
+                      required
+                      initialCoordinates={formData.latitude && formData.longitude
+                        ? { lat: parseFloat(formData.latitude), lng: parseFloat(formData.longitude) }
+                        : null}
+                    />
+                    {errors.location && <p className="text-red-500 text-xs">{errors.location}</p>}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="label text-xs">Latitude {formData.latitude && <FiCheck className="inline text-green-500" size={10} />}</label>
+                        <input value={formData.latitude} onChange={e => set('latitude', e.target.value)}
+                          className={`input text-sm ${formData.latitude ? 'bg-green-50 border-green-300' : ''}`} placeholder="Auto" />
+                      </div>
+                      <div>
+                        <label className="label text-xs">Longitude {formData.longitude && <FiCheck className="inline text-green-500" size={10} />}</label>
+                        <input value={formData.longitude} onChange={e => set('longitude', e.target.value)}
+                          className={`input text-sm ${formData.longitude ? 'bg-green-50 border-green-300' : ''}`} placeholder="Auto" />
+                      </div>
+                      <div>
+                        <label className="label text-xs">Rayon (m)</label>
+                        <input type="number" value={formData.geoRadius}
+                          onChange={e => set('geoRadius', parseInt(e.target.value) || 100)}
+                          className="input text-sm" min="10" max="2000" />
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <MiniMap latitude={formData.latitude} longitude={formData.longitude}
+                      geoRadius={formData.geoRadius} height="220px" draggable={true}
+                      onPositionChange={coords => setFormData(p => ({
+                        ...p,
+                        latitude: coords.latitude.toFixed(6),
+                        longitude: coords.longitude.toFixed(6),
+                      }))} />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* TAB: Dates & Horaires */}
+            {activeTab === 'schedule' && (
+              <>
+                <div className="p-4 bg-blue-50 rounded-xl space-y-4 border border-blue-100">
+                  <h3 className="text-sm font-bold text-blue-800 flex items-center gap-2">
+                    <FiCalendar /> Phase 3 — Pointage (obligatoire)
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <label className="label">Date début *</label>
+                      <input type="date" value={formData.startDate}
+                        onChange={e => set('startDate', e.target.value)}
+                        className={`input ${errors.startDate ? 'border-red-400' : ''}`} required />
+                      {errors.startDate && <p className="text-red-400 text-xs mt-1">{errors.startDate}</p>}
+                    </div>
+                    <div>
+                      <label className="label">Date fin *</label>
+                      <input type="date" value={formData.endDate}
+                        onChange={e => set('endDate', e.target.value)}
+                        className={`input ${errors.endDate ? 'border-red-400' : ''}`}
+                        min={formData.startDate} required />
+                      {errors.endDate && <p className="text-red-400 text-xs mt-1">{errors.endDate}</p>}
+                    </div>
+                    <div>
+                      <label className="label">Heure arrivée *</label>
+                      <input type="time" value={formData.checkInTime}
+                        onChange={e => set('checkInTime', e.target.value)} className="input" required />
+                    </div>
+                    <div>
+                      <label className="label">Heure départ *</label>
+                      <input type="time" value={formData.checkOutTime}
+                        onChange={e => set('checkOutTime', e.target.value)} className="input" required />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="label">Tolérance retard (min)</label>
+                      <div className="flex items-center gap-3">
+                        <input type="range" min="0" max="60" value={formData.lateThreshold}
+                          onChange={e => set('lateThreshold', parseInt(e.target.value))} className="flex-1" />
+                        <span className="w-12 text-center font-bold text-gray-700 bg-gray-100 rounded py-1 text-sm">
+                          {formData.lateThreshold}m
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="label">Fenêtre check-in (min avant)</label>
+                      <div className="flex items-center gap-3">
+                        <input type="range" min="0" max="60" value={formData.checkInWindow || 30}
+                          onChange={e => set('checkInWindow', parseInt(e.target.value))} className="flex-1" />
+                        <span className="w-12 text-center font-bold text-gray-700 bg-gray-100 rounded py-1 text-sm">
+                          {formData.checkInWindow || 30}m
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="label">Agents requis *</label>
+                    <div className="flex items-center gap-3">
+                      <button type="button"
+                        onClick={() => set('requiredAgents', Math.max(1, formData.requiredAgents - 1))}
+                        className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-gray-700 hover:bg-gray-300 font-bold">−</button>
+                      <span className="text-2xl font-extrabold text-gray-800 w-12 text-center">{formData.requiredAgents}</span>
+                      <button type="button"
+                        onClick={() => set('requiredAgents', formData.requiredAgents + 1)}
+                        className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white hover:bg-blue-600 font-bold">+</button>
+                      <FiUsers className="text-gray-400" />
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* TAB: Phases */}
+            {activeTab === 'phases' && (
+              <>
+                {/* Phase 1 */}
+                <div className="border rounded-xl overflow-hidden">
+                  <div className="flex items-center justify-between p-3 bg-blue-50 border-b border-blue-100">
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-600">🛠️</span>
+                      <span className="font-semibold text-blue-800 text-sm">Phase 1 — Préparation</span>
+                      <span className="text-xs text-blue-500 bg-blue-100 px-2 py-0.5 rounded-full">Optionnel</span>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <div className={`w-10 h-5 rounded-full transition-colors relative ${formData.phase1Enabled ? 'bg-blue-500' : 'bg-gray-300'}`}>
+                        <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform ${formData.phase1Enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                      </div>
+                      <input type="checkbox" checked={formData.phase1Enabled}
+                        onChange={e => set('phase1Enabled', e.target.checked)} className="sr-only" />
+                    </label>
+                  </div>
+                  {formData.phase1Enabled && (
+                    <div className="p-4 space-y-3">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div><label className="label text-xs">Date début</label>
+                          <input type="date" value={formData.phase1StartDate} onChange={e => set('phase1StartDate', e.target.value)} className="input text-sm" /></div>
+                        <div><label className="label text-xs">Date fin</label>
+                          <input type="date" value={formData.phase1EndDate} onChange={e => set('phase1EndDate', e.target.value)} className="input text-sm" /></div>
+                        <div><label className="label text-xs">Heure début</label>
+                          <input type="time" value={formData.phase1StartTime} onChange={e => set('phase1StartTime', e.target.value)} className="input text-sm" /></div>
+                        <div><label className="label text-xs">Heure fin</label>
+                          <input type="time" value={formData.phase1EndTime} onChange={e => set('phase1EndTime', e.target.value)} className="input text-sm" /></div>
+                      </div>
+                      <div>
+                        <label className="label text-xs">Responsable</label>
+                        <select value={formData.phase1ResponsibleId} onChange={e => set('phase1ResponsibleId', e.target.value)} className="input text-sm">
+                          <option value="">— Sélectionner —</option>
+                          {admins.map(a => <option key={a.id} value={a.id}>{a.firstName} {a.lastName}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label text-xs">Instructions</label>
+                        <textarea value={formData.phase1Instructions} onChange={e => set('phase1Instructions', e.target.value)}
+                          className="input text-sm resize-none" rows="2" placeholder="Instructions phase préparation..." />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Phase 2 */}
+                <div className="border rounded-xl overflow-hidden">
+                  <div className="flex items-center justify-between p-3 bg-yellow-50 border-b border-yellow-100">
+                    <div className="flex items-center gap-2">
+                      <span>📦</span>
+                      <span className="font-semibold text-yellow-800 text-sm">Phase 2 — Mise en place</span>
+                      <span className="text-xs text-yellow-600 bg-yellow-100 px-2 py-0.5 rounded-full">Optionnel</span>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <div className={`w-10 h-5 rounded-full transition-colors relative ${formData.phase2Enabled ? 'bg-yellow-500' : 'bg-gray-300'}`}>
+                        <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform ${formData.phase2Enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                      </div>
+                      <input type="checkbox" checked={formData.phase2Enabled}
+                        onChange={e => set('phase2Enabled', e.target.checked)} className="sr-only" />
+                    </label>
+                  </div>
+                  {formData.phase2Enabled && (
+                    <div className="p-4 space-y-3">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div><label className="label text-xs">Date début</label>
+                          <input type="date" value={formData.phase2StartDate} onChange={e => set('phase2StartDate', e.target.value)} className="input text-sm" /></div>
+                        <div><label className="label text-xs">Date fin</label>
+                          <input type="date" value={formData.phase2EndDate} onChange={e => set('phase2EndDate', e.target.value)} className="input text-sm" /></div>
+                        <div><label className="label text-xs">Heure début</label>
+                          <input type="time" value={formData.phase2StartTime} onChange={e => set('phase2StartTime', e.target.value)} className="input text-sm" /></div>
+                        <div><label className="label text-xs">Heure fin</label>
+                          <input type="time" value={formData.phase2EndTime} onChange={e => set('phase2EndTime', e.target.value)} className="input text-sm" /></div>
+                      </div>
+                      <div>
+                        <label className="label text-xs">Responsable</label>
+                        <select value={formData.phase2ResponsibleId} onChange={e => set('phase2ResponsibleId', e.target.value)} className="input text-sm">
+                          <option value="">— Sélectionner —</option>
+                          {admins.map(a => <option key={a.id} value={a.id}>{a.firstName} {a.lastName}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label text-xs">Instructions</label>
+                        <textarea value={formData.phase2Instructions} onChange={e => set('phase2Instructions', e.target.value)}
+                          className="input text-sm resize-none" rows="2" placeholder="Instructions phase mise en place..." />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* TAB: Avancé */}
+            {activeTab === 'advanced' && (
+              <>
+                {/* Récurrence */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><FiRepeat size={14} /> Récurrence</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="label text-xs">Type</label>
+                      <select value={formData.recurrenceType} onChange={e => set('recurrenceType', e.target.value)} className="input">
+                        {RECURRENCE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                      </select>
+                    </div>
+                    {formData.recurrenceType !== 'none' && (
+                      <div>
+                        <label className="label text-xs">Fin de récurrence</label>
+                        <input type="date" value={formData.recurrenceEndDate}
+                          onChange={e => set('recurrenceEndDate', e.target.value)}
+                          className="input" min={formData.endDate} />
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Contact sur site */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="label">Nom du contact sur site</label>
-                    <input
-                      type="text"
-                      value={formData.contactName}
-                      onChange={(e) => setFormData({ ...formData, contactName: e.target.value })}
-                      className="input"
-                      placeholder="Ex: M. Dupont"
-                    />
-                  </div>
-                  <div>
-                    <label className="label">Téléphone du contact</label>
-                    <input
-                      type="tel"
-                      value={formData.contactPhone}
-                      onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })}
-                      className="input"
-                      placeholder="Ex: 06 12 34 56 78"
-                    />
+                <div className="space-y-3 border-t pt-4">
+                  <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><FiPhone size={14} /> Contact sur site</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="label text-xs">Nom du contact</label>
+                      <input value={formData.contactName} onChange={e => set('contactName', e.target.value)}
+                        className="input" placeholder="M. Dupont" />
+                    </div>
+                    <div>
+                      <label className="label text-xs">Téléphone</label>
+                      <input type="tel" value={formData.contactPhone} onChange={e => set('contactPhone', e.target.value)}
+                        className="input" placeholder="06 12 34 56 78" />
+                    </div>
                   </div>
                 </div>
 
                 {/* Notes */}
-                <div>
-                  <label className="label">Notes et instructions</label>
-                  <textarea
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    className="input resize-none"
-                    rows="3"
-                    placeholder="Instructions spéciales, codes d'accès, consignes de sécurité..."
-                  />
+                <div className="space-y-2 border-t pt-4">
+                  <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><FiBookmark size={14} /> Notes & Instructions</h3>
+                  <textarea value={formData.notes} onChange={e => set('notes', e.target.value)}
+                    className="input resize-none" rows="4"
+                    placeholder="Instructions spéciales, codes d'accès, consignes de sécurité..." />
                 </div>
-              </div>
+              </>
             )}
           </div>
 
-          {/* Boutons d'action */}
-          <div className="flex justify-end space-x-3 pt-4 border-t">
-            <button type="button" onClick={onClose} className="btn-secondary">
-              Annuler
-            </button>
-            <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
-              {loading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Enregistrement...
-                </>
-              ) : (
-                <>
-                  <FiCheck /> {event ? 'Mettre à jour' : 'Créer l\'événement'}
-                </>
+          {/* Footer */}
+          <div className="px-6 pb-6 flex justify-between items-center gap-3 border-t pt-4 flex-shrink-0">
+            <div className="flex gap-2">
+              {TABS.findIndex(t => t.id === activeTab) > 0 && (
+                <button type="button"
+                  onClick={() => setActiveTab(TABS[TABS.findIndex(t => t.id === activeTab) - 1].id)}
+                  className="btn-secondary text-sm">← Précédent</button>
               )}
-            </button>
+              {TABS.findIndex(t => t.id === activeTab) < TABS.length - 1 && (
+                <button type="button"
+                  onClick={() => setActiveTab(TABS[TABS.findIndex(t => t.id === activeTab) + 1].id)}
+                  className="btn-secondary text-sm">Suivant →</button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={onClose} className="btn-secondary">Annuler</button>
+              <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
+                {loading
+                  ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Enregistrement...</>
+                  : <><FiCheck /> {event ? 'Mettre à jour' : 'Créer l\'événement'}</>
+                }
+              </button>
+            </div>
           </div>
         </form>
       </div>
@@ -1397,721 +1186,540 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
   );
 };
 
-// ─── Phase helper (pure, no hooks) ──────────────────────────────────────────
-const PHASE_INFO = {
-  preparation: { label: 'Préparation', icon: '🛠️', bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-300' },
-  setup:       { label: 'Mise en place', icon: '📦', bg: 'bg-yellow-100', text: 'text-yellow-800', border: 'border-yellow-300' },
-  execution:   { label: 'Pointage', icon: '📍', bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-300' },
-  upcoming:    { label: 'À venir', icon: '🕐', bg: 'bg-gray-100', text: 'text-gray-600', border: 'border-gray-200' },
-  done:        { label: 'Terminé', icon: '✅', bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200' },
-};
+// ─── Filters Panel ────────────────────────────────────────────────────────────
 
-function combineDateTime(dateStr, timeStr) {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (!d || isNaN(d)) return null;
-  if (timeStr) {
-    const [h, m] = timeStr.split(':').map(Number);
-    d.setHours(h || 0, m || 0, 0, 0);
-  } else {
-    d.setHours(0, 0, 0, 0);
-  }
-  return d;
-}
+const FiltersPanel = ({ filters, onChange, onClear, onApply, onClose }) => {
+  const [local, setLocal] = useState(filters);
+  const set = (k, v) => setLocal(p => ({ ...p, [k]: v }));
 
-function getCurrentPhase(event, now = new Date()) {
-  // Phase 1 – Préparation
-  const prepStart = combineDateTime(event.preparationStartDate, event.preparationStartTime);
-  const prepEnd   = combineDateTime(event.preparationEndDate,   event.preparationEndTime);
-  // Phase 2 – Mise en place
-  const setupStart = combineDateTime(event.setupStartDate, event.setupStartTime);
-  const setupEnd   = combineDateTime(event.setupEndDate,   event.setupEndTime);
-  // Phase 3 – Exécution (always present if event has startDate)
-  const execStart = combineDateTime(event.startDate, event.checkInTime);
-  const execEnd   = combineDateTime(event.endDate,   event.checkOutTime);
-
-  if (!execStart) return null;
-
-  // Before anything
-  const earliest = prepStart || setupStart || execStart;
-  if (now < earliest) return 'upcoming';
-
-  // Execution phase (check first so even without prep/setup it shows)
-  if (execStart && execEnd && now >= execStart && now <= execEnd) return 'execution';
-  if (execStart && !execEnd && now >= execStart) return 'execution';
-
-  // Mise en place
-  if (setupStart && setupEnd && now >= setupStart && now <= setupEnd) return 'setup';
-  if (setupStart && !setupEnd && now >= setupStart) return 'setup';
-
-  // Préparation
-  if (prepStart && prepEnd && now >= prepStart && now <= prepEnd) return 'preparation';
-  if (prepStart && !prepEnd && now >= prepStart) return 'preparation';
-
-  // Between phases — show next upcoming phase
-  if (prepEnd && now < (setupStart || execStart)) return 'preparation'; // just ended, still relevant
-  if (setupEnd && now < execStart) return 'setup';
-
-  // After execution end
-  if (execEnd && now > execEnd) return 'done';
-
-  return 'upcoming';
-}
-
-const PhaseBadge = ({ event, now }) => {
-  const phase = getCurrentPhase(event, now);
-  if (!phase) return null;
-  const info = PHASE_INFO[phase];
-  if (!info) return null;
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${info.bg} ${info.text} ${info.border}`}>
-      <span>{info.icon}</span>
-      {info.label}
-    </span>
+    <div className="bg-white rounded-2xl border shadow-xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-bold text-gray-800 flex items-center gap-2"><FiFilter size={15} /> Filtres avancés</h3>
+        <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-full"><FiX size={16} /></button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+        <div>
+          <label className="label text-xs">Statut</label>
+          <select value={local.status} onChange={e => set('status', e.target.value)} className="input">
+            <option value="">Tous les statuts</option>
+            {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label text-xs">Type</label>
+          <select value={local.type} onChange={e => set('type', e.target.value)} className="input">
+            <option value="">Tous les types</option>
+            {TYPE_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label text-xs">Priorité</label>
+          <select value={local.priority} onChange={e => set('priority', e.target.value)} className="input">
+            <option value="">Toutes priorités</option>
+            {PRIORITY_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label text-xs">Période</label>
+          <select value={local.dateRange} onChange={e => set('dateRange', e.target.value)} className="input">
+            <option value="">Toutes les dates</option>
+            <option value="today">Aujourd'hui</option>
+            <option value="tomorrow">Demain</option>
+            <option value="week">Cette semaine</option>
+            <option value="month">Ce mois</option>
+            <option value="custom">Personnalisé</option>
+          </select>
+        </div>
+        {local.dateRange === 'custom' && (
+          <>
+            <div>
+              <label className="label text-xs">Date début</label>
+              <input type="date" value={local.customStart} onChange={e => set('customStart', e.target.value)} className="input" />
+            </div>
+            <div>
+              <label className="label text-xs">Date fin</label>
+              <input type="date" value={local.customEnd} onChange={e => set('customEnd', e.target.value)} className="input" />
+            </div>
+          </>
+        )}
+        <div>
+          <label className="label text-xs">Agents manquants</label>
+          <select value={local.missingAgents} onChange={e => set('missingAgents', e.target.value)} className="input">
+            <option value="">Tous</option>
+            <option value="yes">Avec agents manquants</option>
+            <option value="no">Complets uniquement</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="flex justify-between items-center pt-2 border-t">
+        <button onClick={() => { setLocal({ status: '', type: '', priority: '', dateRange: '', customStart: '', customEnd: '', missingAgents: '' }); onClear(); }}
+          className="text-sm text-gray-500 hover:text-red-600 flex items-center gap-1">
+          <FiX size={13} /> Effacer tout
+        </button>
+        <button onClick={() => { onApply(local); onClose(); }}
+          className="btn-primary text-sm flex items-center gap-1.5">
+          <FiCheck size={13} /> Appliquer
+        </button>
+      </div>
+    </div>
   );
 };
 
-const Events = () => {
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState(null);
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' ou 'list'
-  const [showFilters, setShowFilters] = useState(false);
-  const [now, setNow] = useState(new Date());
+// ─── List View ────────────────────────────────────────────────────────────────
 
-  // Refresh phase every 60 seconds for real-time accuracy
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(timer);
+const EventListRow = ({ event, onView, onEdit, onDelete, onDuplicate }) => {
+  const agents = agentCompleteness(event);
+  const phase  = computePhase(event);
+
+  return (
+    <tr className="hover:bg-gray-50 cursor-pointer group transition-colors" onClick={() => onView(event)}>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          <div className="w-1 h-10 rounded-full flex-shrink-0" style={{ backgroundColor: event.color || '#3B82F6' }} />
+          <div className="min-w-0">
+            <p className="font-semibold text-gray-900 text-sm truncate">{event.name}</p>
+            <p className="text-xs text-gray-500 truncate">{TYPE_OPTIONS.find(t => t.value === event.type)?.icon} {event.type}</p>
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-3 hidden md:table-cell">
+        <div className="flex items-center gap-1.5 text-sm text-gray-600 max-w-[180px]">
+          <FiMapPin size={12} className={event.latitude && event.longitude ? 'text-green-500' : 'text-gray-300'} />
+          <span className="truncate">{event.location}</span>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+        {format(new Date(event.startDate), 'dd MMM yyyy', { locale: fr })}
+      </td>
+      <td className="px-4 py-3 text-sm text-gray-600 hidden lg:table-cell whitespace-nowrap">
+        {event.checkInTime} — {event.checkOutTime}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-1.5">
+          <span className={`text-sm font-bold ${agents.color}`}>{event.assignedAgentsCount || 0}/{event.requiredAgents}</span>
+          <span className="text-sm">{agents.icon}</span>
+        </div>
+      </td>
+      <td className="px-4 py-3 hidden xl:table-cell">
+        {phase && <PhaseBadge event={event} />}
+      </td>
+      <td className="px-4 py-3">
+        <StatusBadge status={event.status} />
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={e => { e.stopPropagation(); onView(event); }}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50" title="Voir">
+            <FiEye size={14} />
+          </button>
+          <button onClick={e => { e.stopPropagation(); onEdit(event); }}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50" title="Modifier">
+            <FiEdit2 size={14} />
+          </button>
+          <button onClick={e => { e.stopPropagation(); onDuplicate(event); }}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-purple-600 hover:bg-purple-50" title="Dupliquer">
+            <FiCopy size={14} />
+          </button>
+          <button onClick={e => { e.stopPropagation(); onDelete(event.id); }}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50" title="Supprimer">
+            <FiTrash2 size={14} />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+};
+
+// ─── Main Events Page ─────────────────────────────────────────────────────────
+
+const Events = () => {
+  const navigate = useNavigate();
+  const [events,         setEvents]         = useState([]);
+  const [loading,        setLoading]        = useState(true);
+  const [search,         setSearch]         = useState('');
+  const [filters,        setFilters]        = useState({
+    status: '', type: '', priority: '', dateRange: '',
+    customStart: '', customEnd: '', missingAgents: '',
+  });
+  const [showFilters,    setShowFilters]    = useState(false);
+  const [viewMode,       setViewMode]       = useState('grid');
+  const [modalOpen,      setModalOpen]      = useState(false);
+  const [detailsOpen,    setDetailsOpen]    = useState(false);
+  const [selectedEvent,  setSelectedEvent]  = useState(null);
+  const [lastRefresh,    setLastRefresh]    = useState(null);
+
+  const searchDebounce = useRef(null);
+  const autoRefresh    = useRef(null);
+
+  // ── Fetch ──
+
+  const buildParams = useCallback((currentSearch, currentFilters) => {
+    const params = {};
+    if (currentSearch)         params.search   = currentSearch;
+    if (currentFilters.status) params.status   = currentFilters.status;
+    if (currentFilters.type)   params.type     = currentFilters.type;
+    if (currentFilters.priority) params.priority = currentFilters.priority;
+
+    const now   = new Date();
+    switch (currentFilters.dateRange) {
+      case 'today':
+        params.startDate = format(startOfDay(now), 'yyyy-MM-dd');
+        params.endDate   = format(endOfDay(now),   'yyyy-MM-dd');
+        break;
+      case 'tomorrow': {
+        const tom = addDays(now, 1);
+        params.startDate = format(startOfDay(tom), 'yyyy-MM-dd');
+        params.endDate   = format(endOfDay(tom),   'yyyy-MM-dd');
+        break;
+      }
+      case 'week':
+        params.startDate = format(startOfWeek(now, { locale: fr }), 'yyyy-MM-dd');
+        params.endDate   = format(endOfWeek(now,   { locale: fr }), 'yyyy-MM-dd');
+        break;
+      case 'month':
+        params.startDate = format(startOfMonth(now), 'yyyy-MM-dd');
+        params.endDate   = format(endOfMonth(now),   'yyyy-MM-dd');
+        break;
+      case 'custom':
+        if (currentFilters.customStart) params.startDate = currentFilters.customStart;
+        if (currentFilters.customEnd)   params.endDate   = currentFilters.customEnd;
+        break;
+      default: break;
+    }
+    return params;
   }, []);
 
-  useEffect(() => {
-    fetchEvents();
-  }, [search, statusFilter, typeFilter, priorityFilter, dateFilter]);
-
-  const fetchEvents = async () => {
+  const fetchEvents = useCallback(async (s = search, f = filters) => {
     try {
       setLoading(true);
-      const params = {
-        search: search || undefined,
-        status: statusFilter || undefined,
-        type: typeFilter || undefined,
-        priority: priorityFilter || undefined,
-      };
+      const params = buildParams(s, f);
+      const res    = await eventsAPI.getAll(params);
+      let data     = res?.data?.data?.events || [];
 
-      // Filtre par date
-      if (dateFilter === 'today') {
-        params.startDate = new Date().toISOString().split('T')[0];
-        params.endDate = new Date().toISOString().split('T')[0];
-      } else if (dateFilter === 'week') {
-        const today = new Date();
-        const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-        params.startDate = today.toISOString().split('T')[0];
-        params.endDate = nextWeek.toISOString().split('T')[0];
-      } else if (dateFilter === 'month') {
-        const today = new Date();
-        const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
-        params.startDate = today.toISOString().split('T')[0];
-        params.endDate = nextMonth.toISOString().split('T')[0];
-      }
+      // Client-side filter: missing agents
+      if (f.missingAgents === 'yes') data = data.filter(e => (e.assignedAgentsCount || 0) < e.requiredAgents);
+      if (f.missingAgents === 'no')  data = data.filter(e => (e.assignedAgentsCount || 0) >= e.requiredAgents);
 
-      const response = await eventsAPI.getAll(params);
-      console.log('📅 Events - API Response:', response.data);
-      
-      // CORRECTION: API retourne {data: {events: [...], pagination}}
-      const eventsData = response.data?.data?.events || response.data?.events || response.data?.data || [];
-      const eventsArray = Array.isArray(eventsData) ? eventsData : [];
-      
-      console.log('📅 Events - Événements chargés:', eventsArray.length);
-      setEvents(eventsArray);
-    } catch (error) {
-      console.error('❌ Erreur chargement événements:', error);
-      if (error.response?.status === 401 || error.response?.status === 403) {
-        toast.error('Non autorisé: Vous devez être connecté');
-      } else {
-        toast.error(`Erreur: ${error.response?.data?.message || 'Erreur lors du chargement des événements'}`);
-      }
-      setEvents([]);
+      setEvents(data);
+      setLastRefresh(new Date());
+    } catch {
+      toast.error('Erreur lors du chargement des événements');
     } finally {
       setLoading(false);
     }
+  }, [search, filters, buildParams]);
+
+  // Debounced search
+  const handleSearchChange = (val) => {
+    setSearch(val);
+    clearTimeout(searchDebounce.current);
+    searchDebounce.current = setTimeout(() => fetchEvents(val, filters), 300);
   };
 
+  // Auto-refresh every 30s
+  useEffect(() => {
+    fetchEvents();
+    autoRefresh.current = setInterval(() => fetchEvents(), 30000);
+    return () => {
+      clearInterval(autoRefresh.current);
+      clearTimeout(searchDebounce.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    fetchEvents(search, filters);
+  }, [filters]);
+
+  // ── Actions ──
+
   const handleDelete = async (id) => {
-    if (!window.confirm('Voulez-vous vraiment supprimer cet événement ? Cette action est irréversible.')) return;
+    if (!window.confirm('Supprimer cet événement ? Cette action est irréversible.')) return;
     try {
       await eventsAPI.delete(id);
-      toast.success('Événement supprimé avec succès');
+      toast.success('Événement supprimé');
       fetchEvents();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Erreur lors de la suppression');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Erreur lors de la suppression');
     }
   };
 
   const handleDuplicate = (event) => {
-    const duplicatedEvent = {
+    setSelectedEvent({
       ...event,
       id: undefined,
       name: `${event.name} (copie)`,
       status: 'draft',
       startDate: new Date().toISOString().split('T')[0],
-      endDate: new Date().toISOString().split('T')[0],
-    };
-    setSelectedEvent(duplicatedEvent);
+      endDate:   new Date().toISOString().split('T')[0],
+    });
     setModalOpen(true);
   };
 
-  const handleEdit = (event) => {
-    setSelectedEvent(event);
-    setModalOpen(true);
-  };
-
-  const handleViewDetails = (event) => {
-    setSelectedEvent(event);
-    setDetailsModalOpen(true);
-  };
-
-  const getStatusBadge = (status) => {
-    const config = {
-      draft: { class: 'bg-gray-100 text-gray-700', label: 'Brouillon' },
-      scheduled: { class: 'bg-blue-100 text-blue-700', label: 'Planifié' },
-      active: { class: 'bg-green-100 text-green-700', label: 'Actif' },
-      completed: { class: 'bg-gray-100 text-gray-600', label: 'Terminé' },
-      cancelled: { class: 'bg-red-100 text-red-700', label: 'Annulé' }
-    };
-    const { class: className, label } = config[status] || config.draft;
-    return <span className={`px-2 py-1 rounded-full text-xs font-medium ${className}`}>{label}</span>;
-  };
-
-  const getPriorityBadge = (priority) => {
-    const info = PRIORITY_OPTIONS.find(p => p.value === priority) || PRIORITY_OPTIONS[1];
-    const Icon = info.icon;
-    return (
-      <span className={`flex items-center gap-1 text-xs ${info.color}`}>
-        <Icon size={12} />
-        {info.label}
-      </span>
-    );
-  };
-
-  const getTimeIndicator = (event) => {
-    const startDate = new Date(event.startDate);
-    if (isToday(startDate)) {
-      return <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">Aujourd'hui</span>;
-    }
-    if (isTomorrow(startDate)) {
-      return <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">Demain</span>;
-    }
-    if (isPast(new Date(event.endDate))) {
-      return <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">Passé</span>;
-    }
-    const days = differenceInDays(startDate, new Date());
-    if (days <= 7) {
-      return <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">Dans {days}j</span>;
-    }
-    return null;
+  const handleChronology = (event) => {
+    navigate(`/events/${event.id}/chronology`);
   };
 
   const clearFilters = () => {
-    setSearch('');
-    setStatusFilter('');
-    setTypeFilter('');
-    setPriorityFilter('');
-    setDateFilter('');
+    const empty = { status: '', type: '', priority: '', dateRange: '', customStart: '', customEnd: '', missingAgents: '' };
+    setFilters(empty);
   };
 
-  const hasActiveFilters = search || statusFilter || typeFilter || priorityFilter || dateFilter;
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const hasActiveFilters   = activeFilterCount > 0 || search;
 
-  // Stats rapides
-  const inProgressEvents = events.filter(e => e.status === 'active');
-  console.log('📅 Events - Événements EN COURS (status=active):', inProgressEvents.length, inProgressEvents);
-  console.log('📅 Events - Tous les événements:', events.length);
-  
-  const stats = {
-    total: events.length,
-    active: inProgressEvents.length,
-    scheduled: events.filter(e => e.status === 'scheduled').length,
-    today: events.filter(e => isToday(new Date(e.startDate))).length,
-  };
+  // ── Render ──
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Événements</h1>
-          <p className="text-gray-500 text-sm mt-1">
-            Gérez vos événements et missions de sécurité
+          <h1 className="text-2xl font-extrabold text-gray-900 flex items-center gap-2">
+            <FiShield className="text-blue-600" /> Événements & Missions
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Visualisez, planifiez et supervisez toutes vos missions de sécurité
           </p>
         </div>
         <button
           onClick={() => { setSelectedEvent(null); setModalOpen(true); }}
-          className="btn-primary flex items-center gap-2 self-start md:self-auto"
-        >
-          <FiPlus /> Nouvel événement
+          className="btn-primary flex items-center gap-2 self-start sm:self-auto whitespace-nowrap">
+          <FiPlus size={16} /> Nouvel événement
         </button>
       </div>
 
-      {/* Stats rapides */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-lg border shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Total</p>
-              <p className="text-2xl font-bold text-gray-800">{stats.total}</p>
-            </div>
-            <div className="p-3 bg-gray-100 rounded-full">
-              <FiCalendar className="text-gray-600" size={20} />
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-lg border shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Actifs</p>
-              <p className="text-2xl font-bold text-green-600">{stats.active}</p>
-            </div>
-            <div className="p-3 bg-green-100 rounded-full">
-              <FiActivity className="text-green-600" size={20} />
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-lg border shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Planifiés</p>
-              <p className="text-2xl font-bold text-blue-600">{stats.scheduled}</p>
-            </div>
-            <div className="p-3 bg-blue-100 rounded-full">
-              <FiClock className="text-blue-600" size={20} />
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-lg border shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Aujourd'hui</p>
-              <p className="text-2xl font-bold text-orange-600">{stats.today}</p>
-            </div>
-            <div className="p-3 bg-orange-100 rounded-full">
-              <FiTrendingUp className="text-orange-600" size={20} />
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Stats */}
+      <StatsRow events={events} loading={loading} onRefresh={() => fetchEvents()} lastRefresh={lastRefresh} />
 
-      {/* Filtres */}
-      <div className="card">
-        <div className="flex flex-wrap gap-4 items-center">
-          {/* Recherche */}
-          <div className="flex-1 min-w-[200px]">
+      {/* Search & Filters bar */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+        <div className="flex flex-wrap gap-3 items-center">
+          {/* Search */}
+          <div className="flex-1 min-w-[220px]">
             <div className="relative">
-              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
               <input
                 type="text"
-                placeholder="Rechercher un événement..."
+                placeholder="Rechercher par nom, lieu, responsable..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="input pl-10"
+                onChange={e => handleSearchChange(e.target.value)}
+                className="input pl-10 pr-10"
               />
+              {search && (
+                <button onClick={() => handleSearchChange('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  <FiX size={14} />
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Bouton filtres avancés */}
+          {/* Filter toggle */}
           <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`btn-secondary flex items-center gap-2 ${hasActiveFilters ? 'ring-2 ring-primary-500' : ''}`}
-          >
-            <FiFilter />
+            onClick={() => setShowFilters(p => !p)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl border font-medium text-sm transition-all
+              ${showFilters || activeFilterCount > 0
+                ? 'bg-blue-50 border-blue-300 text-blue-700'
+                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+            <FiFilter size={15} />
             Filtres
-            {hasActiveFilters && (
-              <span className="w-5 h-5 bg-primary-500 text-white text-xs rounded-full flex items-center justify-center">
-                {[statusFilter, typeFilter, priorityFilter, dateFilter].filter(Boolean).length}
+            {activeFilterCount > 0 && (
+              <span className="w-5 h-5 bg-blue-600 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                {activeFilterCount}
               </span>
             )}
           </button>
 
-          {/* Vue */}
-          <div className="flex border rounded-lg overflow-hidden">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-2 ${viewMode === 'grid' ? 'bg-primary-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
-              title="Vue grille"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-              </svg>
+          {/* Clear */}
+          {hasActiveFilters && (
+            <button onClick={() => { clearFilters(); setSearch(''); }}
+              className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 px-3 py-2 rounded-xl hover:bg-red-50 transition-colors">
+              <FiX size={13} /> Effacer
             </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-2 ${viewMode === 'list' ? 'bg-primary-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
-              title="Vue liste"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
+          )}
+
+          {/* View toggle */}
+          <div className="flex rounded-xl border border-gray-200 overflow-hidden ml-auto">
+            <button onClick={() => setViewMode('grid')}
+              className={`p-2.5 transition-colors ${viewMode === 'grid' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+              title="Vue grille">
+              <FiGrid size={16} />
+            </button>
+            <button onClick={() => setViewMode('list')}
+              className={`p-2.5 transition-colors ${viewMode === 'list' ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+              title="Vue liste">
+              <FiList size={16} />
             </button>
           </div>
         </div>
 
-        {/* Filtres avancés */}
+        {/* Filters panel */}
         {showFilters && (
-          <div className="mt-4 pt-4 border-t grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <label className="label text-xs">Statut</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="input"
-              >
-                <option value="">Tous</option>
-                <option value="draft">Brouillon</option>
-                <option value="scheduled">Planifié</option>
-                <option value="active">Actif</option>
-                <option value="completed">Terminé</option>
-                <option value="cancelled">Annulé</option>
-              </select>
-            </div>
-            <div>
-              <label className="label text-xs">Type</label>
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                className="input"
-              >
-                <option value="">Tous</option>
-                <option value="regular">Régulier</option>
-                <option value="special">Spécial</option>
-                <option value="emergency">Urgence</option>
-              </select>
-            </div>
-            <div>
-              <label className="label text-xs">Priorité</label>
-              <select
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
-                className="input"
-              >
-                <option value="">Toutes</option>
-                {PRIORITY_OPTIONS.map(p => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label text-xs">Période</label>
-              <select
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="input"
-              >
-                <option value="">Toutes</option>
-                <option value="today">Aujourd'hui</option>
-                <option value="week">Cette semaine</option>
-                <option value="month">Ce mois</option>
-              </select>
-            </div>
-            {hasActiveFilters && (
-              <div className="col-span-full">
-                <button
-                  onClick={clearFilters}
-                  className="text-sm text-primary-600 hover:text-primary-800 flex items-center gap-1"
-                >
-                  <FiX size={14} /> Effacer tous les filtres
-                </button>
-              </div>
+          <div className="border-t pt-3">
+            <FiltersPanel
+              filters={filters}
+              onChange={setFilters}
+              onClear={clearFilters}
+              onApply={setFilters}
+              onClose={() => setShowFilters(false)}
+            />
+          </div>
+        )}
+
+        {/* Active filter chips */}
+        {activeFilterCount > 0 && (
+          <div className="flex flex-wrap gap-2 pt-1">
+            {filters.status && (
+              <span className="flex items-center gap-1 text-xs px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full">
+                Statut: {STATUS_CONFIG[filters.status]?.label}
+                <button onClick={() => setFilters(p => ({ ...p, status: '' }))}><FiX size={11} /></button>
+              </span>
+            )}
+            {filters.type && (
+              <span className="flex items-center gap-1 text-xs px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full">
+                Type: {TYPE_OPTIONS.find(t => t.value === filters.type)?.label}
+                <button onClick={() => setFilters(p => ({ ...p, type: '' }))}><FiX size={11} /></button>
+              </span>
+            )}
+            {filters.priority && (
+              <span className="flex items-center gap-1 text-xs px-2.5 py-1 bg-orange-100 text-orange-700 rounded-full">
+                Priorité: {getPriorityInfo(filters.priority).label}
+                <button onClick={() => setFilters(p => ({ ...p, priority: '' }))}><FiX size={11} /></button>
+              </span>
+            )}
+            {filters.dateRange && (
+              <span className="flex items-center gap-1 text-xs px-2.5 py-1 bg-green-100 text-green-700 rounded-full">
+                Période: {filters.dateRange}
+                <button onClick={() => setFilters(p => ({ ...p, dateRange: '' }))}><FiX size={11} /></button>
+              </span>
+            )}
+            {filters.missingAgents && (
+              <span className="flex items-center gap-1 text-xs px-2.5 py-1 bg-red-100 text-red-700 rounded-full">
+                {filters.missingAgents === 'yes' ? '⚠️ Agents manquants' : '✅ Complets'}
+                <button onClick={() => setFilters(p => ({ ...p, missingAgents: '' }))}><FiX size={11} /></button>
+              </span>
             )}
           </div>
         )}
       </div>
 
-      {/* Events Grid/List */}
+      {/* Results summary */}
+      {!loading && (
+        <div className="flex items-center justify-between text-sm text-gray-500">
+          <span>
+            <strong className="text-gray-800">{events.length}</strong> événement{events.length !== 1 ? 's' : ''}
+            {hasActiveFilters ? ' trouvé(s)' : ' au total'}
+          </span>
+          {viewMode === 'grid' && events.length > 0 && (
+            <span>{Math.ceil(events.length / 3)} page{Math.ceil(events.length / 3) > 1 ? 's' : ''} estimée{Math.ceil(events.length / 3) > 1 ? 's' : ''}</span>
+          )}
+        </div>
+      )}
+
+      {/* Content */}
       {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="w-10 h-10 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3 animate-pulse">
+              <div className="h-1.5 bg-gray-200 rounded-full" />
+              <div className="h-4 bg-gray-200 rounded w-3/4" />
+              <div className="h-3 bg-gray-100 rounded w-1/2" />
+              <div className="h-3 bg-gray-100 rounded w-2/3" />
+              <div className="h-2 bg-gray-100 rounded-full mt-4" />
+            </div>
+          ))}
         </div>
       ) : events.length === 0 ? (
-        <div className="card text-center py-12">
-          <FiCalendar className="mx-auto text-gray-300 mb-4" size={48} />
-          <h3 className="text-lg font-medium text-gray-700 mb-2">Aucun événement trouvé</h3>
-          <p className="text-gray-500 mb-4">
-            {hasActiveFilters ? 'Essayez de modifier vos filtres' : 'Créez votre premier événement'}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm text-center py-16 px-6">
+          <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <FiCalendar className="text-gray-400" size={28} />
+          </div>
+          <h3 className="text-lg font-bold text-gray-700 mb-2">Aucun événement trouvé</h3>
+          <p className="text-gray-500 text-sm mb-6 max-w-sm mx-auto">
+            {hasActiveFilters
+              ? 'Modifiez vos filtres ou votre recherche pour afficher plus de résultats.'
+              : 'Commencez par créer votre première mission de sécurité.'}
           </p>
-          {!hasActiveFilters && (
-            <button
-              onClick={() => { setSelectedEvent(null); setModalOpen(true); }}
-              className="btn-primary inline-flex items-center gap-2"
-            >
+          {hasActiveFilters ? (
+            <button onClick={() => { clearFilters(); setSearch(''); }}
+              className="btn-secondary flex items-center gap-2 mx-auto">
+              <FiX /> Effacer les filtres
+            </button>
+          ) : (
+            <button onClick={() => { setSelectedEvent(null); setModalOpen(true); }}
+              className="btn-primary flex items-center gap-2 mx-auto">
               <FiPlus /> Créer un événement
             </button>
           )}
         </div>
       ) : viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {events.map((event) => (
-            <div
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {events.map(event => (
+            <EventCard
               key={event.id}
-              className="card hover:shadow-lg transition-all duration-200 overflow-hidden cursor-pointer group"
-              onClick={() => handleViewDetails(event)}
-            >
-              {/* Barre de couleur */}
-              <div
-                className="h-2 -mx-6 -mt-6 mb-4"
-                style={{ backgroundColor: event.color || '#3B82F6' }}
-              />
-
-              <div className="flex justify-between items-start mb-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <h3 className="font-semibold text-lg text-gray-900 truncate">{event.name}</h3>
-                    {getTimeIndicator(event)}
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-gray-500 capitalize">{event.type}</span>
-                    {getPriorityBadge(event.priority)}
-                    <PhaseBadge event={event} now={now} />
-                  </div>
-                </div>
-                {getStatusBadge(event.status)}
-              </div>
-
-              {event.description && (
-                <p className="text-sm text-gray-600 mb-3 line-clamp-2">{event.description}</p>
-              )}
-
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center text-gray-600">
-                  <FiMapPin className={`mr-2 flex-shrink-0 ${event.latitude && event.longitude ? 'text-green-500' : ''}`} />
-                  <span className="truncate">{event.location}</span>
-                  {event.latitude && event.longitude && (
-                    <span className="ml-2 px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded">
-                      GPS
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center text-gray-600">
-                  <FiCalendar className="mr-2" />
-                  {format(new Date(event.startDate), 'dd MMM yyyy', { locale: fr })}
-                  {event.startDate !== event.endDate && (
-                    <span className="text-gray-400 mx-1">→</span>
-                  )}
-                  {event.startDate !== event.endDate && format(new Date(event.endDate), 'dd MMM yyyy', { locale: fr })}
-                </div>
-                <div className="flex items-center text-gray-600">
-                  <FiClock className="mr-2" />
-                  {event.checkInTime} - {event.checkOutTime}
-                </div>
-                <div className="flex items-center">
-                  <FiUsers className="mr-2 text-gray-400" />
-                  <div className="flex items-center gap-1">
-                    <span className={`font-medium ${(event.assignedAgentsCount || 0) >= event.requiredAgents ? 'text-green-600' : 'text-orange-600'}`}>
-                      {event.assignedAgentsCount || 0}
-                    </span>
-                    <span className="text-gray-400">/</span>
-                    <span className="text-gray-600">{event.requiredAgents}</span>
-                    <span className="text-gray-500 text-xs ml-1">agents</span>
-                  </div>
-                  {(event.assignedAgentsCount || 0) >= event.requiredAgents ? (
-                    <FiCheckCircle className="ml-2 text-green-500" size={14} />
-                  ) : (
-                    <FiAlertCircle className="ml-2 text-orange-500" size={14} />
-                  )}
-                </div>
-              </div>
-
-              {/* Récurrence indicator */}
-              {event.recurrenceType && event.recurrenceType !== 'none' && (
-                <div className="mt-3 flex items-center text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded">
-                  <FiRepeat className="mr-1" size={12} />
-                  {RECURRENCE_OPTIONS.find(r => r.value === event.recurrenceType)?.label}
-                </div>
-              )}
-
-              {/* Phase progress indicator for active events */}
-              {event.status === 'active' && (() => {
-                const phase = getCurrentPhase(event, now);
-                if (!phase || phase === 'upcoming' || phase === 'done') return null;
-                const phases = [
-                  event.preparationStartDate ? 'preparation' : null,
-                  event.setupStartDate ? 'setup' : null,
-                  'execution',
-                ].filter(Boolean);
-                const total = phases.length;
-                const current = phases.indexOf(phase);
-                if (current < 0) return null;
-                const pct = Math.round(((current + 1) / total) * 100);
-                const info = PHASE_INFO[phase];
-                return (
-                  <div className="mt-3 pt-3 border-t">
-                    <div className="flex justify-between text-xs text-gray-500 mb-1">
-                      <span className="font-medium">Progression phases</span>
-                      <span className={`font-bold ${info.text}`}>{info.icon} {info.label}</span>
-                    </div>
-                    <div className="flex gap-1">
-                      {phases.map((p, i) => {
-                        const pi = PHASE_INFO[p];
-                        const active = p === phase;
-                        const done = i < current;
-                        return (
-                          <div key={p} className={`flex-1 h-1.5 rounded-full transition-all duration-300 ${done ? 'bg-gray-400' : active ? (p === 'preparation' ? 'bg-blue-500' : p === 'setup' ? 'bg-yellow-500' : 'bg-green-500') : 'bg-gray-200'}`} />
-                        );
-                      })}
-                    </div>
-                    <div className="flex gap-1 mt-1">
-                      {phases.map((p, i) => {
-                        const pi = PHASE_INFO[p];
-                        const active = p === phase;
-                        return (
-                          <div key={p} className={`flex-1 text-center text-xs ${active ? `font-semibold ${pi.text}` : 'text-gray-400'}`}>
-                            {pi.icon}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Actions */}
-              <div className="flex justify-end space-x-1 mt-4 pt-4 border-t opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleViewDetails(event); }}
-                  className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
-                  title="Voir les détails"
-                >
-                  <FiEye size={18} />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDuplicate(event); }}
-                  className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg"
-                  title="Dupliquer"
-                >
-                  <FiCopy size={18} />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleEdit(event); }}
-                  className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg"
-                  title="Modifier"
-                >
-                  <FiEdit2 size={18} />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDelete(event.id); }}
-                  className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                  title="Supprimer"
-                >
-                  <FiTrash2 size={18} />
-                </button>
-              </div>
-            </div>
+              event={event}
+              onView={e => { setSelectedEvent(e); setDetailsOpen(true); }}
+              onEdit={e => { setSelectedEvent(e); setModalOpen(true); }}
+              onDelete={handleDelete}
+              onDuplicate={handleDuplicate}
+              onChronology={handleChronology}
+            />
           ))}
         </div>
       ) : (
-        /* Vue Liste */
-        <div className="card overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Événement</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Lieu</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden lg:table-cell">Horaires</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agents</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phase</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {events.map((event) => (
-                <tr
-                  key={event.id}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => handleViewDetails(event)}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-3 h-10 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: event.color || '#3B82F6' }}
-                      />
-                      <div>
-                        <p className="font-medium text-gray-900">{event.name}</p>
-                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          <span className="text-xs text-gray-500">{event.type}</span>
-                          {getPriorityBadge(event.priority)}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 hidden md:table-cell">
-                    <span className="text-sm text-gray-600 truncate max-w-[200px] block">{event.location}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="text-sm">
-                      <p>{format(new Date(event.startDate), 'dd MMM', { locale: fr })}</p>
-                      {getTimeIndicator(event)}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 hidden lg:table-cell">
-                    <span className="text-sm text-gray-600">{event.checkInTime} - {event.checkOutTime}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`text-sm font-medium ${(event.assignedAgentsCount || 0) >= event.requiredAgents ? 'text-green-600' : 'text-orange-600'}`}>
-                      {event.assignedAgentsCount || 0}/{event.requiredAgents}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <PhaseBadge event={event} now={now} />
-                  </td>
-                  <td className="px-4 py-3">
-                    {getStatusBadge(event.status)}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-1">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleEdit(event); }}
-                        className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded"
-                      >
-                        <FiEdit2 size={16} />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(event.id); }}
-                        className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
-                      >
-                        <FiTrash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  {['Événement', 'Lieu', 'Date', 'Horaires', 'Agents', 'Phase', 'Statut', ''].map(h => (
+                    <th key={h} className={`px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider
+                      ${h === 'Lieu' ? 'hidden md:table-cell' : ''}
+                      ${h === 'Horaires' ? 'hidden lg:table-cell' : ''}
+                      ${h === 'Phase' ? 'hidden xl:table-cell' : ''}
+                      ${h === '' ? 'text-right' : ''}`}>
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {events.map(event => (
+                  <EventListRow
+                    key={event.id}
+                    event={event}
+                    onView={e => { setSelectedEvent(e); setDetailsOpen(true); }}
+                    onEdit={e => { setSelectedEvent(e); setModalOpen(true); }}
+                    onDelete={handleDelete}
+                    onDuplicate={handleDuplicate}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {/* Modals */}
       <EventModal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        event={selectedEvent}
+        onClose={() => { setModalOpen(false); setSelectedEvent(null); }}
+        event={selectedEvent?.id ? selectedEvent : null}
         onSave={fetchEvents}
       />
 
       <EventDetailsModal
-        isOpen={detailsModalOpen}
-        onClose={() => setDetailsModalOpen(false)}
+        isOpen={detailsOpen}
+        onClose={() => { setDetailsOpen(false); setSelectedEvent(null); }}
         event={selectedEvent}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        onDuplicate={handleDuplicate}
+        onEdit={e => { setDetailsOpen(false); setSelectedEvent(e); setModalOpen(true); }}
+        onDelete={id => { setDetailsOpen(false); handleDelete(id); }}
+        onDuplicate={e => { setDetailsOpen(false); handleDuplicate(e); }}
+        onChronology={e => { setDetailsOpen(false); handleChronology(e); }}
       />
     </div>
   );
