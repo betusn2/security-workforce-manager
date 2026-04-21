@@ -685,22 +685,137 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
     phase1Enabled: false, phase1StartDate: '', phase1EndDate: '',
     phase1StartTime: '', phase1EndTime: '', phase1ResponsibleId: '', phase1Instructions: '',
     phase2Enabled: false, phase2StartDate: '', phase2EndDate: '',
-    phase2StartTime: '', phase2EndTime: '', phase2ResponsibleId: '', phase2Instructions: '',
+    phase2StartTime: '', phase2EndTime: '', phase2ResponsibleId: '', phase2Instructions: '', phase2ZoneIds: [],
   };
 
   const [formData, setFormData] = useState(emptyForm);
   const [loading,  setLoading]  = useState(false);
   const [activeTab, setActiveTab] = useState('basic');
-  const [admins, setAdmins] = useState([]);
+  const [responsibleUsers, setResponsibleUsers] = useState([]);
+  const [eventZones, setEventZones] = useState([]);
+  const [zonesLoading, setZonesLoading] = useState(false);
   const [errors, setErrors] = useState({});
+
+  const normalizeUsers = useCallback((payload) => {
+    const rawUsers =
+      payload?.data?.data?.users ||
+      (Array.isArray(payload?.data?.data) ? payload.data.data : null) ||
+      payload?.data?.users ||
+      (Array.isArray(payload?.data) ? payload.data : null) ||
+      [];
+    if (!Array.isArray(rawUsers)) return [];
+
+    return rawUsers
+      .filter(user => user && user.id)
+      .sort((left, right) => {
+        const leftName = `${left.firstName || ''} ${left.lastName || ''}`.trim();
+        const rightName = `${right.firstName || ''} ${right.lastName || ''}`.trim();
+        return leftName.localeCompare(rightName, 'fr', { sensitivity: 'base' });
+      });
+  }, []);
+
+  const normalizeZones = useCallback((payload) => {
+    const rawZones = payload?.data?.data?.zones || payload?.data?.data || payload?.data?.zones || [];
+    return Array.isArray(rawZones) ? rawZones.filter(zone => zone && zone.id) : [];
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
-      usersAPI.getAll({ role: 'admin,supervisor', limit: 100 })
-        .then(r => setAdmins(r?.data?.data?.users || []))
-        .catch(() => setAdmins([]));
+      usersAPI.getAll({ limit: 9999 })
+        .then(response => {
+          const users = normalizeUsers(response);
+          setResponsibleUsers(users);
+        })
+        .catch(err => {
+          console.error('Erreur chargement utilisateurs pour le directeur:', err);
+          setResponsibleUsers([]);
+        });
     }
-  }, [isOpen]);
+  }, [isOpen, normalizeUsers]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (!event?.id) {
+      setEventZones([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadEventDetails = async () => {
+      setZonesLoading(true);
+      try {
+        const [eventResponse, zonesResponse] = await Promise.all([
+          eventsAPI.getById(event.id),
+          zonesAPI.getByEvent(event.id),
+        ]);
+
+        if (cancelled) return;
+
+        const fullEvent = eventResponse?.data?.data || event;
+        const selectedZoneIds = Array.isArray(fullEvent?.setupZonesConfirmed)
+          ? fullEvent.setupZonesConfirmed.map(String)
+          : [];
+
+        setEventZones(normalizeZones(zonesResponse));
+        setFormData(previous => ({
+          ...previous,
+          ...fullEvent,
+          startDate: fullEvent.startDate?.split('T')[0] || today,
+          endDate: fullEvent.endDate?.split('T')[0] || today,
+          priority: fullEvent.priority || 'medium',
+          color: fullEvent.color || '#3B82F6',
+          recurrenceType: fullEvent.recurrenceType || 'none',
+          recurrenceEndDate: fullEvent.recurrenceEndDate?.split('T')[0] || '',
+          contactPhone: fullEvent.contactPhone || '',
+          contactName: fullEvent.contactName || '',
+          directorId: fullEvent.supervisorId || fullEvent.directorId || '',
+          directorName: fullEvent.supervisor
+            ? `${fullEvent.supervisor.firstName || ''} ${fullEvent.supervisor.lastName || ''}`.trim()
+            : fullEvent.directorName || '',
+          directorEmail: fullEvent.supervisor?.email || fullEvent.directorEmail || '',
+          phase1Enabled: Boolean(
+            fullEvent.preparationStartDate || fullEvent.preparationEndDate ||
+            fullEvent.preparationStartTime || fullEvent.preparationEndTime ||
+            fullEvent.preparationResponsableId || fullEvent.preparationObservations
+          ),
+          phase1StartDate: fullEvent.preparationStartDate || '',
+          phase1EndDate: fullEvent.preparationEndDate || '',
+          phase1StartTime: fullEvent.preparationStartTime || '',
+          phase1EndTime: fullEvent.preparationEndTime || '',
+          phase1ResponsibleId: fullEvent.preparationResponsableId || '',
+          phase1Instructions: fullEvent.preparationObservations || '',
+          phase2Enabled: Boolean(
+            fullEvent.setupStartDate || fullEvent.setupEndDate ||
+            fullEvent.setupStartTime || fullEvent.setupEndTime ||
+            fullEvent.setupResponsableId || fullEvent.setupObservations || selectedZoneIds.length
+          ),
+          phase2StartDate: fullEvent.setupStartDate || '',
+          phase2EndDate: fullEvent.setupEndDate || '',
+          phase2StartTime: fullEvent.setupStartTime || '',
+          phase2EndTime: fullEvent.setupEndTime || '',
+          phase2ResponsibleId: fullEvent.setupResponsableId || '',
+          phase2Instructions: fullEvent.setupObservations || '',
+          phase2ZoneIds: selectedZoneIds,
+        }));
+      } catch {
+        if (!cancelled) {
+          setEventZones([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setZonesLoading(false);
+        }
+      }
+    };
+
+    loadEventDetails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [event, isOpen, normalizeZones, today]);
 
   useEffect(() => {
     if (event) {
@@ -715,9 +830,36 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
         recurrenceEndDate: event.recurrenceEndDate?.split('T')[0] || '',
         contactPhone:     event.contactPhone || '',
         contactName:      event.contactName  || '',
+        directorId:       event.supervisorId || event.directorId || '',
+        directorName:     event.supervisor ? `${event.supervisor.firstName || ''} ${event.supervisor.lastName || ''}`.trim() : (event.directorName || ''),
+        directorEmail:    event.supervisor?.email || event.directorEmail || '',
+        phase1Enabled: Boolean(
+          event.preparationStartDate || event.preparationEndDate ||
+          event.preparationStartTime || event.preparationEndTime ||
+          event.preparationResponsableId || event.preparationObservations
+        ),
+        phase1StartDate: event.preparationStartDate || '',
+        phase1EndDate: event.preparationEndDate || '',
+        phase1StartTime: event.preparationStartTime || '',
+        phase1EndTime: event.preparationEndTime || '',
+        phase1ResponsibleId: event.preparationResponsableId || '',
+        phase1Instructions: event.preparationObservations || '',
+        phase2Enabled: Boolean(
+          event.setupStartDate || event.setupEndDate ||
+          event.setupStartTime || event.setupEndTime ||
+          event.setupResponsableId || event.setupObservations || event.setupZonesConfirmed?.length
+        ),
+        phase2StartDate: event.setupStartDate || '',
+        phase2EndDate: event.setupEndDate || '',
+        phase2StartTime: event.setupStartTime || '',
+        phase2EndTime: event.setupEndTime || '',
+        phase2ResponsibleId: event.setupResponsableId || '',
+        phase2Instructions: event.setupObservations || '',
+        phase2ZoneIds: Array.isArray(event.setupZonesConfirmed) ? event.setupZonesConfirmed.map(String) : [],
       });
     } else {
       setFormData(emptyForm);
+      setEventZones([]);
     }
     setActiveTab('basic');
     setErrors({});
@@ -741,11 +883,48 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
     if (!validate()) { setActiveTab('basic'); return; }
     setLoading(true);
     try {
+      const payload = {
+        name: formData.name,
+        description: formData.description,
+        type: formData.type,
+        priority: formData.priority,
+        color: formData.color,
+        location: formData.location,
+        latitude: formData.latitude || null,
+        longitude: formData.longitude || null,
+        geoRadius: formData.geoRadius,
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        checkInTime: formData.checkInTime,
+        checkOutTime: formData.checkOutTime,
+        lateThreshold: formData.lateThreshold,
+        requiredAgents: formData.requiredAgents,
+        recurrenceType: formData.recurrenceType,
+        recurrenceEndDate: formData.recurrenceType !== 'none' ? (formData.recurrenceEndDate || null) : null,
+        notes: formData.notes,
+        contactPhone: formData.contactPhone,
+        contactName: formData.contactName,
+        supervisorId: formData.directorId || null,
+        preparationStartDate: formData.phase1Enabled ? (formData.phase1StartDate || null) : null,
+        preparationEndDate: formData.phase1Enabled ? (formData.phase1EndDate || null) : null,
+        preparationStartTime: formData.phase1Enabled ? (formData.phase1StartTime || null) : null,
+        preparationEndTime: formData.phase1Enabled ? (formData.phase1EndTime || null) : null,
+        preparationResponsableId: formData.phase1Enabled ? (formData.phase1ResponsibleId || null) : null,
+        preparationObservations: formData.phase1Enabled ? (formData.phase1Instructions || null) : null,
+        setupStartDate: formData.phase2Enabled ? (formData.phase2StartDate || null) : null,
+        setupEndDate: formData.phase2Enabled ? (formData.phase2EndDate || null) : null,
+        setupStartTime: formData.phase2Enabled ? (formData.phase2StartTime || null) : null,
+        setupEndTime: formData.phase2Enabled ? (formData.phase2EndTime || null) : null,
+        setupResponsableId: formData.phase2Enabled ? (formData.phase2ResponsibleId || null) : null,
+        setupObservations: formData.phase2Enabled ? (formData.phase2Instructions || null) : null,
+        setupZonesConfirmed: formData.phase2Enabled ? formData.phase2ZoneIds : [],
+      };
+
       if (event) {
-        await eventsAPI.update(event.id, formData);
+        await eventsAPI.update(event.id, payload);
         toast.success('Événement mis à jour ✓');
       } else {
-        await eventsAPI.create(formData);
+        await eventsAPI.create(payload);
         toast.success('Événement créé ✓');
       }
       onSave();
@@ -767,7 +946,7 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
     { id: 'advanced', label: 'Avancé',          icon: FiZap },
   ];
 
-  const selectedDirector = admins.find(a => a.id === formData.directorId || a.id === parseInt(formData.directorId));
+  const selectedDirector = responsibleUsers.find(user => String(user.id) === String(formData.directorId));
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
@@ -861,12 +1040,12 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
                 <div>
                   <label className="label flex items-center gap-1.5"><FiShield size={13} /> Directeur événement</label>
                   <select value={formData.directorId} onChange={e => {
-                    const a = admins.find(x => x.id === parseInt(e.target.value));
+                    const a = responsibleUsers.find(user => String(user.id) === String(e.target.value));
                     setFormData(p => ({ ...p, directorId: e.target.value, directorName: a ? `${a.firstName} ${a.lastName}` : '', directorEmail: a?.email || '' }));
                   }} className="input">
                     <option value="">— Sélectionner un responsable —</option>
-                    {admins.map(a => (
-                      <option key={a.id} value={a.id}>{a.firstName} {a.lastName} ({a.role})</option>
+                    {responsibleUsers.map(user => (
+                      <option key={user.id} value={user.id}>{user.firstName} {user.lastName} ({user.role})</option>
                     ))}
                   </select>
                   {selectedDirector && (
@@ -1046,7 +1225,7 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
                         <label className="label text-xs">Responsable</label>
                         <select value={formData.phase1ResponsibleId} onChange={e => set('phase1ResponsibleId', e.target.value)} className="input text-sm">
                           <option value="">— Sélectionner —</option>
-                          {admins.map(a => <option key={a.id} value={a.id}>{a.firstName} {a.lastName}</option>)}
+                          {responsibleUsers.map(user => <option key={user.id} value={user.id}>{user.firstName} {user.lastName} ({user.role})</option>)}
                         </select>
                       </div>
                       <div>
@@ -1087,11 +1266,62 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
                           <input type="time" value={formData.phase2EndTime} onChange={e => set('phase2EndTime', e.target.value)} className="input text-sm" /></div>
                       </div>
                       <div>
-                        <label className="label text-xs">Responsable</label>
+                        <label className="label text-xs">Responsable principal</label>
                         <select value={formData.phase2ResponsibleId} onChange={e => set('phase2ResponsibleId', e.target.value)} className="input text-sm">
                           <option value="">— Sélectionner —</option>
-                          {admins.map(a => <option key={a.id} value={a.id}>{a.firstName} {a.lastName}</option>)}
+                          {responsibleUsers.map(user => <option key={user.id} value={user.id}>{user.firstName} {user.lastName} ({user.role})</option>)}
                         </select>
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <label className="label text-xs mb-0">Zones concernées</label>
+                          {formData.phase2ZoneIds.length > 0 && (
+                            <span className="text-[11px] text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">
+                              {formData.phase2ZoneIds.length} zone(s) sélectionnée(s)
+                            </span>
+                          )}
+                        </div>
+                        {!event?.id ? (
+                          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                            Créez d'abord l'événement, puis rouvrez-le pour sélectionner plusieurs zones de mise en place.
+                          </div>
+                        ) : zonesLoading ? (
+                          <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                            Chargement des zones de l'événement...
+                          </div>
+                        ) : eventZones.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-700">
+                            Aucune zone liée à cet événement pour le moment.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {eventZones.map(zone => {
+                              const checked = formData.phase2ZoneIds.includes(String(zone.id));
+                              return (
+                                <label key={zone.id} className={`flex items-start gap-2 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${checked ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200 hover:border-gray-300 bg-white'}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) => {
+                                      const zoneId = String(zone.id);
+                                      setFormData(previous => ({
+                                        ...previous,
+                                        phase2ZoneIds: e.target.checked
+                                          ? [...previous.phase2ZoneIds, zoneId]
+                                          : previous.phase2ZoneIds.filter(id => id !== zoneId),
+                                      }));
+                                    }}
+                                    className="mt-0.5"
+                                  />
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium text-gray-800 truncate">{zone.name}</p>
+                                    {zone.description && <p className="text-xs text-gray-500 truncate">{zone.description}</p>}
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                       <div>
                         <label className="label text-xs">Instructions</label>
