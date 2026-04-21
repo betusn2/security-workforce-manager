@@ -363,7 +363,7 @@ function BroadcastPopupModal({ onClose, socket }) {
   useEffect(() => {
     const token = localStorage.getItem('accessToken') || localStorage.getItem('token') || localStorage.getItem('checkInToken');
     const socket = io(SOCKET_URL, {
-      transports: ['polling', 'websocket'],
+      transports: ['polling'],
       auth: { token }
     });
 

@@ -86,7 +86,7 @@ const EventDetails = () => {
     
     socketRef.current = io(BACKEND_URL, {
       auth: { token },
-      transports: ['polling', 'websocket']
+      transports: ['polling']
     });
 
     socketRef.current.on('connect', () => {

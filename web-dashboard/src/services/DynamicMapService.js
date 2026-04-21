@@ -28,7 +28,7 @@ class DynamicMapService {
     try {
       this.socket = io(SOCKET_URL, {
         path: '/socket.io/',
-        transports: ['polling', 'websocket'],
+        transports: ['polling'],
         reconnection: true,
         reconnectionDelay: this.reconnectDelay,
         reconnectionDelayMax: 5000,

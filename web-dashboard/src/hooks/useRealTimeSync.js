@@ -30,7 +30,7 @@ export const useRealTimeSync = (entity, onUpdate, user = null) => {
       console.log('🔌 Initialisation Socket.IO Real-Time Sync:', SOCKET_URL);
       
       globalSocket = io(SOCKET_URL, {
-        transports: ['polling', 'websocket'],
+        transports: ['polling'],
         reconnection: true,
         reconnectionAttempts: Infinity,
         reconnectionDelay: 1000,
