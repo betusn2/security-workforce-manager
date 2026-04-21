@@ -14,6 +14,9 @@ router.put('/:id/read', uuidParam(), validate, notificationController.markAsRead
 router.put('/mark-all-read', notificationController.markAllAsRead);
 router.delete('/:id', uuidParam(), validate, notificationController.deleteNotification);
 
+// Mobile push token registration
+router.post('/register-push-token', notificationController.registerPushToken);
+
 // Admin routes
 router.get('/', authorize('admin'), paginationQuery, validate, notificationController.getAllNotifications);
 router.get('/stats', authorize('admin'), notificationController.getNotificationStats);

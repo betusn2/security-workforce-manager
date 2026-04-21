@@ -9,6 +9,7 @@ const { logActivity } = require('../middlewares/activityLogger');
 const path = require('path');
 const fs = require('fs').promises;
 const { v4: uuidv4 } = require('uuid');
+const { sendExpoPush } = require('./notificationController');
 
 /**
  * Obtenir les conversations de l'utilisateur
@@ -319,6 +320,19 @@ exports.sendMessage = async (req, res) => {
       description: `Message envoye dans conversation ${conversationId}`,
       req
     });
+
+    // Send Expo push notification to recipient (handles background/screen-off)
+    if (recipientId) {
+      const recipient = await User.findByPk(recipientId, { attributes: ['expoPushToken', 'firstName', 'lastName'] });
+      if (recipient?.expoPushToken) {
+        const senderName = `${req.user.firstName} ${req.user.lastName}`;
+        await sendExpoPush(recipient.expoPushToken, {
+          title: isUrgent ? `🚨 Message urgent de ${senderName}` : `💬 ${senderName}`,
+          body: messageType === 'text' ? (content?.substring(0, 120) || 'Nouveau message') : '📎 Fichier reçu',
+          data: { conversationId, messageId: message.id, type: 'chat_message' },
+        });
+      }
+    }
 
     res.status(201).json({
       success: true,

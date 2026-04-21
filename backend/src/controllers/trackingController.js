@@ -174,7 +174,7 @@ exports.recordLocation = async (req, res) => {
           // Broadcast temps réel quand même (sans sauvegarder)
           const io = req.app.get('io');
           if (io) {
-            io.to('role:admin').to('role:supervisor').emit('agent:location', {
+            io.to('role:admin').to('role:supervisor').to('global:supervisors').emit('agent:location', {
               userId, eventId, latitude, longitude, accuracy, speed,
               isWithinGeofence, distanceFromEvent, batteryLevel, timestamp: new Date()
             });
@@ -268,9 +268,9 @@ exports.recordLocation = async (req, res) => {
       if (eventId) {
         io.to(`event-${eventId}`).emit('tracking:position_update', enrichedPositionData);
       }
-      io.to('role:admin').to('role:supervisor').emit('tracking:position_update', enrichedPositionData);
+      io.to('role:admin').to('role:supervisor').to('global:supervisors').emit('tracking:position_update', enrichedPositionData);
 
-      io.to(`role:admin`).to(`role:supervisor`).emit('agent:location', {
+      io.to('role:admin').to('role:supervisor').to('global:supervisors').emit('agent:location', {
         userId,
         eventId,
         latitude,
@@ -288,7 +288,7 @@ exports.recordLocation = async (req, res) => {
 
       // ── Alerte sortie de zone (événement dédié pour le dashboard) ──
       if (!isWithinGeofence) {
-        io.to(`role:admin`).to(`role:supervisor`).emit('agent:zone_exit', {
+        io.to('role:admin').to('role:supervisor').to('global:supervisors').emit('agent:zone_exit', {
           userId,
           eventId,
           latitude,
@@ -299,7 +299,7 @@ exports.recordLocation = async (req, res) => {
           severity: distanceFromEvent > 500 ? 'high' : 'medium',
         });
         // Format compatible ancien dashboard
-        io.to(`role:admin`).to(`role:supervisor`).emit('tracking:geofence_alert', {
+        io.to('role:admin').to('role:supervisor').to('global:supervisors').emit('tracking:geofence_alert', {
           type: 'geofence_exit',
           userId,
           eventId,
@@ -312,7 +312,7 @@ exports.recordLocation = async (req, res) => {
 
       // ── Alerte batterie faible ──
       if (batteryLevel !== null && batteryLevel <= 15) {
-        io.to(`role:admin`).to(`role:supervisor`).emit('agent:battery_low', {
+        io.to('role:admin').to('role:supervisor').to('global:supervisors').emit('agent:battery_low', {
           userId,
           eventId,
           batteryLevel,
@@ -320,7 +320,7 @@ exports.recordLocation = async (req, res) => {
           timestamp: new Date(),
         });
         // Format compatible ancien dashboard
-        io.to(`role:admin`).to(`role:supervisor`).emit('tracking:battery_alert', {
+        io.to('role:admin').to('role:supervisor').to('global:supervisors').emit('tracking:battery_alert', {
           userId,
           eventId,
           batteryLevel,

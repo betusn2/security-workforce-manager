@@ -492,6 +492,19 @@ const startServer = async () => {
       console.error('⚠️ Phase confirmations migration error (continuing):', error.message);
     }
 
+    // Add expoPushToken column for mobile push notifications
+    try {
+      const qi = db.sequelize.getQueryInterface();
+      await qi.addColumn('users', 'expoPushToken', {
+        type: db.Sequelize.STRING(512),
+        allowNull: true,
+        defaultValue: null,
+      });
+      console.log('✅ expoPushToken column added to users.');
+    } catch (e) {
+      // Column already exists — safe to ignore
+    }
+
     // Create default admin user if no users exist
     try {
       const userCount = await db.User.count();

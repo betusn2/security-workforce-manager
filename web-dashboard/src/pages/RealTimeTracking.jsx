@@ -329,6 +329,30 @@ const RealTimeTracking = () => {
       }));
     });
 
+    // Background HTTP tracking (screen off) — deduplicated path emits agent:location
+    socket.on('agent:location', (data) => {
+      const uid = data.userId || data.agentId;
+      if (!uid) return;
+      setLocations(prev => ({
+        ...prev,
+        [uid]: {
+          ...prev[uid],
+          lat: data.latitude, lng: data.longitude,
+          latitude: data.latitude, longitude: data.longitude,
+          accuracy: data.accuracy,
+          speed: data.speed,
+          batteryLevel: data.batteryLevel ?? prev[uid]?.batteryLevel,
+          batteryCharging: data.batteryCharging ?? prev[uid]?.batteryCharging,
+          networkType: data.networkType ?? prev[uid]?.networkType,
+          isWithinGeofence: data.isWithinGeofence,
+          distanceFromEvent: data.distanceFromEvent,
+          isOnline: true,
+          source: 'background',
+          timestamp: data.timestamp ? new Date(data.timestamp) : new Date(),
+        },
+      }));
+    });
+
     socket.on('agent-online',  uid => setLocations(prev => prev[uid] ? { ...prev, [uid]: { ...prev[uid], isOnline: true } } : prev));
     socket.on('agent-offline', uid => setLocations(prev => prev[uid] ? { ...prev, [uid]: { ...prev[uid], isOnline: false } } : prev));
 

@@ -1,6 +1,43 @@
 const { Notification, User } = require('../models');
 const { Op } = require('sequelize');
 const notificationService = require('../services/notificationService');
+const axios = require('axios');
+
+// ─── Expo Push Helper ────────────────────────────────────────────────────────
+async function sendExpoPush(expoPushToken, { title, body, data = {} }) {
+  if (!expoPushToken || !expoPushToken.startsWith('ExponentPushToken')) return;
+  try {
+    await axios.post('https://exp.host/--/api/v2/push/send', {
+      to: expoPushToken,
+      sound: 'default',
+      title,
+      body,
+      data,
+      priority: 'high',
+      channelId: 'security-messages',
+    }, {
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      timeout: 5000,
+    });
+  } catch (err) {
+    console.warn('⚠️ Expo push failed:', err?.message);
+  }
+}
+exports.sendExpoPush = sendExpoPush;
+
+// ─── Register mobile push token ──────────────────────────────────────────────
+exports.registerPushToken = async (req, res) => {
+  try {
+    const { token, platform, deviceName } = req.body;
+    if (!token) return res.status(400).json({ success: false, message: 'token requis' });
+    await User.update({ expoPushToken: token }, { where: { id: req.user.id } });
+    console.log(`📱 Push token enregistré pour ${req.user.id} (${platform || 'unknown'})`);
+    res.json({ success: true, message: 'Token enregistré' });
+  } catch (error) {
+    console.error('Register push token error:', error);
+    res.status(500).json({ success: false, message: 'Erreur enregistrement token' });
+  }
+};
 
 // Get notifications for current user
 exports.getMyNotifications = async (req, res) => {
