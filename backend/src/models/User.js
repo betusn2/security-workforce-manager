@@ -269,11 +269,6 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.JSON,
       allowNull: true,
       comment: 'Empreintes des appareils utilises'
-    },
-    expoPushToken: {
-      type: DataTypes.STRING(512),
-      allowNull: true,
-      comment: 'Token Expo Push Notifications pour notifications mobiles'
     }
   }, {
     tableName: 'users',

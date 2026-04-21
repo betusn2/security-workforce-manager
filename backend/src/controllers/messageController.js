@@ -323,14 +323,21 @@ exports.sendMessage = async (req, res) => {
 
     // Send Expo push notification to recipient (handles background/screen-off)
     if (recipientId) {
-      const recipient = await User.findByPk(recipientId, { attributes: ['expoPushToken', 'firstName', 'lastName'] });
-      if (recipient?.expoPushToken) {
-        const senderName = `${req.user.firstName} ${req.user.lastName}`;
-        await sendExpoPush(recipient.expoPushToken, {
-          title: isUrgent ? `🚨 Message urgent de ${senderName}` : `💬 ${senderName}`,
-          body: messageType === 'text' ? (content?.substring(0, 120) || 'Nouveau message') : '📎 Fichier reçu',
-          data: { conversationId, messageId: message.id, type: 'chat_message' },
-        });
+      try {
+        const [[recipientRow]] = await Message.sequelize.query(
+          'SELECT expoPushToken, firstName, lastName FROM users WHERE id = ? LIMIT 1',
+          { replacements: [recipientId] }
+        );
+        if (recipientRow?.expoPushToken) {
+          const senderName = `${req.user.firstName} ${req.user.lastName}`;
+          await sendExpoPush(recipientRow.expoPushToken, {
+            title: isUrgent ? `🚨 Message urgent de ${senderName}` : `💬 ${senderName}`,
+            body: messageType === 'text' ? (content?.substring(0, 120) || 'Nouveau message') : '📎 Fichier reçu',
+            data: { conversationId, messageId: message.id, type: 'chat_message' },
+          });
+        }
+      } catch (pushErr) {
+        console.warn('⚠️ Push notification (non fatal):', pushErr.message);
       }
     }
 
