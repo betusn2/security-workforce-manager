@@ -37,7 +37,7 @@ const useGPSTracking = (isCheckedIn, eventId) => {
 
     // Connexion Socket.IO
     const socket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       auth: {
         token: localStorage.getItem('token')
       }

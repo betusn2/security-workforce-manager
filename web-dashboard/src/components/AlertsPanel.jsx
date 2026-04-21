@@ -14,7 +14,7 @@ const AlertsPanel = ({ eventId, token }) => {
     const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
     const socket = io(apiUrl, {
       auth: { token },
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'],
     });
     socket.on('connect', () => {
       if (eventId) {

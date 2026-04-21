@@ -220,7 +220,7 @@ const io = new Server(httpServer, {
     allowedHeaders: ['Content-Type', 'Authorization']
   },
   path: '/socket.io/',
-  transports: ['websocket', 'polling'],
+  transports: ['polling', 'websocket'],
   allowEIO3: true,
   pingTimeout: 60000,
   pingInterval: 25000,

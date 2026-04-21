@@ -95,7 +95,7 @@ const CheckInLogin = () => {
     
     socketRef.current = io(BACKEND_URL, {
       auth: { token },
-      transports: ['websocket', 'polling']
+      transports: ['polling', 'websocket']
     });
 
     socketRef.current.on('connect', () => {

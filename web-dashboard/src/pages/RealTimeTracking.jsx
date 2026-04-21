@@ -267,7 +267,7 @@ const RealTimeTracking = () => {
   useEffect(() => {
     const token = localStorage.getItem('accessToken') || localStorage.getItem('token') || localStorage.getItem('checkInToken');
     const socket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       auth: { token }
     });
 
