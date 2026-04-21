@@ -227,7 +227,102 @@ function SendMessageModal({ target, onClose, socket }) {
   );
 }
 
-const RealTimeTracking = () => {
+// ─── BroadcastPopupModal ───────────────────────────────────────────────────────
+function BroadcastPopupModal({ onClose, socket }) {
+  const [title,    setTitle]    = useState('');
+  const [message,  setMessage]  = useState('');
+  const [priority, setPriority] = useState('normal');
+  const [targets,  setTargets]  = useState(['agent', 'supervisor']);
+  const [sending,  setSending]  = useState(false);
+
+  const toggleTarget = (role) =>
+    setTargets(prev => prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role]);
+
+  const send = async () => {
+    if (!message.trim()) { toast.error('Entrez un message'); return; }
+    if (targets.length === 0) { toast.error('Sélectionnez au moins un groupe'); return; }
+    setSending(true);
+    try {
+      const payload = {
+        title:    title || (priority === 'urgent' ? '🚨 Message Urgent' : '📢 Message Diffusé'),
+        message:  message.trim(),
+        priority,
+        senderName: 'Admin',
+      };
+      // Real-time via Socket.IO
+      if (socket?.connected) {
+        socket.emit('admin:broadcast_popup', { ...payload, targetRoles: targets });
+      }
+      // Also via HTTP (Expo push for offline users)
+      await notificationsAPI.sendPopup({ ...payload, roles: targets });
+      toast.success(`Message diffusé aux ${targets.join(' & ')}`);
+      onClose();
+    } catch { toast.error('Erreur diffusion'); }
+    finally  { setSending(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <FiSmartphone className="text-purple-600" /> Diffuser popup mobile
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><FiX size={20} /></button>
+        </div>
+
+        {/* Target roles */}
+        <div className="mb-3">
+          <p className="text-xs text-gray-500 mb-2 font-medium">Destinataires</p>
+          <div className="flex gap-2">
+            {[
+              { v: 'agent',      label: '👷 Agents' },
+              { v: 'supervisor', label: '🧑‍💼 Superviseurs' },
+            ].map(r => (
+              <button key={r.v} onClick={() => toggleTarget(r.v)}
+                className={`flex-1 py-2 border-2 rounded-lg text-xs font-semibold transition-all ${
+                  targets.includes(r.v)
+                    ? 'bg-purple-100 text-purple-700 border-purple-400 ring-2 ring-offset-1 ring-purple-300'
+                    : 'border-gray-200 text-gray-500'
+                }`}>
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Priority */}
+        <div className="flex gap-2 mb-3">
+          {[
+            { v: 'normal', label: '💬 Normal',    cls: 'bg-blue-100 text-blue-700 border-blue-300' },
+            { v: 'high',   label: '⚠️ Important', cls: 'bg-orange-100 text-orange-700 border-orange-300' },
+            { v: 'urgent', label: '🚨 Urgent',    cls: 'bg-red-100 text-red-700 border-red-300' },
+          ].map(p => (
+            <button key={p.v} onClick={() => setPriority(p.v)}
+              className={`flex-1 py-2 border-2 rounded-lg text-xs font-semibold transition-all ${priority === p.v ? p.cls + ' ring-2 ring-offset-1' : 'border-gray-200 text-gray-500'}`}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:ring-2 focus:ring-purple-500 outline-none"
+          placeholder="Titre (optionnel)" value={title} onChange={e => setTitle(e.target.value)} />
+        <textarea className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-4 focus:ring-2 focus:ring-purple-500 outline-none resize-none"
+          rows={4} placeholder="Votre message…" value={message} onChange={e => setMessage(e.target.value)} />
+
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium">Annuler</button>
+          <button onClick={send} disabled={sending || !message.trim() || targets.length === 0}
+            className="flex-1 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
+            <FiSend size={13} />{sending ? 'Envoi…' : 'Diffuser'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
   const { user } = useAuthStore();
   const [assignments,    setAssignments]    = useState([]);
   const [attendance,     setAttendance]     = useState([]);
@@ -239,6 +334,7 @@ const RealTimeTracking = () => {
   const [selectedAgent,  setSelectedAgent]  = useState(null);
   const [agentHistory,   setAgentHistory]   = useState([]);
   const [msgTarget,      setMsgTarget]      = useState(null);
+  const [showBroadcast,  setShowBroadcast]  = useState(false);
   const [screenshotData,      setScreenshotData]      = useState(null);
   const [screenshotLoading,   setScreenshotLoading]   = useState(false);
   const [filters,        setFilters]        = useState({
@@ -629,6 +725,10 @@ const RealTimeTracking = () => {
       {msgTarget && (
         <SendMessageModal target={msgTarget} socket={socketRef.current} onClose={() => setMsgTarget(null)} />
       )}
+      {/* ── Modal diffusion popup mobile ─────────────────────────────────── */}
+      {showBroadcast && (
+        <BroadcastPopupModal socket={socketRef.current} onClose={() => setShowBroadcast(false)} />
+      )}
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="bg-white border-b p-4">
@@ -651,6 +751,13 @@ const RealTimeTracking = () => {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setShowBroadcast(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors"
+              title="Envoyer un popup sur les appareils mobiles"
+            >
+              <FiSmartphone size={13} /> Popup mobile
+            </button>
             {selectedEvent && (
               <button
                 onClick={() => setMsgTarget({ type: 'event', id: selectedEvent.id, name: selectedEvent.name })}

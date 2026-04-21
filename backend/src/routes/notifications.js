@@ -22,5 +22,6 @@ router.get('/', authorize('admin'), paginationQuery, validate, notificationContr
 router.get('/stats', authorize('admin'), notificationController.getNotificationStats);
 router.post('/send', authorize('admin', 'supervisor'), notificationController.sendNotification);
 router.post('/broadcast', authorize('admin'), notificationController.broadcastNotification);
+router.post('/send-popup', authorize('admin', 'supervisor'), notificationController.sendPopupToRoles);
 
 module.exports = router;

@@ -420,6 +420,7 @@ const startServer = async () => {
   httpServer.listen(PORT, () => {
     console.log(`🚀 HTTP server listening on port ${PORT} (waiting for DB...)`);
     socketIOService.initialize(io);
+    app.set('socketIOService', socketIOService);
     initSocketBroadcast(io);
   });
 

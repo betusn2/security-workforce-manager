@@ -281,6 +281,7 @@ export const notificationsAPI = {
   delete: (id) => api.delete(`/notifications/${id}`).catch(handleApiError),
   send: (data) => api.post('/notifications/send', data).catch(handleApiError),
   broadcast: (data) => api.post('/notifications/broadcast', data).catch(handleApiError),
+  sendPopup: (data) => api.post('/notifications/send-popup', data).catch(handleApiError),
   getAll: (params) => api.get('/notifications', { params }).catch(handleApiError),
   getStats: (params) => api.get('/notifications/stats', { params }).catch(handleApiError),
 };

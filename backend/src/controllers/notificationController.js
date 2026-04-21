@@ -189,9 +189,10 @@ exports.deleteNotification = async (req, res) => {
 // Send notification (admin only)
 exports.sendNotification = async (req, res) => {
   try {
-    const { userId, userIds, type, title, message, channels, priority } = req.body;
+    const { userId, userIds, recipientId, type, title, message, channels, priority, data: extraData } = req.body;
 
-    const targetUserIds = userIds || (userId ? [userId] : []);
+    // Accept recipientId as alias for userId
+    const targetUserIds = userIds || (userId ? [userId] : recipientId ? [recipientId] : []);
 
     if (targetUserIds.length === 0) {
       return res.status(400).json({
@@ -200,28 +201,52 @@ exports.sendNotification = async (req, res) => {
       });
     }
 
+    // Get Socket.IO instance for real-time delivery
+    const socketIOService = req.app.get('socketIOService');
+
     const results = [];
 
     for (const targetUserId of targetUserIds) {
       try {
+        // Save to DB via notification service
         const notifications = await notificationService.notify(targetUserId, {
-          type: type || 'general',
+          type:     type || 'general',
           title,
           message,
           channels: channels || ['in_app'],
           priority: priority || 'normal'
         });
-        results.push({
-          userId: targetUserId,
-          success: true,
-          notificationCount: notifications.length
-        });
+
+        // Real-time: emit via Socket.IO to user's room
+        if (socketIOService) {
+          socketIOService.io.to(`user:${targetUserId}`).emit('admin:message', {
+            title:      title || '📢 Message Admin',
+            message,
+            priority:   priority || 'normal',
+            senderName: req.user?.name || 'Admin',
+            timestamp:  Date.now(),
+            ...(extraData || {}),
+          });
+        }
+
+        // Push notification (works when app is in background)
+        try {
+          const [[tokenRow]] = await User.sequelize.query(
+            'SELECT expoPushToken FROM users WHERE id = ?',
+            { replacements: [targetUserId] }
+          );
+          if (tokenRow?.expoPushToken) {
+            await sendExpoPush(tokenRow.expoPushToken, {
+              title: title || '📢 Message Admin',
+              body:  message,
+              data:  { popup: true, priority: priority || 'normal', type: type || 'message', ...(extraData || {}) },
+            });
+          }
+        } catch (_) { /* push token column may not exist yet */ }
+
+        results.push({ userId: targetUserId, success: true, notificationCount: notifications.length });
       } catch (err) {
-        results.push({
-          userId: targetUserId,
-          success: false,
-          error: err.message
-        });
+        results.push({ userId: targetUserId, success: false, error: err.message });
       }
     }
 
@@ -251,17 +276,46 @@ exports.broadcastNotification = async (req, res) => {
       attributes: ['id']
     });
 
+    const socketIOService = req.app.get('socketIOService');
     const results = { sent: 0, failed: 0 };
 
     for (const user of users) {
       try {
         await notificationService.notify(user.id, {
-          type: type || 'system',
+          type:     type || 'system',
           title,
           message,
           channels: channels || ['in_app'],
           priority: priority || 'normal'
         });
+
+        // Real-time Socket.IO
+        if (socketIOService) {
+          socketIOService.io.to(`user:${user.id}`).emit('admin:message', {
+            title:      title || '📢 Diffusion Admin',
+            message,
+            priority:   priority || 'normal',
+            senderName: req.user?.name || 'Admin',
+            targetType: 'broadcast',
+            timestamp:  Date.now(),
+          });
+        }
+
+        // Expo push for background delivery
+        try {
+          const [[tokenRow]] = await User.sequelize.query(
+            'SELECT expoPushToken FROM users WHERE id = ?',
+            { replacements: [user.id] }
+          );
+          if (tokenRow?.expoPushToken) {
+            await sendExpoPush(tokenRow.expoPushToken, {
+              title: title || '📢 Diffusion Admin',
+              body:  message,
+              data:  { popup: true, priority: priority || 'normal', type: type || 'broadcast' },
+            });
+          }
+        } catch (_) { /* non-fatal */ }
+
         results.sent++;
       } catch (err) {
         results.failed++;
@@ -391,5 +445,65 @@ exports.getNotificationStats = async (req, res) => {
       success: false,
       message: 'Erreur lors de la récupération des statistiques'
     });
+  }
+};
+
+// Send popup to all users of given roles (admin/supervisor → agents/supervisors)
+exports.sendPopupToRoles = async (req, res) => {
+  try {
+    const { title, message, priority, roles = ['agent', 'supervisor'] } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ success: false, message: 'message requis' });
+    }
+
+    const socketIOService = req.app.get('socketIOService');
+
+    // Socket.IO broadcast to connected users by role
+    if (socketIOService) {
+      const payload = {
+        title:      title || '📢 Message diffusé',
+        message,
+        priority:   priority || 'normal',
+        senderName: req.user?.name || req.user?.firstName || 'Admin',
+        targetType: 'broadcast',
+        timestamp:  Date.now(),
+      };
+      for (const role of roles) {
+        socketIOService.io.to(`role:${role}`).emit('admin:message', payload);
+      }
+    }
+
+    // Expo push for users that are offline
+    const users = await User.findAll({
+      where: { role: roles, status: 'active' },
+      attributes: ['id'],
+    });
+
+    let pushSent = 0;
+    for (const user of users) {
+      try {
+        const [[tokenRow]] = await User.sequelize.query(
+          'SELECT expoPushToken FROM users WHERE id = ?',
+          { replacements: [user.id] }
+        );
+        if (tokenRow?.expoPushToken) {
+          await sendExpoPush(tokenRow.expoPushToken, {
+            title: title || '📢 Message diffusé',
+            body:  message,
+            data:  { popup: true, priority: priority || 'normal', type: 'broadcast' },
+          });
+          pushSent++;
+        }
+      } catch (_) { /* non-fatal */ }
+    }
+
+    res.json({
+      success: true,
+      message: `Popup envoyé à ${users.length} utilisateurs (${pushSent} push)`,
+    });
+  } catch (error) {
+    console.error('sendPopupToRoles error:', error);
+    res.status(500).json({ success: false, message: 'Erreur envoi popup' });
   }
 };

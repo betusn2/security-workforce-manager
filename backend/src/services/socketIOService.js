@@ -56,8 +56,13 @@ class SocketIOService {
       socket.on('messages:subscribe', (roomId) => this.subscribeToMessages(socket, roomId));
       
       // Popup / notifications admin → agents
-      socket.on('admin:send_popup', (data) => this.handleAdminSendPopup(socket, data));
+      socket.on('admin:send_popup',       (data) => this.handleAdminSendPopup(socket, data));
       socket.on('admin:send_event_popup', (data) => this.handleAdminSendEventPopup(socket, data));
+      // Aliases used by the web dashboard
+      socket.on('admin:message:user',  (data) => this.handleAdminSendPopup(socket, { ...data, recipientId: data.userId || data.recipientId }));
+      socket.on('admin:message:event', (data) => this.handleAdminSendEventPopup(socket, data));
+      // Broadcast popup to all agents / supervisors
+      socket.on('admin:broadcast_popup', (data) => this.handleAdminBroadcastPopup(socket, data));
       
       // Chat entre agent et responsable
       socket.on('chat:send_message', (data) => this.handleChatSendMessage(socket, data));
@@ -550,6 +555,40 @@ class SocketIOService {
     });
 
     console.log(`📢 Broadcast envoyé à event:${eventId} par ${connection.userId}`);
+  }
+
+  /**
+   * Diffuser un popup à tous les agents et/ou superviseurs connectés
+   */
+  handleAdminBroadcastPopup(socket, data) {
+    const connection = this.connections.get(socket.id);
+    if (!connection) return;
+    if (!['admin', 'supervisor', 'responsable', 'superadmin'].includes(connection.role)) {
+      socket.emit('error', { message: 'Permission refusée' });
+      return;
+    }
+
+    const { title, message, priority, targetRoles = ['agent', 'supervisor'] } = data;
+    if (!message) return;
+
+    const payload = {
+      title:      title || '📢 Message diffusé',
+      message,
+      priority:   priority || 'normal',
+      senderName: data.senderName || 'Admin',
+      targetType: 'broadcast',
+      timestamp:  Date.now(),
+    };
+
+    for (const role of targetRoles) {
+      this.io.to(`role:${role}`).emit('admin:message', payload);
+    }
+    // Also reach global:supervisors room for supervisors
+    if (targetRoles.includes('supervisor')) {
+      this.io.to('global:supervisors').emit('admin:message', payload);
+    }
+
+    console.log(`📣 Broadcast popup envoyé aux rôles [${targetRoles}] par ${connection.userId}`);
   }
 
   /**
