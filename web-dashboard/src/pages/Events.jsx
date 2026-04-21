@@ -707,6 +707,7 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
 
     return rawUsers
       .filter(user => user && user.id)
+      .filter(user => user.role === 'admin' || user.role === 'supervisor')
       .sort((left, right) => {
         const leftName = `${left.firstName || ''} ${left.lastName || ''}`.trim();
         const rightName = `${right.firstName || ''} ${right.lastName || ''}`.trim();
@@ -1039,15 +1040,38 @@ const EventModal = ({ isOpen, onClose, event, onSave }) => {
                 {/* Director */}
                 <div>
                   <label className="label flex items-center gap-1.5"><FiShield size={13} /> Directeur événement</label>
+                  {/* Dropdown: admins & supervisors only */}
                   <select value={formData.directorId} onChange={e => {
                     const a = responsibleUsers.find(user => String(user.id) === String(e.target.value));
-                    setFormData(p => ({ ...p, directorId: e.target.value, directorName: a ? `${a.firstName} ${a.lastName}` : '', directorEmail: a?.email || '' }));
-                  }} className="input">
-                    <option value="">— Sélectionner un responsable —</option>
+                    setFormData(p => ({
+                      ...p,
+                      directorId: e.target.value,
+                      directorName: a ? `${a.firstName} ${a.lastName}` : '',
+                      directorEmail: a?.email || ''
+                    }));
+                  }} className="input mb-2">
+                    <option value="">— Sélectionner admin / responsable —</option>
                     {responsibleUsers.map(user => (
-                      <option key={user.id} value={user.id}>{user.firstName} {user.lastName} ({user.role})</option>
+                      <option key={user.id} value={user.id}>
+                        {user.firstName} {user.lastName} ({user.role === 'admin' ? 'Admin' : 'Responsable'})
+                      </option>
                     ))}
                   </select>
+                  {/* Manual free-text override */}
+                  <input
+                    type="text"
+                    placeholder="Ou saisir un nom manuellement…"
+                    value={formData.directorId ? '' : formData.directorName}
+                    disabled={!!formData.directorId}
+                    onChange={e => setFormData(p => ({ ...p, directorName: e.target.value, directorEmail: '' }))}
+                    className={`input text-sm ${formData.directorId ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`}
+                  />
+                  {formData.directorId && (
+                    <button type="button" onClick={() => setFormData(p => ({ ...p, directorId: '', directorName: '', directorEmail: '' }))}
+                      className="mt-1 text-xs text-blue-500 hover:underline">
+                      ✕ Effacer la sélection et saisir manuellement
+                    </button>
+                  )}
                   {selectedDirector && (
                     <div className="mt-2 flex items-center gap-3 p-2.5 bg-blue-50 rounded-xl">
                       <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold flex-shrink-0">
