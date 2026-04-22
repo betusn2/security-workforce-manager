@@ -352,6 +352,22 @@ function BroadcastPopupModal({ onClose, socket }) {
   const [tick,         setTick]         = useState(0); // refresh "il y a Xs"
   const socketRef      = useRef(null);
   const refreshRef     = useRef(null);
+  const gpsPollingRef  = useRef(null); // HTTP GPS polling (Uber-style)
+  const loadLivePositionsRef = useRef(null); // stable ref to avoid closure issues
+
+  // ── GPS HTTP polling every 5s (Uber-style) ─────────────────────────────
+  // Mobile sends HTTP positions every 5s → backend stores them.
+  // Dashboard polls the REST API every 5s to get latest positions.
+  // This works even when Socket.IO is unstable (Render free tier).
+  useEffect(() => {
+    clearInterval(gpsPollingRef.current);
+    if (!selectedEvent?.id) return;
+    const eventId = selectedEvent.id;
+    const poll = () => loadLivePositionsRef.current?.(eventId);
+    poll(); // immediate first fetch
+    gpsPollingRef.current = setInterval(poll, 5000);
+    return () => clearInterval(gpsPollingRef.current);
+  }, [selectedEvent?.id]);
 
   // Tick every 15s for "il y a Xs" refresh
   useEffect(() => {
@@ -575,30 +591,38 @@ function BroadcastPopupModal({ onClose, socket }) {
   const loadLivePositions = async (eventId) => {
     try {
       const r = await trackingAPI.getEventLivePositions(eventId);
-      const positions = r?.data?.data || r?.data || [];
-      if (!Array.isArray(positions)) return;
+      // API returns either flat array OR {agents:[...], ...} nested object
+      const raw = r?.data?.data || r?.data || [];
+      // Support both formats: flat array of positions OR {agents:[...]} structure
+      const positions = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw.agents) ? raw.agents : [];
+      if (positions.length === 0) return;
       const now = Date.now();
       setLocations(prev => {
         const next = { ...prev };
         positions.forEach(p => {
-          const uid = p.userId || p.agentId;
-          if (!uid) return;
-          const ts    = new Date(p.timestamp || p.lastUpdate || now);
+          // Support both flat (p.latitude) and nested (p.position.latitude) formats
+          const lat = p.latitude ?? p.position?.latitude;
+          const lng = p.longitude ?? p.position?.longitude;
+          const uid = p.userId || p.agentId || p.id;
+          if (!uid || !lat || !lng) return;
+          const ts    = new Date(p.timestamp || p.lastUpdate || p.position?.updatedAt || now);
           const fresh = (now - ts.getTime()) < STALE_THRESHOLD_MS;
           next[uid] = {
             ...next[uid],
-            lat: p.latitude, lng: p.longitude,
-            latitude: p.latitude, longitude: p.longitude,
+            lat, lng,
+            latitude: lat, longitude: lng,
             accuracy: p.accuracy, altitude: p.altitude,
             speed: p.speed,
             speedKmh: p.speedKmh ?? (p.speed != null ? +(p.speed * 3.6).toFixed(1) : 0),
-            batteryLevel: p.batteryLevel, batteryCharging: p.batteryCharging,
+            batteryLevel: p.batteryLevel ?? p.battery, batteryCharging: p.batteryCharging,
             batteryStatus: p.batteryStatus, networkType: p.networkType,
-            networkOnline: p.networkOnline, deviceOS: p.deviceOS,
+            networkOnline: p.networkOnline ?? p.isOnline, deviceOS: p.deviceOS,
             deviceBrand: p.deviceBrand, deviceModel: p.deviceModel,
             isWithinGeofence: p.isWithinGeofence,
-            distanceFromEvent: p.distanceFromEvent,
-            isOnline: fresh, source: 'api', timestamp: ts,
+            distanceFromEvent: p.distanceFromEvent ?? p.distance,
+            isOnline: fresh, source: 'http-poll', timestamp: ts,
             user: p.user || next[uid]?.user,
           };
         });
@@ -606,6 +630,8 @@ function BroadcastPopupModal({ onClose, socket }) {
       });
     } catch (e) { console.warn('Live positions:', e?.message); }
   };
+  // Keep ref in sync so the GPS polling interval always calls the latest version
+  loadLivePositionsRef.current = loadLivePositions;
 
   const loadAgentHistory = async (userId, eventId) => {
     try {

@@ -480,19 +480,42 @@ exports.getEventLivePositions = async (req, res) => {
       }]
     });
 
-    // Formater les donnees
+    // Formater les donnees — enrichir avec la dernière position de GeoTracking
+    const agentIds = assignments.map(a => a.agent?.id).filter(Boolean);
+
+    // Fetch latest enriched tracking record for each agent in ONE query
+    const latestTrackings = await GeoTracking.findAll({
+      where: { userId: agentIds, ...(assignments[0]?.eventId ? { eventId } : {}) },
+      attributes: [
+        'userId', 'latitude', 'longitude', 'accuracy', 'altitude',
+        'speed', 'heading', 'batteryLevel', 'networkType', 'recordedAt',
+        [GeoTracking.sequelize.fn('MAX', GeoTracking.sequelize.col('recordedAt')), 'maxTs'],
+      ],
+      group: ['userId'],
+      raw: true,
+    }).catch(() => []);
+
+    const latestByUser = {};
+    latestTrackings.forEach(t => { latestByUser[t.userId] = t; });
+
     const agents = assignments.map(a => {
       const agent = a.agent;
-      const isOnline = agent.lastLocationUpdate &&
-        (new Date() - new Date(agent.lastLocationUpdate)) < TRACKING_CONFIG.staleLocationMinutes * 60 * 1000;
+      // Prefer live tracking record if fresher
+      const live = latestByUser[agent.id];
+      const lat = live?.latitude ?? agent.currentLatitude;
+      const lng = live?.longitude ?? agent.currentLongitude;
+      const lastUpdate = live?.recordedAt ?? agent.lastLocationUpdate;
+
+      const isOnline = lastUpdate &&
+        (new Date() - new Date(lastUpdate)) < TRACKING_CONFIG.staleLocationMinutes * 60 * 1000;
 
       let distance = null;
       let isWithinGeofence = null;
 
-      if (agent.currentLatitude && agent.currentLongitude && event.latitude && event.longitude) {
+      if (lat && lng && event.latitude && event.longitude) {
         distance = geoService.calculateDistance(
-          parseFloat(agent.currentLatitude),
-          parseFloat(agent.currentLongitude),
+          parseFloat(lat),
+          parseFloat(lng),
           parseFloat(event.latitude),
           parseFloat(event.longitude)
         );
@@ -500,20 +523,40 @@ exports.getEventLivePositions = async (req, res) => {
       }
 
       return {
+        // Flat fields — used by dashboard loadLivePositions
+        userId: agent.id,
+        latitude:  lat ? parseFloat(lat) : null,
+        longitude: lng ? parseFloat(lng) : null,
+        accuracy:  live?.accuracy ?? null,
+        altitude:  live?.altitude ?? null,
+        speed:     live?.speed ?? null,
+        speedKmh:  live?.speed != null ? +(live.speed * 3.6).toFixed(1) : 0,
+        batteryLevel: live?.batteryLevel ?? null,
+        networkType:  live?.networkType ?? null,
+        isWithinGeofence,
+        distanceFromEvent: distance ? Math.round(distance) : null,
+        timestamp: lastUpdate,
+        isOnline,
+        // Legacy nested format (keep for backward compat)
         id: agent.id,
         employeeId: agent.employeeId,
         name: `${agent.firstName} ${agent.lastName}`,
         photo: agent.profilePhoto,
         phone: agent.phone,
-        position: agent.currentLatitude ? {
-          latitude: parseFloat(agent.currentLatitude),
-          longitude: parseFloat(agent.currentLongitude),
-          updatedAt: agent.lastLocationUpdate
+        position: lat ? {
+          latitude: parseFloat(lat),
+          longitude: parseFloat(lng),
+          updatedAt: lastUpdate
         } : null,
-        isOnline,
-        isWithinGeofence,
         distance: distance ? Math.round(distance) : null,
-        assignmentStatus: a.status
+        assignmentStatus: a.status,
+        user: {
+          id: agent.id,
+          firstName: agent.firstName,
+          lastName: agent.lastName,
+          employeeId: agent.employeeId,
+          phone: agent.phone,
+        },
       };
     });
 
