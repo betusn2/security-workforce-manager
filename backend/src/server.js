@@ -214,7 +214,13 @@ const ALLOWED_ORIGINS = [
 
 const io = new Server(httpServer, {
   cors: {
-    origin: ALLOWED_ORIGINS,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true); // allow server-to-server
+      const ok = ALLOWED_ORIGINS.some(o =>
+        typeof o === 'string' ? o === origin : o instanceof RegExp ? o.test(origin) : false
+      );
+      callback(null, ok ? origin : false);
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
@@ -274,6 +280,25 @@ app.options('*', cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
+
+// ✅ CORS forcé sur /socket.io/ — Socket.IO ne rajoute pas les headers sur les 400
+// ce middleware s'exécute avant Socket.IO et garantit que le header est toujours présent
+app.use('/socket.io/', (req, res, next) => {
+  const origin = req.headers.origin || '';
+  const allowed = ALLOWED_ORIGINS.some(o =>
+    typeof o === 'string' ? o === origin : o instanceof RegExp ? o.test(origin) : false
+  );
+  if (allowed || !origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', 'https://security-workforce-manager.vercel.app');
+  }
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
 
 // Rate limiting - Désactivé en développement
 const limiter = rateLimit({
