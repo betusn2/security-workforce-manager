@@ -483,20 +483,22 @@ exports.getEventLivePositions = async (req, res) => {
     // Formater les donnees — enrichir avec la dernière position de GeoTracking
     const agentIds = assignments.map(a => a.agent?.id).filter(Boolean);
 
-    // Fetch latest enriched tracking record for each agent in ONE query
-    const latestTrackings = await GeoTracking.findAll({
-      where: { userId: agentIds, ...(assignments[0]?.eventId ? { eventId } : {}) },
-      attributes: [
-        'userId', 'latitude', 'longitude', 'accuracy', 'altitude',
-        'speed', 'heading', 'batteryLevel', 'networkType', 'recordedAt',
-        [GeoTracking.sequelize.fn('MAX', GeoTracking.sequelize.col('recordedAt')), 'maxTs'],
-      ],
-      group: ['userId'],
-      raw: true,
-    }).catch(() => []);
+    // Fetch latest enriched tracking record per agent
+    // Using findOne+ORDER per agent avoids MySQL strict mode issues with GROUP BY + non-agg cols
+    const latestTrackingsList = agentIds.length > 0
+      ? await Promise.all(
+          agentIds.map(uid =>
+            GeoTracking.findOne({
+              where: { userId: uid },
+              order: [['recordedAt', 'DESC']],
+              raw: true,
+            }).catch(() => null)
+          )
+        ).then(results => results.filter(Boolean))
+      : [];
 
     const latestByUser = {};
-    latestTrackings.forEach(t => { latestByUser[t.userId] = t; });
+    latestTrackingsList.forEach(t => { latestByUser[t.userId] = t; });
 
     const agents = assignments.map(a => {
       const agent = a.agent;
