@@ -376,133 +376,123 @@ const RealTimeTracking = () => {
     return () => clearInterval(t);
   }, []);
 
-  // Connexion Socket.IO
+  // ── Socket.IO — connecté UNE SEULE FOIS au montage ────────────────────────
+  // GPS fonctionne via HTTP polling (Uber-style). Socket.IO est optionnel :
+  // il améliore le temps réel mais la page fonctionne sans lui.
   useEffect(() => {
     const token = localStorage.getItem('accessToken') || localStorage.getItem('token') || localStorage.getItem('checkInToken');
-    const socket = io(SOCKET_URL, {
-      transports: ['polling'],
-      auth: { token },
-      // Force a fresh connection (no session resume) — avoids 400 after Render cold-start
-      forceNew: true,
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 2000,
-      reconnectionDelayMax: 10000,
-      timeout: 30000,
-    });
+    let socket = null;
+    let destroyed = false;
 
-    socket.on('connect', () => {
-      if (user) socket.emit('auth', { userId: user.id, role: user.role, token });
-    });
+    const connect = () => {
+      if (destroyed) return;
+      socket = io(SOCKET_URL, {
+        transports: ['polling'],
+        auth: { token },
+        forceNew: true,
+        reconnection: false,    // géré manuellement ci-dessous
+        timeout: 30000,
+      });
+      socketRef.current = socket;
 
-    // When session expires on Render (sid unknown → 400), reconnect from scratch
-    socket.io.on('error', (err) => {
-      if (err?.description === 400 || err?.message?.includes('400')) {
-        socket.disconnect();
-        setTimeout(() => socket.connect(), 3000);
-      }
-    });
+      socket.on('connect', () => {
+        if (user) socket.emit('auth', { userId: user.id, role: user.role, token });
+      });
 
-    const joinRooms = () => {
-      if (selectedEvent) {
-        socket.emit('event:join', selectedEvent.id);
-        socket.emit('tracking:subscribe', selectedEvent.id);
-        socket.emit('tracking:subscribe', { eventId: selectedEvent.id });
-      }
+      // Rejoindre la room de l'événement courant (ref pour closure stable)
+      socket.on('auth:success', () => {
+        const evtId = selectedEventRef.current?.id;
+        if (evtId) {
+          socket.emit('event:join', evtId);
+          socket.emit('tracking:subscribe', evtId);
+          socket.emit('tracking:subscribe', { eventId: evtId });
+        }
+      });
+
+      // Positions GPS temps réel (Socket.IO bonus — HTTP polling est la source principale)
+      const handlePosition = (data) => {
+        const uid = data.userId || data.agentId;
+        if (!uid) return;
+        setLocations(prev => ({
+          ...prev,
+          [uid]: {
+            ...prev[uid],
+            lat: data.latitude, lng: data.longitude,
+            latitude: data.latitude, longitude: data.longitude,
+            accuracy: data.accuracy, altitude: data.altitude,
+            speed: data.speed,
+            speedKmh: data.speedKmh ?? (data.speed != null ? +(data.speed * 3.6).toFixed(1) : 0),
+            heading: data.heading, isMoving: data.isMoving,
+            batteryLevel: data.batteryLevel, batteryCharging: data.batteryCharging,
+            batteryStatus: data.batteryStatus, batteryEstimatedTime: data.batteryEstimatedTime,
+            networkType: data.networkType, networkOnline: data.networkOnline,
+            deviceOS: data.deviceOS, deviceBrand: data.deviceBrand,
+            deviceModel: data.deviceModel, deviceType: data.deviceType,
+            deviceScreenOn: data.deviceScreenOn,
+            isWithinGeofence: data.isWithinGeofence,
+            distanceFromEvent: data.distanceFromEvent,
+            isOnline: true,
+            source: data.source || 'realtime',
+            timestamp: data.timestamp ? new Date(data.timestamp) : new Date(),
+            user: data.user || prev[uid]?.user,
+          },
+        }));
+      };
+      socket.on('tracking:position_update', handlePosition);
+      socket.on('agent:location', handlePosition);
+      socket.on('location-update', (data) => {
+        if (!data.userId) return;
+        setLocations(prev => ({
+          ...prev,
+          [data.userId]: { ...prev[data.userId], lat: data.latitude, lng: data.longitude,
+            batteryLevel: data.batteryLevel, isOnline: true, timestamp: new Date() },
+        }));
+      });
+
+      socket.on('tracking:geofence_alert', (data) => {
+        setAlerts(prev => [{ ...data, id: Date.now(), time: new Date() }, ...prev].slice(0, 50));
+        if (data.type === 'geofence_exit') toast.error(data.message, { autoClose: 10000 });
+        else toast.success(data.message, { autoClose: 5000 });
+      });
+      socket.on('tracking:battery_alert', (data) => {
+        setAlerts(prev => [{ ...data, id: Date.now(), time: new Date() }, ...prev].slice(0, 50));
+        toast.warning(data.message, { autoClose: 8000 });
+      });
+
+      socket.on('agent:screenshot_response', ({ agentId, screenshot }) => {
+        setScreenshotData({ agentId, screenshot, timestamp: new Date() });
+        setScreenshotLoading(false);
+      });
+      socket.on('agent:screenshot_error', () => { setScreenshotLoading(false); toast.error('Capture échouée'); });
+
+      // En cas d'erreur (400 session expirée, réseau) → retry après 5s
+      socket.on('connect_error', () => {
+        if (!destroyed) setTimeout(connect, 5000);
+      });
+      socket.io?.on('error', () => {
+        if (!destroyed) setTimeout(connect, 5000);
+      });
     };
-    socket.on('auth:success', joinRooms);
-    socket.on('auth:error',   joinRooms);
 
-    const handlePosition = (data) => {
-      const uid = data.userId || data.agentId;
-      if (!uid) return;
-      setLocations(prev => ({
-        ...prev,
-        [uid]: {
-          ...prev[uid],
-          lat: data.latitude, lng: data.longitude,
-          latitude: data.latitude, longitude: data.longitude,
-          accuracy: data.accuracy, altitude: data.altitude,
-          speed: data.speed,
-          speedKmh: data.speedKmh ?? (data.speed != null ? +(data.speed * 3.6).toFixed(1) : 0),
-          heading: data.heading, isMoving: data.isMoving,
-          batteryLevel: data.batteryLevel, batteryCharging: data.batteryCharging,
-          batteryStatus: data.batteryStatus, batteryEstimatedTime: data.batteryEstimatedTime,
-          networkType: data.networkType, networkOnline: data.networkOnline,
-          networkStatus: data.networkStatus, networkDownlink: data.networkDownlink,
-          networkRtt: data.networkRtt,
-          deviceOS: data.deviceOS, deviceBrand: data.deviceBrand,
-          deviceModel: data.deviceModel, deviceName: data.deviceName,
-          deviceType: data.deviceType, deviceScreenOn: data.deviceScreenOn,
-          deviceMemory: data.deviceMemory, deviceCPUCores: data.deviceCPUCores,
-          deviceScreenResolution: data.deviceScreenResolution,
-          isWithinGeofence: data.isWithinGeofence,
-          distanceFromEvent: data.distanceFromEvent,
-          isOnline: true,
-          source: data.source || 'realtime',
-          timestamp: data.timestamp ? new Date(data.timestamp) : new Date(),
-          user: data.user || prev[uid]?.user,
-        },
-      }));
+    connect();
+    return () => {
+      destroyed = true;
+      socket?.disconnect();
+      socketRef.current = null;
     };
+  }, []); // ← UNE SEULE FOIS au montage
 
-    socket.on('tracking:position_update', handlePosition);
-    socket.on('location-update', (data) => {
-      const uid = data.userId;
-      if (!uid) return;
-      setLocations(prev => ({
-        ...prev,
-        [uid]: { ...prev[uid], lat: data.latitude, lng: data.longitude,
-          batteryLevel: data.batteryLevel, isOnline: true, timestamp: new Date() },
-      }));
-    });
-
-    // Background HTTP tracking (screen off) — deduplicated path emits agent:location
-    socket.on('agent:location', (data) => {
-      const uid = data.userId || data.agentId;
-      if (!uid) return;
-      setLocations(prev => ({
-        ...prev,
-        [uid]: {
-          ...prev[uid],
-          lat: data.latitude, lng: data.longitude,
-          latitude: data.latitude, longitude: data.longitude,
-          accuracy: data.accuracy,
-          speed: data.speed,
-          batteryLevel: data.batteryLevel ?? prev[uid]?.batteryLevel,
-          batteryCharging: data.batteryCharging ?? prev[uid]?.batteryCharging,
-          networkType: data.networkType ?? prev[uid]?.networkType,
-          isWithinGeofence: data.isWithinGeofence,
-          distanceFromEvent: data.distanceFromEvent,
-          isOnline: true,
-          source: 'background',
-          timestamp: data.timestamp ? new Date(data.timestamp) : new Date(),
-        },
-      }));
-    });
-
-    socket.on('agent-online',  uid => setLocations(prev => prev[uid] ? { ...prev, [uid]: { ...prev[uid], isOnline: true } } : prev));
-    socket.on('agent-offline', uid => setLocations(prev => prev[uid] ? { ...prev, [uid]: { ...prev[uid], isOnline: false } } : prev));
-
-    socket.on('tracking:geofence_alert', (data) => {
-      setAlerts(prev => [{ ...data, id: Date.now(), time: new Date() }, ...prev].slice(0, 50));
-      if (data.type === 'geofence_exit') toast.error(data.message, { autoClose: 10000 });
-      else toast.success(data.message, { autoClose: 5000 });
-    });
-    socket.on('tracking:battery_alert', (data) => {
-      setAlerts(prev => [{ ...data, id: Date.now(), time: new Date() }, ...prev].slice(0, 50));
-      toast.warning(data.message, { autoClose: 8000 });
-    });
-
-    socket.on('agent:screenshot_response', ({ agentId, screenshot }) => {
-      setScreenshotData({ agentId, screenshot, timestamp: new Date() });
-      setScreenshotLoading(false);
-    });
-    socket.on('agent:screenshot_error', () => { setScreenshotLoading(false); toast.error('Capture échouée'); });
-
-    socketRef.current = socket;
-    return () => socket.disconnect();
+  // Rejoindre la nouvelle room quand l'événement sélectionné change
+  const selectedEventRef = useRef(null);
+  useEffect(() => {
+    selectedEventRef.current = selectedEvent;
+    const socket = socketRef.current;
+    if (!socket?.connected || !selectedEvent?.id) return;
+    socket.emit('event:join', selectedEvent.id);
+    socket.emit('tracking:subscribe', selectedEvent.id);
+    socket.emit('tracking:subscribe', { eventId: selectedEvent.id });
   }, [selectedEvent?.id]);
+
 
   // Auto-refresh assignments
   useEffect(() => {

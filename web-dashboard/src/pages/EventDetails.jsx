@@ -86,7 +86,10 @@ const EventDetails = () => {
     
     socketRef.current = io(BACKEND_URL, {
       auth: { token },
-      transports: ['polling']
+      transports: ['polling'],
+      forceNew: true,
+      reconnection: false,
+      timeout: 30000,
     });
 
     socketRef.current.on('connect', () => {
