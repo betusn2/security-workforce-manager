@@ -31,10 +31,12 @@ class SocketService {
     this.socket = io(SOCKET_URL, {
       auth: { token },
       transports: ['polling'],
+      forceNew: true,
       reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      reconnectionAttempts: this.maxReconnectAttempts
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 10000,
+      reconnectionAttempts: this.maxReconnectAttempts,
+      timeout: 30000,
     });
 
     this.setupEventHandlers();
@@ -60,6 +62,14 @@ class SocketService {
     this.socket.on('connect_error', (error) => {
       console.error('Erreur connexion socket:', error.message);
       this.reconnectAttempts++;
+    });
+
+    // Force fresh connection when server session expires (Render cold-start → 400)
+    this.socket.io.on('error', (err) => {
+      if (err?.description === 400 || err?.message?.includes('400')) {
+        this.socket.disconnect();
+        setTimeout(() => this.socket?.connect(), 3000);
+      }
     });
 
     this.socket.on('error', (error) => {

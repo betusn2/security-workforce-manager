@@ -381,11 +381,26 @@ const RealTimeTracking = () => {
     const token = localStorage.getItem('accessToken') || localStorage.getItem('token') || localStorage.getItem('checkInToken');
     const socket = io(SOCKET_URL, {
       transports: ['polling'],
-      auth: { token }
+      auth: { token },
+      // Force a fresh connection (no session resume) — avoids 400 after Render cold-start
+      forceNew: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 10000,
+      timeout: 30000,
     });
 
     socket.on('connect', () => {
       if (user) socket.emit('auth', { userId: user.id, role: user.role, token });
+    });
+
+    // When session expires on Render (sid unknown → 400), reconnect from scratch
+    socket.io.on('error', (err) => {
+      if (err?.description === 400 || err?.message?.includes('400')) {
+        socket.disconnect();
+        setTimeout(() => socket.connect(), 3000);
+      }
     });
 
     const joinRooms = () => {

@@ -222,12 +222,19 @@ const io = new Server(httpServer, {
   path: '/socket.io/',
   transports: ['polling'],
   allowEIO3: true,
-  pingTimeout: 60000,
-  pingInterval: 25000,
-  connectTimeout: 60000,
+  // Keep sessions alive long enough for Render's slow responses
+  pingTimeout: 120000,
+  pingInterval: 30000,
+  connectTimeout: 120000,
+  upgradeTimeout: 30000,
   maxHttpBufferSize: 1e8,
   allowUpgrades: false,
-  perMessageDeflate: false
+  perMessageDeflate: false,
+  // Disable cookies — Render doesn't support sticky sessions so cookies are useless
+  cookie: false,
+  // Destroy session if client doesn't poll in time (avoids stale sessions piling up)
+  destroyUpgrade: true,
+  destroyUpgradeTimeout: 1000,
 });
 
 // Make io accessible to routes and services
