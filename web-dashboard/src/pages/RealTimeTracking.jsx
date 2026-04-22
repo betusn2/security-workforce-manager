@@ -322,7 +322,8 @@ function BroadcastPopupModal({ onClose, socket }) {
   );
 }
 
-
+// ─── RealTimeTracking (main component) ───────────────────────────────────────
+const RealTimeTracking = () => {
   const { user } = useAuthStore();
   const [assignments,    setAssignments]    = useState([]);
   const [attendance,     setAttendance]     = useState([]);
