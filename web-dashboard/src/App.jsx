@@ -42,6 +42,7 @@ import RealTimeTracking from './pages/RealTimeTracking';
 import TrackingHistory from './pages/TrackingHistory';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import About from './pages/About';
+import Pricing from './pages/Pricing';
 
 // Smart redirect component based on user role
 const SmartRedirect = () => {
@@ -339,6 +340,7 @@ function App() {
         {/* Public pages - Politique de confidentialité et À propos */}
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/about" element={<About />} />
+        <Route path="/pricing" element={<Pricing />} />
 
         {/* 404 */}
         <Route
